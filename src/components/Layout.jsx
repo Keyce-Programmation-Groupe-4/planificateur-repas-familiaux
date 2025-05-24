@@ -30,9 +30,10 @@ export default function Layout({ children }) {
           {currentUser ? (
             <>
               <Button color="inherit" component={RouterLink} to="/">Accueil</Button>
+              {/* NEW: Link to Recipes List Page */} 
+              <Button color="inherit" component={RouterLink} to="/recipes">Mes Recettes</Button>
               <Button color="inherit" component={RouterLink} to="/family">Ma Famille</Button>
               <Button color="inherit" component={RouterLink} to="/profile">Profil</Button>
-              {/* Add other nav links for logged-in users later */}
               <Button color="inherit" onClick={handleLogout}>Déconnexion</Button>
             </>
           ) : (
