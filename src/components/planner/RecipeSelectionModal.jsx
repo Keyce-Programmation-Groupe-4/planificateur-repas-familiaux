@@ -1,4 +1,6 @@
-import React, { useState, useEffect, useMemo } from 'react';
+"use client"
+
+import React, { useState, useEffect, useMemo } from "react"
 import {
   Dialog,
   DialogTitle,
@@ -15,186 +17,354 @@ import {
   Typography,
   useTheme,
   alpha,
-  Slide, // Import Slide transition
-} from '@mui/material';
-import { Search, Clear } from '@mui/icons-material';
-import RecipeCard from './RecipeCard'; // Import the actual RecipeCard
+  Slide,
+  Fade,
+  Zoom,
+  Chip,
+  Stack,
+} from "@mui/material"
+import { Search, Clear, Close, Restaurant } from "@mui/icons-material"
+import RecipeCard from "./RecipeCard"
 
-// --- Firebase Imports (if fetching recipes here) ---
-// import { db } from '../../firebaseConfig';
-// import { collection, query, where, getDocs } from 'firebase/firestore';
-// import { useAuth } from '../../contexts/AuthContext';
-
-// Transition component for the Dialog
 const Transition = React.forwardRef(function Transition(props, ref) {
-  return <Slide direction="up" ref={ref} {...props} />;
-});
+  return <Slide direction="up" ref={ref} {...props} />
+})
 
 function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, availableRecipes = [] }) {
-  const theme = useTheme();
-  // const { userData } = useAuth(); // Get user data if fetching recipes here
-  // const familyId = userData?.familyId;
+  const theme = useTheme()
+  const [searchTerm, setSearchTerm] = useState("")
+  const [recipesToDisplay, setRecipesToDisplay] = useState([])
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [selectedFilter, setSelectedFilter] = useState("all")
 
-  const [searchTerm, setSearchTerm] = useState('');
-  const [recipesToDisplay, setRecipesToDisplay] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Use recipes passed from parent instead of fetching internally
   useEffect(() => {
     if (open) {
-        setIsLoading(true); // Simulate loading briefly for better UX
-        setError(null);
-        // Reset search term when modal opens
-        setSearchTerm('');
-        // Simulate a short delay before showing recipes
-        const timer = setTimeout(() => {
-            setRecipesToDisplay(availableRecipes);
-            setIsLoading(false);
-        }, 150); // Short delay
-        return () => clearTimeout(timer);
+      setIsLoading(true)
+      setError(null)
+      setSearchTerm("")
+      setSelectedFilter("all")
+
+      const timer = setTimeout(() => {
+        setRecipesToDisplay(availableRecipes)
+        setIsLoading(false)
+      }, 200)
+
+      return () => clearTimeout(timer)
     } else {
-        // Clear recipes when closing to ensure fresh list next time
-        setRecipesToDisplay([]);
+      setRecipesToDisplay([])
     }
-  }, [open, availableRecipes]);
+  }, [open, availableRecipes])
 
   const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value);
-  };
+    setSearchTerm(event.target.value)
+  }
 
   const clearSearch = () => {
-    setSearchTerm('');
-  };
+    setSearchTerm("")
+  }
 
   const handleRecipeClick = (recipe) => {
     if (targetSlotInfo) {
-        onRecipeSelect(recipe.id, targetSlotInfo.day, targetSlotInfo.mealType);
+      onRecipeSelect(recipe.id, targetSlotInfo.day, targetSlotInfo.mealType)
     }
-    onClose(); // Close modal after selection
-  };
-
-  const filteredRecipes = useMemo(() => {
-    if (!searchTerm) {
-      return recipesToDisplay;
-    }
-    return recipesToDisplay.filter(recipe =>
-      recipe.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [recipesToDisplay, searchTerm]);
-
-  // Format target slot name for display
-  const formatTargetSlot = () => {
-      if (!targetSlotInfo) return '';
-      const dayName = targetSlotInfo.day?.charAt(0).toUpperCase() + targetSlotInfo.day?.slice(1);
-      let mealName = '';
-      switch (targetSlotInfo.mealType) {
-          case 'breakfast': mealName = 'Petit-déjeuner'; break;
-          case 'lunch': mealName = 'Déjeuner'; break;
-          case 'dinner': mealName = 'Dîner'; break;
-          default: mealName = '';
-      }
-      return `${dayName} - ${mealName}`;
+    onClose()
   }
+
+  // Filter recipes based on search and category
+  const filteredRecipes = useMemo(() => {
+    let filtered = recipesToDisplay
+
+    if (searchTerm) {
+      filtered = filtered.filter(
+        (recipe) =>
+          recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))),
+      )
+    }
+
+    if (selectedFilter !== "all") {
+      filtered = filtered.filter((recipe) => {
+        switch (selectedFilter) {
+          case "quick":
+            return recipe.cookingTime && recipe.cookingTime <= 30
+          case "vegetarian":
+            return recipe.tags && recipe.tags.includes("végétarien")
+          case "favorites":
+            return recipe.isFavorite
+          default:
+            return true
+        }
+      })
+    }
+
+    return filtered
+  }, [recipesToDisplay, searchTerm, selectedFilter])
+
+  const formatTargetSlot = () => {
+    if (!targetSlotInfo) return ""
+    const dayName = targetSlotInfo.day?.charAt(0).toUpperCase() + targetSlotInfo.day?.slice(1)
+    let mealName = ""
+    switch (targetSlotInfo.mealType) {
+      case "breakfast":
+        mealName = "Petit-déjeuner"
+        break
+      case "lunch":
+        mealName = "Déjeuner"
+        break
+      case "dinner":
+        mealName = "Dîner"
+        break
+      default:
+        mealName = ""
+    }
+    return `${dayName} - ${mealName}`
+  }
+
+  const filterOptions = [
+    { key: "all", label: "Toutes", count: recipesToDisplay.length },
+    {
+      key: "quick",
+      label: "Rapides",
+      count: recipesToDisplay.filter((r) => r.cookingTime && r.cookingTime <= 30).length,
+    },
+    {
+      key: "vegetarian",
+      label: "Végétarien",
+      count: recipesToDisplay.filter((r) => r.tags && r.tags.includes("végétarien")).length,
+    },
+    { key: "favorites", label: "Favoris", count: recipesToDisplay.filter((r) => r.isFavorite).length },
+  ]
 
   return (
     <Dialog
-        open={open}
-        TransitionComponent={Transition} // Use slide transition
-        keepMounted // Keep mounted for smoother transitions
-        onClose={onClose}
-        fullWidth
-        maxWidth="sm"
-        aria-labelledby="recipe-selection-dialog-title"
-        PaperProps={{
-            sx: {
-                borderRadius: '16px', // Consistent modern radius
-                // Consider adding a subtle background pattern or gradient if desired
-                // background: `linear-gradient(145deg, ${theme.palette.background.paper}, ${alpha(theme.palette.grey[100], 0.5)})`,
-            }
-        }}
+      open={open}
+      TransitionComponent={Transition}
+      keepMounted
+      onClose={onClose}
+      fullWidth
+      maxWidth="md"
+      PaperProps={{
+        sx: {
+          borderRadius: 6,
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          backdropFilter: "blur(20px)",
+          border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+          boxShadow: `0 20px 60px ${alpha(theme.palette.primary.main, 0.2)}`,
+          overflow: "hidden",
+        },
+      }}
+      BackdropProps={{
+        sx: {
+          backgroundColor: alpha(theme.palette.common.black, 0.7),
+          backdropFilter: "blur(8px)",
+        },
+      }}
     >
-      <DialogTitle id="recipe-selection-dialog-title" sx={{ pb: 1 }}>
-        Choisir une recette
-        {targetSlotInfo && (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                Pour : {formatTargetSlot()}
+      {/* Enhanced Header */}
+      <DialogTitle
+        sx={{
+          pb: 2,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 600, mb: 0.5 }}>
+              Choisir une recette
             </Typography>
-        )}
-      </DialogTitle>
-      <DialogContent dividers sx={{ p: 0, borderTop: `1px solid ${theme.palette.divider}`, borderBottom: `1px solid ${theme.palette.divider}` }}>
-        {/* Search Bar Area */} 
-        <Box sx={{ p: 2, backgroundColor: alpha(theme.palette.grey[500], 0.05) }}>
-            <TextField
-                fullWidth
-                variant="outlined"
-                placeholder="Rechercher une recette..."
-                aria-label="Rechercher une recette"
-                value={searchTerm}
-                onChange={handleSearchChange}
-                InputProps={{
-                    startAdornment: (
-                    <InputAdornment position="start">
-                        <Search color="action"/>
-                    </InputAdornment>
-                    ),
-                    endAdornment: searchTerm && (
-                    <InputAdornment position="end">
-                        <Tooltip title="Effacer la recherche">
-                            <IconButton onClick={clearSearch} edge="end" aria-label="Effacer la recherche">
-                                <Clear />
-                            </IconButton>
-                        </Tooltip>
-                    </InputAdornment>
-                    ),
-                    sx: { 
-                        borderRadius: '24px', // Fully rounded search bar
-                        backgroundColor: theme.palette.background.paper,
-                        '&.Mui-focused .MuiOutlinedInput-notchedOutline': {
-                            borderColor: theme.palette.primary.main,
-                        },
-                        '&:hover .MuiOutlinedInput-notchedOutline': {
-                            borderColor: theme.palette.grey[400],
-                        },
-                    }
+            {targetSlotInfo && (
+              <Chip
+                label={formatTargetSlot()}
+                size="small"
+                sx={{
+                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                  color: theme.palette.primary.main,
+                  fontWeight: 500,
                 }}
-                />
-        </Box>
-        
-        {/* Recipe List Area */} 
-        <Box sx={{ maxHeight: '60vh', overflowY: 'auto', p: 1 }}>
-            {isLoading ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', p: 3, minHeight: '200px' }}>
-                    <CircularProgress />
-                </Box>
-            ) : error ? (
-                <Typography color="error" sx={{ p: 2, textAlign: 'center' }}>{error}</Typography>
-            ) : (
-                <List disablePadding>
-                {filteredRecipes.length > 0 ? filteredRecipes.map((recipe) => (
-                    <ListItem key={recipe.id} disablePadding sx={{ p: 0.5 }}>
-                    <RecipeCard
-                        recipeData={recipe}
-                        variant="list" // Use the larger variant for the modal list
-                        onClick={() => handleRecipeClick(recipe)}
-                        sx={{ width: '100%' }}
-                    />
-                    </ListItem>
-                )) : (
-                    <Typography sx={{ p: 3, textAlign: 'center', color: 'text.secondary' }}>
-                        {searchTerm ? 'Aucune recette trouvée pour "' + searchTerm + '".' : 'Aucune recette disponible.'}
-                    </Typography>
-                )}
-                </List>
+              />
             )}
+          </Box>
+          <IconButton
+            onClick={onClose}
+            sx={{
+              backgroundColor: alpha(theme.palette.grey[500], 0.1),
+              "&:hover": {
+                backgroundColor: alpha(theme.palette.grey[500], 0.2),
+                transform: "scale(1.1)",
+              },
+              transition: "all 0.2s ease",
+            }}
+          >
+            <Close />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+
+      <DialogContent sx={{ p: 0 }}>
+        {/* Search and Filter Section */}
+        <Box
+          sx={{
+            p: 3,
+            background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          }}
+        >
+          {/* Search Bar */}
+          <TextField
+            fullWidth
+            variant="outlined"
+            placeholder="Rechercher une recette ou un ingrédient..."
+            value={searchTerm}
+            onChange={handleSearchChange}
+            sx={{ mb: 2 }}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search color="action" />
+                </InputAdornment>
+              ),
+              endAdornment: searchTerm && (
+                <InputAdornment position="end">
+                  <IconButton onClick={clearSearch} edge="end">
+                    <Clear />
+                  </IconButton>
+                </InputAdornment>
+              ),
+              sx: {
+                borderRadius: 4,
+                backgroundColor: theme.palette.background.paper,
+                "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                  borderColor: theme.palette.primary.main,
+                  borderWidth: "2px",
+                },
+                "&:hover .MuiOutlinedInput-notchedOutline": {
+                  borderColor: alpha(theme.palette.primary.main, 0.5),
+                },
+              },
+            }}
+          />
+
+          {/* Filter Chips */}
+          <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
+            {filterOptions.map((option) => (
+              <Chip
+                key={option.key}
+                label={`${option.label} (${option.count})`}
+                onClick={() => setSelectedFilter(option.key)}
+                variant={selectedFilter === option.key ? "filled" : "outlined"}
+                sx={{
+                  borderRadius: 3,
+                  transition: "all 0.2s ease",
+                  ...(selectedFilter === option.key && {
+                    backgroundColor: theme.palette.primary.main,
+                    color: theme.palette.primary.contrastText,
+                    "&:hover": {
+                      backgroundColor: theme.palette.primary.dark,
+                    },
+                  }),
+                }}
+              />
+            ))}
+          </Stack>
+        </Box>
+
+        {/* Recipe List */}
+        <Box sx={{ maxHeight: "50vh", overflowY: "auto", p: 2 }}>
+          {isLoading ? (
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "center",
+                alignItems: "center",
+                p: 6,
+                flexDirection: "column",
+                gap: 2,
+              }}
+            >
+              <CircularProgress size={48} thickness={4} />
+              <Typography color="text.secondary">Chargement des recettes...</Typography>
+            </Box>
+          ) : error ? (
+            <Box sx={{ textAlign: "center", p: 4 }}>
+              <Typography color="error" variant="h6" sx={{ mb: 1 }}>
+                Erreur de chargement
+              </Typography>
+              <Typography color="text.secondary">{error}</Typography>
+            </Box>
+          ) : (
+            <List disablePadding>
+              {filteredRecipes.length > 0 ? (
+                filteredRecipes.map((recipe, index) => (
+                  <Zoom in timeout={200 + index * 50} key={recipe.id}>
+                    <ListItem disablePadding sx={{ p: 0.5 }}>
+                      <RecipeCard
+                        recipeData={recipe}
+                        variant="list"
+                        onClick={() => handleRecipeClick(recipe)}
+                        sx={{
+                          width: "100%",
+                          "&:hover": {
+                            transform: "translateX(8px)",
+                            boxShadow: `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
+                          },
+                        }}
+                      />
+                    </ListItem>
+                  </Zoom>
+                ))
+              ) : (
+                <Fade in>
+                  <Box sx={{ textAlign: "center", p: 6 }}>
+                    <Restaurant
+                      sx={{
+                        fontSize: "4rem",
+                        color: theme.palette.text.disabled,
+                        mb: 2,
+                      }}
+                    />
+                    <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
+                      {searchTerm || selectedFilter !== "all" ? "Aucune recette trouvée" : "Aucune recette disponible"}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {searchTerm
+                        ? `Essayez de modifier votre recherche "${searchTerm}"`
+                        : "Commencez par ajouter des recettes à votre collection"}
+                    </Typography>
+                  </Box>
+                </Fade>
+              )}
+            </List>
+          )}
         </Box>
       </DialogContent>
-      <DialogActions sx={{ p: '12px 24px' }}>
-        <Button onClick={onClose} variant="text" color="inherit">Annuler</Button>
+
+      <DialogActions
+        sx={{
+          p: 3,
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+        }}
+      >
+        <Button
+          onClick={onClose}
+          variant="outlined"
+          sx={{
+            borderRadius: 3,
+            px: 3,
+            borderColor: alpha(theme.palette.primary.main, 0.3),
+            "&:hover": {
+              borderColor: theme.palette.primary.main,
+              backgroundColor: alpha(theme.palette.primary.main, 0.05),
+            },
+          }}
+        >
+          Annuler
+        </Button>
       </DialogActions>
     </Dialog>
-  );
+  )
 }
 
-export default RecipeSelectionModal;
-
+export default RecipeSelectionModal

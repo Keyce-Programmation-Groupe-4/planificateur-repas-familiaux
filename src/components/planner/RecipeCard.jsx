@@ -8,23 +8,26 @@ import {
   useTheme,
   Skeleton,
   alpha,
-  Tooltip
+  Tooltip,
+  Fade
 } from '@mui/material';
-import { Close, Restaurant } from '@mui/icons-material';
+import { 
+  Close, 
+  Restaurant,
+  Star,
+  AccessTime
+} from '@mui/icons-material';
 
 function RecipeCard({ 
     recipeData, 
-    variant = 'compact', // 'compact' (in slot), 'list' (in modal)
+    variant = 'compact',
     onDeleteClick, 
     onClick, 
     sx = {}, 
 }) {
   const theme = useTheme();
-
-  // State to handle image loading errors
   const [imgError, setImgError] = React.useState(false);
 
-  // Reset error state when recipeData changes
   React.useEffect(() => {
     setImgError(false);
   }, [recipeData?.photoURL]);
@@ -34,155 +37,199 @@ function RecipeCard({
   };
 
   if (!recipeData) {
-    // Skeleton based on variant
     const isCompact = variant === 'compact';
-    const avatarSize = isCompact ? 32 : 56;
+    const avatarSize = isCompact ? 40 : 64;
+    
     return (
       <Card 
         variant="outlined" 
         sx={{ 
           display: 'flex', 
           alignItems: 'center', 
-          p: isCompact ? 0.5 : 1.5, 
-          borderRadius: '12px', 
+          p: isCompact ? 1.5 : 2, 
+          borderRadius: 4, 
           width: '100%',
-          border: `1px solid ${theme.palette.divider}`,
+          border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
           ...sx 
         }}
       >
-        <Skeleton variant="circular" width={avatarSize} height={avatarSize} sx={{ mr: 1.5 }} />
-        <Skeleton variant="text" width="70%" height={20} />
+        <Skeleton 
+          variant="circular" 
+          width={avatarSize} 
+          height={avatarSize} 
+          sx={{ mr: 2 }} 
+        />
+        <Box sx={{ flexGrow: 1 }}>
+          <Skeleton variant="text" width="80%" height={24} sx={{ mb: 0.5 }} />
+          {!isCompact && (
+            <Skeleton variant="text" width="60%" height={16} />
+          )}
+        </Box>
       </Card>
     );
   }
 
-  const { name, photoURL } = recipeData;
+  const { name, photoURL, cookingTime, difficulty } = recipeData;
   const isCompact = variant === 'compact';
-  const avatarSize = isCompact ? 32 : 56;
-  const typographyVariant = isCompact ? 'body2' : 'titleMedium'; // Use M3 scale
-
-  // Determine if we should show the image or the fallback icon
+  const avatarSize = isCompact ? 40 : 64;
   const showImage = photoURL && !imgError;
 
   return (
     <Card
-      onClick={onClick} // Handles click for selection in modal
-      aria-label={variant === 'list' ? `Sélectionner la recette ${name}` : `Recette ${name}`}
+      onClick={onClick}
       role={variant === 'list' ? 'button' : undefined}
-      tabIndex={variant === 'list' ? 0 : undefined} // Make selectable cards focusable
+      tabIndex={variant === 'list' ? 0 : undefined}
       sx={{
         display: 'flex',
         alignItems: 'center',
-        p: isCompact ? 0.5 : 1.5, 
-        pr: isCompact ? 3 : 1.5, // Ensure space for delete button in compact mode
-        borderRadius: '12px',
+        p: isCompact ? 1.5 : 2,
+        pr: isCompact ? 4 : 2,
+        borderRadius: 4,
         width: '100%',
         position: 'relative',
         overflow: 'visible',
-        backgroundColor: theme.palette.background.paper,
-        variant: 'outlined',
-        border: `1px solid ${theme.palette.divider}`,
-        transition: 'box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out',
+        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+        border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         cursor: onClick ? 'pointer' : 'default',
         '&:hover': {
-          boxShadow: onClick ? theme.shadows[3] : 'none',
-          backgroundColor: onClick ? theme.palette.action.hover : theme.palette.background.paper,
-          borderColor: onClick ? theme.palette.primary.light : theme.palette.divider,
-          // Show delete button on hover for compact variant
-          ...(isCompact && onDeleteClick && { '& .delete-button': { opacity: 1, transform: 'scale(1)' } }),
+          ...(onClick && {
+            boxShadow: `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
+            backgroundColor: alpha(theme.palette.primary.main, 0.02),
+            borderColor: alpha(theme.palette.primary.main, 0.3),
+            transform: 'translateY(-2px)'
+          }),
+          ...(isCompact && onDeleteClick && { 
+            '& .delete-button': { 
+              opacity: 1, 
+              transform: 'scale(1)' 
+            } 
+          }),
         },
-        // Focus styles for selectable cards
         ...(variant === 'list' && {
-            '&:focus-visible': {
-                outline: `2px solid ${theme.palette.primary.main}`,
-                outlineOffset: '2px',
-                boxShadow: theme.shadows[3],
-                borderColor: theme.palette.primary.main,
-            }
+          '&:focus-visible': {
+            outline: `2px solid ${theme.palette.primary.main}`,
+            outlineOffset: '2px',
+            boxShadow: `0 0 0 4px ${alpha(theme.palette.primary.main, 0.2)}`,
+            borderColor: theme.palette.primary.main,
+          }
         }),
         ...sx,
       }}
     >
-      {/* Avatar/Image */} 
+      {/* Recipe Image/Avatar */}
       {showImage ? (
         <Avatar
           src={photoURL}
-          alt="" // Alt text is handled by the main card label
-          aria-hidden="true" // Decorative image
-          sx={{ width: avatarSize, height: avatarSize, mr: 1.5 }}
-          onError={handleImageError} // Handle image load error
+          alt=""
+          sx={{ 
+            width: avatarSize, 
+            height: avatarSize, 
+            mr: 2,
+            boxShadow: `0 4px 12px ${alpha(theme.palette.grey[500], 0.2)}`,
+            border: `2px solid ${alpha(theme.palette.primary.main, 0.1)}`
+          }}
+          onError={handleImageError}
         />
       ) : (
-        // Fallback Icon Avatar
         <Avatar 
-            aria-hidden="true"
-            sx={{ 
-                width: avatarSize, 
-                height: avatarSize, 
-                mr: 1.5, 
-                bgcolor: alpha(theme.palette.secondary.main, 0.1), // Use theme color
-                color: theme.palette.secondary.main 
-            }}
+          sx={{ 
+            width: avatarSize, 
+            height: avatarSize, 
+            mr: 2,
+            background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.1)} 0%, ${alpha(theme.palette.primary.main, 0.1)} 100%)`,
+            color: theme.palette.primary.main,
+            boxShadow: `0 4px 12px ${alpha(theme.palette.grey[500], 0.1)}`
+          }}
         >
           <Restaurant />
         </Avatar>
       )}
 
-      {/* Recipe Name */} 
+      {/* Recipe Info */}
       <Box sx={{ flexGrow: 1, overflow: 'hidden', mr: 1 }}>
         <Typography 
-            variant={typographyVariant} 
-            noWrap 
-            title={name} 
-            sx={{ fontWeight: isCompact ? 400 : 500 }}
-            id={`recipe-card-name-${recipeData.id}`} // ID for aria-labelledby
+          variant={isCompact ? 'body1' : 'h6'} 
+          noWrap 
+          title={name}
+          sx={{ 
+            fontWeight: isCompact ? 500 : 600,
+            mb: isCompact ? 0 : 0.5,
+            color: theme.palette.text.primary
+          }}
+          id={`recipe-card-name-${recipeData.id}`}
         >
           {name}
         </Typography>
+        
+        {!isCompact && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mt: 0.5 }}>
+            {cookingTime && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <AccessTime sx={{ fontSize: '0.9rem', color: theme.palette.text.secondary }} />
+                <Typography variant="caption" color="text.secondary">
+                  {cookingTime} min
+                </Typography>
+              </Box>
+            )}
+            {difficulty && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <Star sx={{ fontSize: '0.9rem', color: theme.palette.warning.main }} />
+                <Typography variant="caption" color="text.secondary">
+                  {difficulty}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
       </Box>
 
-      {/* Delete Button (Compact Variant Only) */} 
+      {/* Delete Button (Compact Only) */}
       {isCompact && onDeleteClick && (
-        <Tooltip title="Supprimer cette recette du planning">
+        <Fade in>
+          <Tooltip title="Supprimer cette recette" arrow>
             <IconButton
-                aria-label={`Supprimer la recette ${name}`}
-                aria-controls={`recipe-card-name-${recipeData.id}`} // Associates button with the recipe name
-                size="small"
-                onClick={(e) => { 
-                    e.stopPropagation(); // Prevent card click/drag
-                    onDeleteClick(); 
-                }}
-                className="delete-button"
-                sx={{
-                    position: 'absolute',
-                    top: -6, 
-                    right: -6,
-                    opacity: 0,
-                    transform: 'scale(0.8)',
-                    transition: 'opacity 0.2s ease-in-out, transform 0.2s ease-in-out',
-                    backgroundColor: theme.palette.background.paper,
-                    border: `1px solid ${theme.palette.divider}`,
-                    boxShadow: theme.shadows[1],
-                    color: theme.palette.error.main,
-                    '&:hover': {
-                        backgroundColor: alpha(theme.palette.error.main, 0.1),
-                        transform: 'scale(1.05)',
-                    },
-                    '&:focus-visible': { // Ensure focus is visible
-                        opacity: 1,
-                        transform: 'scale(1)',
-                        boxShadow: `0 0 0 2px ${alpha(theme.palette.error.main, 0.5)}`,
-                    },
-                    zIndex: 2 
-                }}
+              size="small"
+              onClick={(e) => { 
+                e.stopPropagation();
+                onDeleteClick(); 
+              }}
+              className="delete-button"
+              sx={{
+                position: 'absolute',
+                top: -8, 
+                right: -8,
+                opacity: 0,
+                transform: 'scale(0.8)',
+                transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                backgroundColor: theme.palette.background.paper,
+                border: `2px solid ${theme.palette.error.main}`,
+                boxShadow: `0 4px 15px ${alpha(theme.palette.error.main, 0.3)}`,
+                color: theme.palette.error.main,
+                width: 32,
+                height: 32,
+                '&:hover': {
+                  backgroundColor: theme.palette.error.main,
+                  color: theme.palette.error.contrastText,
+                  transform: 'scale(1.1)',
+                  boxShadow: `0 6px 20px ${alpha(theme.palette.error.main, 0.4)}`
+                },
+                '&:focus-visible': {
+                  opacity: 1,
+                  transform: 'scale(1)',
+                  boxShadow: `0 0 0 3px ${alpha(theme.palette.error.main, 0.3)}`,
+                },
+                zIndex: 3
+              }}
             >
-                <Close fontSize="inherit" />
+              <Close fontSize="small" />
             </IconButton>
-        </Tooltip>
+          </Tooltip>
+        </Fade>
       )}
     </Card>
   );
 }
 
 export default RecipeCard;
-
