@@ -317,7 +317,7 @@ function LandingPage() {
             <Button
               variant="contained"
               size="large"
-              startIcon={<StarsIconIcon />}
+              startIcon={<StarsIcon />}
               onClick={() => navigate("/signup")}
               sx={{
                 py: 2,
