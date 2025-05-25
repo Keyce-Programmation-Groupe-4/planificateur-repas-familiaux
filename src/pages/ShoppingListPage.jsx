@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import {
   Container,
@@ -29,7 +30,8 @@ import {
   DeleteSweep,
   Add as AddIcon,
   Print,
-  Share
+  Share,
+  PictureAsPdf // Icône pour l'export PDF
 } from '@mui/icons-material';
 
 // --- Firebase Imports --- 
@@ -50,11 +52,18 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 
 // --- Component Imports --- 
-import ShoppingListCategory from '../components/shoppingList/ShoppingListCategory';
-import PriceInputDialog from '../components/shoppingList/PriceInputDialog';
+import ShoppingListCategory from '../components/ShoppingList/ShoppingListCategory';
+import PriceInputDialog from '../components/ShoppingList/PriceInputDialog';
 
 // --- Utility Import --- 
-import { convertToStandardUnit, formatQuantityUnit } from '../utils/unitConverter'; // Import the converter
+import { convertToStandardUnit, formatQuantityUnit } from '../utils/unitConverter';
+
+// --- PDFMake Import --- 
+import pdfMake from 'pdfmake/build/pdfmake';
+import pdfFonts from 'pdfmake/build/vfs_fonts';
+
+pdfMake.vfs = pdfFonts.vfs;
+
 
 // --- Helper Functions --- 
 const getStartOfWeek = (date) => {
@@ -75,11 +84,12 @@ const getWeekId = (date) => {
 };
 
 const formatCurrency = (value) => {
-  if (typeof value !== 'number') {
-    return '';
+  if (typeof value !== "number") {
+    return ""
   }
-  return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
-};
+  // Modification ici : 'EUR' remplacé par 'XAF'
+  return value.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })
+}
 // --- End Helper Functions ---
 
 function ShoppingListPage() {
@@ -100,7 +110,7 @@ function ShoppingListPage() {
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [priceDialogData, setPriceDialogData] = useState({ ingredientId: null, ingredientName: '', unit: '' });
 
-  // --- Data Fetching and Aggregation Logic (Revised for Aggregation & Cost) --- 
+  // --- Data Fetching and Aggregation Logic --- 
   const generateShoppingList = useCallback(async () => {
     if (!familyId) {
       if (!authLoading) setIsLoading(false);
@@ -161,7 +171,7 @@ function ShoppingListPage() {
         return;
       }
 
-      // 5. Fetch Unique Ingredient Details (with new 'units' structure)
+      // 5. Fetch Unique Ingredient Details
       const uniqueIngredientIds = new Set(rawIngredientItems.map(item => item.ingredientId));
       const ingredientPromises = Array.from(uniqueIngredientIds).map(id => getDoc(doc(db, 'ingredients', id)));
       const ingredientDocs = await Promise.all(ingredientPromises);
@@ -178,34 +188,30 @@ function ShoppingListPage() {
         const details = ingredientDetailsMap[item.ingredientId];
         if (!details || !details.units) {
           console.warn(`Details/units missing for ingredient ${item.ingredientId}`);
-          return; // Skip if ingredient details or units object is missing
+          return;
         }
 
         const ingredientId = item.ingredientId;
         const quantity = item.quantity;
         const unit = item.unit;
 
-        // *** MODIFIED: Convert to standard unit BEFORE aggregation ***
         const conversionResult = convertToStandardUnit(quantity, unit, details.units);
 
         if (!conversionResult) {
-          // Handle non-convertible units (e.g., 'piece') - aggregate by original unit
           if (!aggregatedList[ingredientId]) {
             aggregatedList[ingredientId] = {
               ingredientId: ingredientId,
               name: details.name || 'Inconnu',
               category: details.category || 'Autres',
               unitsData: details.units,
-              aggregatedQuantities: {} // Key: original unit
+              aggregatedQuantities: {}
             };
           }
           if (!aggregatedList[ingredientId].aggregatedQuantities[unit]) {
             aggregatedList[ingredientId].aggregatedQuantities[unit] = { totalQuantity: 0, cost: null, needsPriceInput: false, priceSource: null };
           }
           aggregatedList[ingredientId].aggregatedQuantities[unit].totalQuantity += quantity;
-          console.log(`Aggregated non-standard unit ${unit} for ${ingredientId}`);
         } else {
-          // Handle convertible units - aggregate by standard unit
           const { standardQuantity, standardUnit } = conversionResult;
           if (!aggregatedList[ingredientId]) {
             aggregatedList[ingredientId] = {
@@ -213,14 +219,13 @@ function ShoppingListPage() {
               name: details.name || 'Inconnu',
               category: details.category || 'Autres',
               unitsData: details.units,
-              aggregatedQuantities: {} // Key: standard unit
+              aggregatedQuantities: {}
             };
           }
           if (!aggregatedList[ingredientId].aggregatedQuantities[standardUnit]) {
             aggregatedList[ingredientId].aggregatedQuantities[standardUnit] = { totalQuantity: 0, cost: null, needsPriceInput: false, priceSource: null };
           }
           aggregatedList[ingredientId].aggregatedQuantities[standardUnit].totalQuantity += standardQuantity;
-          console.log(`Converted ${quantity} ${unit} to ${standardQuantity} ${standardUnit} and aggregated for ${ingredientId}`);
         }
       });
 
@@ -238,8 +243,6 @@ function ShoppingListPage() {
             source = unitData.priceSource || 'unknown';
             needsInput = false;
           } else {
-            // If it's not the standard unit, we might still need input even if convertible
-            // Check if the *standard* unit has a price
             let standardUnitKey = null;
             let standardUnitData = null;
             for (const key in aggItem.unitsData) {
@@ -249,22 +252,17 @@ function ShoppingListPage() {
                 break;
               }
             }
-            // If this *is* the standard unit and price is missing
             if (unitKey === standardUnitKey && price === null) {
                 needsInput = true;
             } 
-            // If this is *not* the standard unit, and the standard unit has no price, we need input for *this* unit
             else if (unitKey !== standardUnitKey && (!standardUnitData || typeof standardUnitData.standardPrice !== 'number')) {
                 needsInput = true;
             } 
-            // If this is *not* the standard unit, but the standard unit *has* a price, calculate
             else if (unitKey !== standardUnitKey && standardUnitData && typeof standardUnitData.standardPrice === 'number' && unitData && typeof unitData.conversionFactor === 'number') {
-                // Price here is price *per this unit*, calculated from standard
                 price = standardUnitData.standardPrice / unitData.conversionFactor;
                 source = 'calculated';
                 needsInput = false;
             } else {
-                // Default case: need input
                 needsInput = true;
             }
           }
@@ -275,7 +273,7 @@ function ShoppingListPage() {
             q.needsPriceInput = false;
           } else {
             q.cost = null;
-            q.needsPriceInput = needsInput; // Use calculated needsInput flag
+            q.needsPriceInput = needsInput;
             q.priceSource = null;
           }
         });
@@ -288,7 +286,6 @@ function ShoppingListPage() {
         if (!finalGroupedList[category]) {
           finalGroupedList[category] = [];
         }
-        // Create one item per aggregated unit (standard or non-convertible)
         Object.keys(aggItem.aggregatedQuantities).forEach(unitKey => {
           const q = aggItem.aggregatedQuantities[unitKey];
           finalGroupedList[category].push({
@@ -312,7 +309,7 @@ function ShoppingListPage() {
       });
 
       setShoppingListData(sortedFinalList);
-      console.log("Shopping list with corrected aggregation and costs generated:", sortedFinalList);
+      console.log("Shopping list generated:", sortedFinalList);
 
     } catch (err) {
       console.error("Error generating shopping list: ", err);
@@ -396,7 +393,7 @@ function ShoppingListPage() {
       });
       console.log("Price updated successfully in Firestore.");
       handleClosePriceDialog();
-      generateShoppingList();
+      generateShoppingList(); // Re-generate list to reflect new price/cost
     } catch (error) {
       console.error("Error updating price in Firestore: ", error);
       alert("Erreur lors de la sauvegarde du prix.");
@@ -408,6 +405,7 @@ function ShoppingListPage() {
     let total = 0;
     Object.values(shoppingListData).forEach(categoryItems => {
       categoryItems.forEach(item => {
+        // Coût total estimé basé sur les items NON cochés
         if (!item.checked && typeof item.cost === 'number') {
           total += item.cost;
         }
@@ -416,7 +414,97 @@ function ShoppingListPage() {
     return total;
   }, [shoppingListData]);
 
-  // Placeholder actions
+  // --- Export PDF Handler --- 
+  const handleExportPdf = () => {
+    handleMenuClose();
+    console.log("Exporting PDF with data:", shoppingListData);
+
+    if (!shoppingListData || Object.keys(shoppingListData).length === 0) {
+      alert("La liste de courses est vide, impossible d'exporter.");
+      return;
+    }
+
+    const content = [];
+
+    // Titre et date
+    content.push({ text: 'Liste de Courses', style: 'header', alignment: 'center' });
+    content.push({ text: `Semaine du ${targetWeekStart.toLocaleDateString('fr-FR')}`, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 20] });
+
+    // Items par catégorie
+    Object.entries(shoppingListData).forEach(([category, items]) => {
+      content.push({ text: category, style: 'categoryHeader', margin: [0, 10, 0, 5] });
+      
+      const categoryItemsContent = items.map(item => {
+        const quantityText = formatQuantityUnit(item.quantity, item.unit);
+        const costText = item.cost !== null ? formatCurrency(item.cost) : (item.needsPriceInput ? '(Prix manquant)' : '');
+        const itemStyle = item.checked ? { decoration: 'lineThrough', color: 'grey' } : {};
+        
+        return [
+          { text: item.name, style: ['itemText', itemStyle] },
+          { text: quantityText, style: ['itemText', itemStyle], alignment: 'right' },
+          { text: costText, style: ['itemText', itemStyle], alignment: 'right' }
+        ];
+      });
+
+      content.push({
+        layout: 'lightHorizontalLines', // optional
+        table: {
+          headerRows: 0,
+          widths: ['*', 'auto', 'auto'], // Nom prend l'espace, Quantité et Coût s'adaptent
+          body: categoryItemsContent
+        },
+        margin: [0, 0, 0, 15] // Marge après chaque table de catégorie
+      });
+    });
+
+    // Coût total estimé (des items non cochés)
+    content.push({ text: `Total estimé (non cochés): ${formatCurrency(totalCost)}`, style: 'totalCost', alignment: 'right', margin: [0, 20, 0, 0] });
+
+    const docDefinition = {
+      content: content,
+      styles: {
+        header: {
+          fontSize: 18,
+          bold: true,
+          margin: [0, 0, 0, 5]
+        },
+        subheader: {
+          fontSize: 14,
+          color: 'gray',
+          italics: true
+        },
+        categoryHeader: {
+          fontSize: 14,
+          bold: true,
+          color: theme.palette.primary.main, // Utilise la couleur primaire du thème MUI
+          margin: [0, 10, 0, 5]
+        },
+        itemText: {
+          fontSize: 10,
+          margin: [0, 2, 0, 2] // Ajoute un peu d'espace vertical entre les items
+        },
+        totalCost: {
+            fontSize: 12,
+            bold: true,
+            margin: [0, 10, 0, 0]
+        }
+      },
+      defaultStyle: {
+        // font: 'Roboto' // Si vous avez chargé une police spécifique
+      }
+    };
+
+    try {
+      const pdfFileName = `liste_courses_${targetWeekId}.pdf`;
+      pdfMake.createPdf(docDefinition).download(pdfFileName);
+      console.log(`PDF "${pdfFileName}" generated and download initiated.`);
+    } catch (error) {
+        console.error("Error generating PDF: ", error);
+        alert("Une erreur est survenue lors de la génération du PDF.");
+    }
+  };
+
+  // Placeholder actions (Keep for now)
   const handlePrint = () => { handleMenuClose(); alert('Imprimer - Non implémenté'); };
   const handleShare = () => { handleMenuClose(); alert('Partager - Non implémenté'); };
 
@@ -465,9 +553,17 @@ function ShoppingListPage() {
             </IconButton>
           </Tooltip>
           <Menu id="options-menu" anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-            <MenuItem onClick={handleUncheckAll}><ListItemIcon><PlaylistAddCheck fontSize="small" /></ListItemIcon><ListItemText>Décocher tout</ListItemText></MenuItem>
-            <MenuItem onClick={handleClearChecked}><ListItemIcon><DeleteSweep fontSize="small" /></ListItemIcon><ListItemText>Supprimer les cochés</ListItemText></MenuItem>
+            {/* --- Option Export PDF --- */}
+            <MenuItem onClick={handleExportPdf} disabled={isLoading || !hasItems}>
+              <ListItemIcon><PictureAsPdf fontSize="small" /></ListItemIcon>
+              <ListItemText>Exporter en PDF</ListItemText>
+            </MenuItem>
             <Divider />
+            {/* --- Options existantes --- */}
+            <MenuItem onClick={handleUncheckAll} disabled={isLoading || !hasItems}><ListItemIcon><PlaylistAddCheck fontSize="small" /></ListItemIcon><ListItemText>Décocher tout</ListItemText></MenuItem>
+            <MenuItem onClick={handleClearChecked} disabled={isLoading || !hasItems}><ListItemIcon><DeleteSweep fontSize="small" /></ListItemIcon><ListItemText>Supprimer les cochés</ListItemText></MenuItem>
+            <Divider />
+            {/* --- Placeholders conservés --- */}
             <MenuItem onClick={handlePrint} disabled><ListItemIcon><Print fontSize="small" /></ListItemIcon><ListItemText>Imprimer</ListItemText></MenuItem>
             <MenuItem onClick={handleShare} disabled><ListItemIcon><Share fontSize="small" /></ListItemIcon><ListItemText>Partager</ListItemText></MenuItem>
           </Menu>
@@ -493,7 +589,7 @@ function ShoppingListPage() {
                 category={category}
                 items={items}
                 onToggleCheck={handleToggleCheck}
-                onOpenPriceDialog={handleOpenPriceDialog} // Pass the handler
+                onOpenPriceDialog={handleOpenPriceDialog}
               />
             ))}
           </List>
@@ -510,12 +606,6 @@ function ShoppingListPage() {
         unit={priceDialogData.unit}
       />
 
-      {/* Optional FAB for adding custom items - Future enhancement */}
-      {/* 
-      <Fab color="primary" aria-label="add" sx={{ position: 'fixed', bottom: 16, right: 16 }}>
-        <AddIcon />
-      </Fab> 
-      */}
     </Box>
   );
 }

@@ -270,7 +270,7 @@ function AddNewUnitDialog({ open, onClose, onSave, ingredientName, existingUnits
               <TextField
                 fullWidth
                 id="unitPrice"
-                label={`Prix optionnel (€ / ${newUnitName || "unité"})`}
+                label={`Prix optionnel (FCFA / ${newUnitName || "unité"})`}
                 placeholder="Laissez vide si inconnu"
                 type="number"
                 variant="outlined"
