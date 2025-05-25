@@ -150,7 +150,7 @@ function AddNewUnitDialog({
         <TextField
           margin="dense"
           id="unitPrice"
-          label={`Prix Optionnel (€ / ${newUnitName || 'unité'})`}
+          label={`Prix Optionnel (FcFA / ${newUnitName || 'unité'})`}
           type="number"
           fullWidth
           variant="outlined"

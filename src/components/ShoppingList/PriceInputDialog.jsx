@@ -57,7 +57,7 @@ function PriceInputDialog({ open, onClose, ingredientName, unit, onSave }) {
           autoFocus
           margin="dense"
           id="price"
-          label={`Prix (€ / ${unit})`}
+          label={`Prix (FcFA / ${unit})`}
           type="text" // Use text to allow decimal point during input
           inputMode="decimal" // Hint for mobile keyboards
           fullWidth
