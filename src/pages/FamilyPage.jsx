@@ -40,9 +40,9 @@ import {
   Add as AddIcon,
   Check as CheckIcon,
   Clear as ClearIcon,
-  Family as FamilyIcon,
   Send as SendIcon,
 } from "@mui/icons-material"
+import { default as FamilyIcon } from '@mui/icons-material/Groups'
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
 import {
