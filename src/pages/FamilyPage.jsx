@@ -56,6 +56,7 @@ import {
   addDoc,
   serverTimestamp,
   updateDoc,
+  arrayUnion, // Importer arrayUnion
 } from "firebase/firestore"
 
 export default function FamilyPage() {
@@ -291,6 +292,15 @@ export default function FamilyPage() {
         familyRole: "Member",
         updatedAt: serverTimestamp(),
       })
+
+      // --- Ajout de la mise à jour du tableau memberUids de la famille ---
+      const familyDocRef = doc(db, "families", invitation.familyId)
+      batch.update(familyDocRef, {
+        memberUids: arrayUnion(currentUser.uid),
+        // Optionnel: mettre à jour aussi un champ updatedAt pour la famille
+        // updatedAt: serverTimestamp(),
+      })
+      // --- Fin de l'ajout ---
 
       await batch.commit()
 
