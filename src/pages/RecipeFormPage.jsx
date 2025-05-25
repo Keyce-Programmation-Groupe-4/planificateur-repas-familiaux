@@ -1,4 +1,5 @@
 // src/pages/RecipeFormPage.jsx
+// --- IMPORTS --- 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
@@ -23,12 +24,22 @@ import {
   DialogContent,
   DialogTitle,
   Fab,
-  Tooltip
+  Tooltip,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Checkbox,
+  FormControlLabel,
+  Link, // Use Link for adding new unit
+  Divider, // Added for visual separation
+  Stack // Added for layout
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import PhotoCamera from '@mui/icons-material/PhotoCamera';
+import AddCircleOutlineIcon from '@mui/icons-material/AddCircleOutline'; // Icon for adding unit
 import { useAuth } from '../contexts/AuthContext';
 import { db, storage } from '../firebaseConfig';
 import {
@@ -44,18 +55,19 @@ import {
 } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 
-// Default units - could be fetched or configured elsewhere
-const commonUnits = ['g', 'kg', 'ml', 'L', 'c. à soupe', 'c. à café', 'pincée', 'pièce(s)', 'tranche(s)', 'verre(s)'];
+// Import the new dialogs
+import AddNewUnitDialog from '../components/ShoppingList/AddNewUnitDialog'; // Corrected path if needed
+
 const ingredientCategories = ['Fruits', 'Légumes', 'Viandes', 'Poissons', 'Produits laitiers', 'Épicerie Salée', 'Épicerie Sucrée', 'Boulangerie', 'Boissons', 'Surgelés', 'Autre'];
 
 export default function RecipeFormPage() {
-  const { recipeId } = useParams(); // Will be undefined for '/new'
+  const { recipeId } = useParams();
   const navigate = useNavigate();
   const { currentUser, userData } = useAuth();
 
   const isEditMode = Boolean(recipeId);
 
-  // Form State
+  // --- Form State --- 
   const [recipeName, setRecipeName] = useState('');
   const [description, setDescription] = useState('');
   const [prepTime, setPrepTime] = useState('');
@@ -63,49 +75,58 @@ export default function RecipeFormPage() {
   const [servings, setServings] = useState('');
   const [tags, setTags] = useState([]);
   const [instructions, setInstructions] = useState('');
-  const [ingredientsList, setIngredientsList] = useState([]); // [{ ingredientId, ingredientName, quantity, unit }, ...]
+  const [ingredientsList, setIngredientsList] = useState([]);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
   const [existingPhotoUrl, setExistingPhotoUrl] = useState(null);
 
-  // Ingredient Management State
-  const [allIngredients, setAllIngredients] = useState([]); // For Autocomplete [{ id, name, ... }, ...]
-  const [selectedIngredient, setSelectedIngredient] = useState(null); // From Autocomplete
+  // --- Ingredient Management State --- 
+  const [allIngredients, setAllIngredients] = useState([]);
+  const [selectedIngredient, setSelectedIngredient] = useState(null);
   const [ingredientQuantity, setIngredientQuantity] = useState('');
-  const [ingredientUnit, setIngredientUnit] = useState(commonUnits[0]); // Default unit
+  const [ingredientUnit, setIngredientUnit] = useState('');
+  const [availableUnits, setAvailableUnits] = useState([]);
   const [loadingIngredients, setLoadingIngredients] = useState(false);
 
-  // New Ingredient Dialog State
+  // --- New Ingredient Dialog State --- 
   const [newIngredientDialogOpen, setNewIngredientDialogOpen] = useState(false);
   const [newIngredientName, setNewIngredientName] = useState('');
-  const [newIngredientUnit, setNewIngredientUnit] = useState(commonUnits[0]);
   const [newIngredientCategory, setNewIngredientCategory] = useState(ingredientCategories[0]);
+  const [newIngredientFirstUnit, setNewIngredientFirstUnit] = useState('');
+  const [newIngredientIsStandard, setNewIngredientIsStandard] = useState(true);
+  const [newIngredientPrice, setNewIngredientPrice] = useState('');
   const [savingNewIngredient, setSavingNewIngredient] = useState(false);
 
-  // General State
-  const [loading, setLoading] = useState(isEditMode); // Load existing data if editing
+  // --- Add New Unit Dialog State --- 
+  const [addNewUnitDialogOpen, setAddNewUnitDialogOpen] = useState(false);
+  const [savingNewUnit, setSavingNewUnit] = useState(false);
+  // No need for specific data state, selectedIngredient holds the target
+
+  // --- General State --- 
+  const [loading, setLoading] = useState(isEditMode);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(''); // General error for dialogs
+  const [formError, setFormError] = useState(''); // Specific error for the main form
   const [uploadProgress, setUploadProgress] = useState(0);
 
-  // --- Fetch existing ingredients for Autocomplete --- 
+  // --- Fetch existing ingredients --- 
   const fetchAllIngredients = useCallback(async () => {
     setLoadingIngredients(true);
     try {
       const ingredientsRef = collection(db, 'ingredients');
-      const q = query(ingredientsRef); // Could add orderBy('name') later
+      const q = query(ingredientsRef); // Could add orderBy('name')
       const querySnapshot = await getDocs(q);
       const fetchedIngredients = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setAllIngredients(fetchedIngredients);
+      setAllIngredients(fetchedIngredients.sort((a, b) => a.name.localeCompare(b.name))); // Sort fetched ingredients
     } catch (err) {
       console.error("Error fetching all ingredients:", err);
-      setError('Erreur lors du chargement des ingrédients existants.');
+      setFormError('Erreur lors du chargement des ingrédients existants.');
     } finally {
       setLoadingIngredients(false);
     }
   }, []);
 
-  // --- Fetch existing recipe data if in Edit Mode --- 
+  // --- Fetch existing recipe data --- 
   useEffect(() => {
     const fetchRecipeData = async () => {
       if (!isEditMode || !userData?.familyId) {
@@ -113,7 +134,7 @@ export default function RecipeFormPage() {
         return;
       }
       setLoading(true);
-      setError('');
+      setFormError('');
       try {
         const recipeDocRef = doc(db, 'recipes', recipeId);
         const docSnap = await getDoc(recipeDocRef);
@@ -130,12 +151,12 @@ export default function RecipeFormPage() {
           setExistingPhotoUrl(data.photoUrl || null);
           setPhotoPreview(data.photoUrl || null);
         } else {
-          setError('Recette non trouvée ou accès non autorisé.');
-          navigate('/recipes'); // Redirect if not found or not authorized
+          setFormError('Recette non trouvée ou accès non autorisé.');
+          navigate('/recipes');
         }
       } catch (err) {
         console.error("Error fetching recipe for edit:", err);
-        setError('Erreur lors du chargement de la recette.');
+        setFormError('Erreur lors du chargement de la recette.');
       } finally {
         setLoading(false);
       }
@@ -144,21 +165,44 @@ export default function RecipeFormPage() {
     if (isEditMode && userData) {
       fetchRecipeData();
     }
-    // Fetch all ingredients regardless of mode
     fetchAllIngredients();
 
   }, [isEditMode, recipeId, userData, navigate, fetchAllIngredients]);
 
-  // --- Ingredient List Management --- 
+  // --- Handle Ingredient Selection Change --- 
+  const handleSelectedIngredientChange = (event, newValue) => {
+    setSelectedIngredient(newValue);
+    setFormError(''); // Clear form error on change
+    if (newValue && newValue.units && typeof newValue.units === 'object') {
+      const units = Object.keys(newValue.units);
+      setAvailableUnits(units);
+      // Try to find the standard unit, otherwise default to the first available or empty
+      const standardUnit = units.find(u => newValue.units[u]?.isStandard) || units[0] || '';
+      setIngredientUnit(standardUnit);
+    } else {
+      setAvailableUnits([]);
+      setIngredientUnit('');
+    }
+  };
 
+  // --- Ingredient List Management --- 
   const handleAddIngredientToList = () => {
+    setFormError(''); // Clear previous errors
     if (!selectedIngredient || !ingredientQuantity || !ingredientUnit) {
-      setError('Veuillez sélectionner un ingrédient et spécifier une quantité et une unité.');
+      setFormError('Veuillez sélectionner un ingrédient, spécifier une quantité et une unité valide.');
       return;
     }
-    // Check if ingredient is already in the list
     if (ingredientsList.some(item => item.ingredientId === selectedIngredient.id)) {
-        setError('Cet ingrédient est déjà dans la liste.');
+        setFormError('Cet ingrédient est déjà dans la liste.');
+        return;
+    }
+    if (!availableUnits.includes(ingredientUnit)) {
+        setFormError(`L'unité '${ingredientUnit}' n'est pas définie pour '${selectedIngredient.name}'. Ajoutez-la si nécessaire.`);
+        return;
+    }
+    const quantityValue = parseFloat(ingredientQuantity);
+    if (isNaN(quantityValue) || quantityValue <= 0) {
+        setFormError('La quantité doit être un nombre positif.');
         return;
     }
 
@@ -166,16 +210,16 @@ export default function RecipeFormPage() {
       ...prevList,
       {
         ingredientId: selectedIngredient.id,
-        ingredientName: selectedIngredient.name, // Store name for display
-        quantity: parseFloat(ingredientQuantity), // Ensure number
+        ingredientName: selectedIngredient.name,
+        quantity: quantityValue,
         unit: ingredientUnit,
       },
     ]);
     // Reset fields
     setSelectedIngredient(null);
     setIngredientQuantity('');
-    setIngredientUnit(commonUnits[0]);
-    setError(''); // Clear error
+    setIngredientUnit('');
+    setAvailableUnits([]);
   };
 
   const handleRemoveIngredientFromList = (ingredientIdToRemove) => {
@@ -183,89 +227,155 @@ export default function RecipeFormPage() {
   };
 
   // --- New Ingredient Dialog --- 
-
   const handleOpenNewIngredientDialog = () => {
     setNewIngredientDialogOpen(true);
+    setNewIngredientName('');
+    setNewIngredientCategory(ingredientCategories[0]);
+    setNewIngredientFirstUnit('');
+    setNewIngredientIsStandard(true);
+    setNewIngredientPrice('');
+    setError(''); // Clear dialog-specific error
   };
 
   const handleCloseNewIngredientDialog = () => {
     setNewIngredientDialogOpen(false);
-    setNewIngredientName('');
-    setNewIngredientUnit(commonUnits[0]);
-    setNewIngredientCategory(ingredientCategories[0]);
-    setError(''); // Clear potential dialog errors
   };
 
   const handleSaveNewIngredient = async () => {
-    if (!newIngredientName.trim()) {
-      setError('Le nom du nouvel ingrédient est requis.');
+    setError(''); // Clear previous dialog errors
+    if (!newIngredientName.trim() || !newIngredientFirstUnit.trim()) {
+      setError('Le nom et la première unité sont requis.');
       return;
     }
+    const priceValue = newIngredientPrice ? parseFloat(newIngredientPrice) : null;
+    if (newIngredientPrice && (isNaN(priceValue) || priceValue < 0)) {
+        setError('Le prix doit être un nombre positif.');
+        return;
+    }
+
     setSavingNewIngredient(true);
-    setError('');
     try {
       const ingredientsRef = collection(db, 'ingredients');
+      // Ensure units is always an object, even if empty initially
+      const newUnitsObject = {
+        [newIngredientFirstUnit.trim()]: {
+          isStandard: newIngredientIsStandard,
+          ...(priceValue !== null && { standardPrice: priceValue, priceSource: 'user_input', lastPriceUpdate: serverTimestamp() })
+          // conversionFactor is implicitly 1 for the standard unit
+        }
+      };
       const newIngredientData = {
         name: newIngredientName.trim(),
-        standardUnit: newIngredientUnit,
         category: newIngredientCategory,
+        units: newUnitsObject,
+        familyId: userData?.familyId || null, // Ensure familyId is stored
         createdBy: currentUser.uid,
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       };
       const docRef = await addDoc(ingredientsRef, newIngredientData);
-      console.log("New ingredient added with ID: ", docRef.id);
-
-      // Add the new ingredient to the Autocomplete list and select it
       const newIngredientForList = { id: docRef.id, ...newIngredientData };
-      setAllIngredients(prev => [...prev, newIngredientForList]);
-      setSelectedIngredient(newIngredientForList); // Auto-select the newly added ingredient
-
+      // Update local state immediately
+      setAllIngredients(prev => [...prev, newIngredientForList].sort((a, b) => a.name.localeCompare(b.name)));
+      handleSelectedIngredientChange(null, newIngredientForList); // Auto-select
       handleCloseNewIngredientDialog();
     } catch (err) {
       console.error("Error saving new ingredient:", err);
-      setError('Erreur lors de l\enregistrement du nouvel ingrédient.');
+      setError('Erreur lors de la sauvegarde.');
     } finally {
       setSavingNewIngredient(false);
     }
   };
 
-  // --- Photo Handling --- 
+  // --- Add New Unit Dialog --- 
+  const handleOpenAddNewUnitDialog = () => {
+    if (!selectedIngredient) return; // Should not happen if button is disabled
+    setAddNewUnitDialogOpen(true);
+    setError(''); // Clear dialog-specific error
+  };
 
+  const handleCloseAddNewUnitDialog = () => {
+    setAddNewUnitDialogOpen(false);
+  };
+
+  // Function to save the new unit to the selected ingredient
+  const handleSaveNewUnit = async (newUnitName, newUnitData) => {
+    if (!selectedIngredient) return;
+    setError(''); // Clear previous dialog errors
+    setSavingNewUnit(true);
+    try {
+      const ingredientRef = doc(db, 'ingredients', selectedIngredient.id);
+      const updatePayload = {
+        // Use dot notation to update a specific field within the map
+        [`units.${newUnitName}`]: {
+          ...newUnitData,
+          // Add timestamp if price was included
+          ...(newUnitData.standardPrice !== undefined && { lastPriceUpdate: serverTimestamp() })
+        },
+        'updatedAt': serverTimestamp() // Update the main doc timestamp
+      };
+
+      await updateDoc(ingredientRef, updatePayload);
+      console.log(`Unit '${newUnitName}' added to ingredient ${selectedIngredient.id}`);
+
+      // --- Update local state --- 
+      // Create a deep copy to avoid mutation issues
+      const updatedIngredient = JSON.parse(JSON.stringify(selectedIngredient));
+      // Ensure units object exists
+      if (!updatedIngredient.units) {
+          updatedIngredient.units = {};
+      }
+      updatedIngredient.units[newUnitName] = newUnitData;
+
+      // Update the ingredient in the main list
+      setAllIngredients(prev => prev.map(ing => ing.id === selectedIngredient.id ? updatedIngredient : ing));
+      // Reselect the ingredient to update available units and potentially select the new unit
+      handleSelectedIngredientChange(null, updatedIngredient);
+      setIngredientUnit(newUnitName); // Select the newly added unit
+
+      handleCloseAddNewUnitDialog();
+    } catch (err) {
+      console.error("Error adding new unit:", err);
+      setError('Erreur lors de l\'ajout de l\'unité.'); // Show error in the dialog
+    } finally {
+      setSavingNewUnit(false);
+    }
+  };
+
+  // --- Photo Handling --- 
   const handlePhotoChange = (event) => {
     if (event.target.files && event.target.files[0]) {
       const file = event.target.files[0];
-      // Basic validation (optional)
+      // Basic validation
       if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('Le fichier image est trop volumineux (max 5MB).');
+        setFormError('Le fichier image est trop volumineux (max 5MB).');
         return;
       }
       if (!file.type.startsWith('image/')) {
-        setError('Veuillez sélectionner un fichier image.');
+        setFormError('Veuillez sélectionner un fichier image.');
         return;
       }
-
       setPhotoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result);
       };
       reader.readAsDataURL(file);
-      setError(''); // Clear previous errors
+      setFormError(''); // Clear error on valid selection
     }
   };
 
+  // Uploads photo and returns download URL
   const uploadPhoto = (targetRecipeId) => {
     return new Promise((resolve, reject) => {
       if (!photoFile) {
-        resolve(existingPhotoUrl); // No new photo, return existing URL or null
+        resolve(existingPhotoUrl); // Return existing URL if no new file
         return;
       }
       if (!userData?.familyId) {
-          reject(new Error("User family ID not found for storage path."));
-          return;
+        reject(new Error("User family ID not found."));
+        return;
       }
-
-      // Construct storage path
       const fileExtension = photoFile.name.split('.').pop();
       const storagePath = `recipes/${userData.familyId}/${targetRecipeId}/photo.${fileExtension}`;
       const storageRef = ref(storage, storagePath);
@@ -279,7 +389,7 @@ export default function RecipeFormPage() {
         },
         (error) => {
           console.error("Upload failed:", error);
-          setError('Erreur lors du téléversement de la photo.');
+          setFormError('Erreur lors de l\'upload de la photo.');
           reject(error);
         },
         () => {
@@ -294,20 +404,19 @@ export default function RecipeFormPage() {
   };
 
   // --- Form Submission --- 
-
   const handleSubmit = async (event) => {
     event.preventDefault();
+    setFormError(''); // Clear previous errors
     if (!recipeName.trim() || !instructions.trim() || ingredientsList.length === 0) {
-      setError('Le nom, les instructions et au moins un ingrédient sont requis.');
+      setFormError('Le nom, les instructions et au moins un ingrédient sont requis.');
       return;
     }
     if (!userData?.familyId) {
-        setError('Impossible de sauvegarder la recette sans identifiant de famille.');
+        setFormError('ID de famille manquant. Impossible de sauvegarder.');
         return;
     }
 
     setSaving(true);
-    setError('');
     setUploadProgress(0);
 
     const recipeData = {
@@ -318,9 +427,9 @@ export default function RecipeFormPage() {
       servings: parseInt(servings) || 0,
       tags: tags,
       instructions: instructions.trim(),
-      ingredientsList: ingredientsList,
+      ingredientsList: ingredientsList, // Array of { ingredientId, ingredientName, quantity, unit }
       familyId: userData.familyId,
-      // Timestamps and creator handled below
+      // photoUrl will be added after potential upload
     };
 
     try {
@@ -333,9 +442,19 @@ export default function RecipeFormPage() {
         recipeData.updatedAt = serverTimestamp();
         recipeData.updatedBy = currentUser.uid;
 
-        // Upload photo if a new one was selected
+        // Handle photo upload/update
         if (photoFile) {
-            finalPhotoUrl = await uploadPhoto(recipeId);
+          finalPhotoUrl = await uploadPhoto(recipeId);
+        } else if (!photoPreview && existingPhotoUrl) {
+          // If preview is cleared and there was an existing photo, delete it
+          try {
+            const photoRef = ref(storage, existingPhotoUrl);
+            await deleteObject(photoRef);
+            finalPhotoUrl = null;
+          } catch (deleteError) {
+            console.warn("Could not delete previous photo:", deleteError);
+            // Continue saving recipe data even if photo deletion fails
+          }
         }
         recipeData.photoUrl = finalPhotoUrl;
 
@@ -348,357 +467,350 @@ export default function RecipeFormPage() {
         recipeData.createdBy = currentUser.uid;
 
         const recipesRef = collection(db, 'recipes');
+        // Add recipe data first (without photoUrl)
         const docRef = await addDoc(recipesRef, recipeData);
         finalRecipeId = docRef.id;
         console.log("Recipe created with ID: ", finalRecipeId);
 
-        // Upload photo now that we have the ID
+        // Upload photo if present and update the doc with the URL
         if (photoFile) {
-            finalPhotoUrl = await uploadPhoto(finalRecipeId);
-            // Update the recipe doc with the photo URL
-            await updateDoc(doc(db, 'recipes', finalRecipeId), { photoUrl: finalPhotoUrl });
+          finalPhotoUrl = await uploadPhoto(finalRecipeId);
+          await updateDoc(doc(db, 'recipes', finalRecipeId), { photoUrl: finalPhotoUrl });
+          console.log("Photo URL added to new recipe");
         }
       }
 
-      // Navigate to the detail page after save/update
+      // Navigate to the recipe detail page after successful save
       navigate(`/recipes/${finalRecipeId}`);
 
     } catch (err) {
       console.error("Error saving recipe:", err);
-      setError('Erreur lors de l\enregistrement de la recette.');
-      setSaving(false); // Keep form active on error
+      setFormError('Une erreur est survenue lors de la sauvegarde de la recette.');
+      setSaving(false); // Ensure saving state is reset on error
     }
-    // No finally block for setSaving, as we navigate away on success
+    // No finally block for setSaving(false) because navigation happens on success
   };
 
   // --- Render --- 
-
   if (loading && isEditMode) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', mt: 5 }}><CircularProgress /></Box>;
   }
 
+  // --- Start of JSX --- 
   return (
-    <Container maxWidth="md">
-      <Paper sx={{ padding: { xs: 2, md: 4 }, marginTop: 4, marginBottom: 4 }}>
-        {/* Back Button */} 
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(isEditMode ? `/recipes/${recipeId}` : '/recipes')} sx={{ mb: 2 }}>
-          {isEditMode ? 'Retour au détail' : 'Retour à la liste'}
-        </Button>
+    <Container maxWidth="lg" sx={{ py: 4 }}>
+      <Paper elevation={3} sx={{ p: { xs: 2, md: 4 }, borderRadius: 4 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
+          <IconButton onClick={() => navigate(-1)} sx={{ mr: 1 }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h4" component="h1">
+            {isEditMode ? 'Modifier la Recette' : 'Ajouter une Recette'}
+          </Typography>
+        </Box>
 
-        <Typography variant="h4" component="h1" gutterBottom>
-          {isEditMode ? 'Modifier la Recette' : 'Ajouter une Recette'}
-        </Typography>
-
-        {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-
-        <Box component="form" onSubmit={handleSubmit} noValidate>
-          <Grid container spacing={3}>
-            {/* --- Basic Info --- */} 
-            <Grid item xs={12}>
-              <TextField
-                required
-                fullWidth
-                id="recipeName"
-                label="Nom de la recette"
-                name="recipeName"
-                value={recipeName}
-                onChange={(e) => setRecipeName(e.target.value)}
-                disabled={saving}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                id="description"
-                label="Description (courte)"
-                name="description"
-                multiline
-                rows={2}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                disabled={saving}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                id="prepTime"
-                label="Temps Prépa. (min)"
-                name="prepTime"
-                type="number"
-                value={prepTime}
-                onChange={(e) => setPrepTime(e.target.value)}
-                disabled={saving}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                id="cookTime"
-                label="Temps Cuisson (min)"
-                name="cookTime"
-                type="number"
-                value={cookTime}
-                onChange={(e) => setCookTime(e.target.value)}
-                disabled={saving}
-              />
-            </Grid>
-            <Grid item xs={12} sm={4}>
-              <TextField
-                fullWidth
-                id="servings"
-                label="Portions"
-                name="servings"
-                type="number"
-                value={servings}
-                onChange={(e) => setServings(e.target.value)}
-                disabled={saving}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <Autocomplete
-                multiple
-                id="tags-filled"
-                options={[]} // Provide suggestions later if needed
-                value={tags}
-                onChange={(event, newValue) => {
-                  setTags(newValue);
-                }}
-                freeSolo // Allows adding new tags not in options
-                renderTags={(value, getTagProps) =>
-                  value.map((option, index) => (
-                    <Chip variant="outlined" label={option} {...getTagProps({ index })} disabled={saving} />
-                  ))
-                }
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    variant="outlined"
-                    label="Tags (ex: Végétarien, Rapide)"
-                    placeholder="Ajouter des tags..."
-                    disabled={saving}
-                  />
-                )}
-                disabled={saving}
-              />
-            </Grid>
-
-            {/* --- Ingredients Section --- */} 
-            <Grid item xs={12}>
-              <Typography variant="h6" component="h2" gutterBottom>Ingrédients</Typography>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, flexWrap: 'wrap', mb: 2 }}>
-                <Autocomplete
-                  id="ingredient-select"
-                  options={allIngredients}
-                  getOptionLabel={(option) => option.name || ''}
-                  value={selectedIngredient}
-                  onChange={(event, newValue) => {
-                    setSelectedIngredient(newValue);
-                    // Optionally set default unit if ingredient has one
-                    if (newValue?.standardUnit) {
-                        setIngredientUnit(newValue.standardUnit);
-                    }
-                  }}
-                  isOptionEqualToValue={(option, value) => option.id === value.id}
-                  loading={loadingIngredients}
-                  sx={{ width: { xs: '100%', sm: 300 } }}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Choisir un ingrédient"
-                      InputProps={{
-                        ...params.InputProps,
-                        endAdornment: (
-                          <React.Fragment>
-                            {loadingIngredients ? <CircularProgress color="inherit" size={20} /> : null}
-                            {params.InputProps.endAdornment}
-                          </React.Fragment>
-                        ),
-                      }}
-                    />
-                  )}
+        <form onSubmit={handleSubmit}>
+          <Grid container spacing={4}>
+            {/* --- Left Column: Basic Info & Photo --- */} 
+            <Grid item xs={12} md={5}>
+              <Stack spacing={3}>
+                <TextField
+                  label="Nom de la recette"
+                  variant="filled"
+                  fullWidth
+                  required
+                  value={recipeName}
+                  onChange={(e) => setRecipeName(e.target.value)}
                   disabled={saving}
                 />
                 <TextField
-                  label="Qté"
-                  type="number"
-                  value={ingredientQuantity}
-                  onChange={(e) => setIngredientQuantity(e.target.value)}
-                  sx={{ width: 80 }}
-                  disabled={saving || !selectedIngredient}
-                  inputProps={{ step: "0.1" }} // Allow decimals
+                  label="Description courte"
+                  variant="filled"
+                  fullWidth
+                  multiline
+                  rows={3}
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  disabled={saving}
                 />
+                <Grid container spacing={2}>
+                  <Grid item xs={6}><TextField label="Préparation (min)" variant="filled" type="number" fullWidth value={prepTime} onChange={(e) => setPrepTime(e.target.value)} disabled={saving} /></Grid>
+                  <Grid item xs={6}><TextField label="Cuisson (min)" variant="filled" type="number" fullWidth value={cookTime} onChange={(e) => setCookTime(e.target.value)} disabled={saving} /></Grid>
+                  <Grid item xs={6}><TextField label="Portions" variant="filled" type="number" fullWidth value={servings} onChange={(e) => setServings(e.target.value)} disabled={saving} /></Grid>
+                </Grid>
                 <Autocomplete
-                    id="unit-select"
-                    freeSolo
-                    options={commonUnits}
-                    value={ingredientUnit}
-                    onChange={(event, newValue) => {
-                        setIngredientUnit(newValue || '');
-                    }}
-                    onInputChange={(event, newInputValue) => {
-                        // Allow typing custom units
-                        setIngredientUnit(newInputValue);
-                    }}
-                    sx={{ width: 150 }}
-                    renderInput={(params) => <TextField {...params} label="Unité" />}
-                    disabled={saving || !selectedIngredient}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleAddIngredientToList}
-                  disabled={saving || !selectedIngredient || !ingredientQuantity}
-                  sx={{ height: '56px' }} // Match TextField height
-                >
-                  Ajouter
-                </Button>
-                <Tooltip title="Ingrédient non trouvé ? Ajoutez-le !">
-                    <Button
-                        variant="outlined"
-                        onClick={handleOpenNewIngredientDialog}
-                        disabled={saving}
-                        sx={{ height: '56px' }} // Match TextField height
-                    >
-                        <AddIcon />
-                    </Button>
-                </Tooltip>
-              </Box>
-              {/* Ingredient List */} 
-              <List dense>
-                {ingredientsList.map((item) => (
-                  <ListItem key={item.ingredientId}>
-                    <ListItemText
-                      primary={`${item.quantity} ${item.unit} ${item.ingredientName}`}
+                  multiple
+                  freeSolo
+                  options={[]}
+                  value={tags}
+                  onChange={(event, newValue) => setTags(newValue)}
+                  renderTags={(value, getTagProps) =>
+                    value.map((option, index) => (
+                      <Chip variant="outlined" label={option} {...getTagProps({ index })} disabled={saving} />
+                    ))
+                  }
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      variant="filled"
+                      label="Tags (ex: Végétarien, Rapide)"
+                      placeholder="Ajouter des tags"
+                      disabled={saving}
                     />
-                    <ListItemSecondaryAction>
-                      <IconButton edge="end" aria-label="delete" onClick={() => handleRemoveIngredientFromList(item.ingredientId)} disabled={saving}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-              </List>
-            </Grid>
-
-            {/* --- Instructions --- */} 
-            <Grid item xs={12}>
-              <TextField
-                required
-                fullWidth
-                id="instructions"
-                label="Instructions"
-                name="instructions"
-                multiline
-                rows={10}
-                value={instructions}
-                onChange={(e) => setInstructions(e.target.value)}
-                disabled={saving}
-                placeholder="Entrez les étapes de la recette ici. Vous pouvez utiliser Markdown pour la mise en forme (listes, gras...)."
-              />
-            </Grid>
-
-            {/* --- Photo Upload --- */} 
-            <Grid item xs={12}>
-                <Typography variant="h6" component="h2" gutterBottom>Photo</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Button
-                        variant="outlined"
-                        component="label"
-                        startIcon={<PhotoCamera />}
-                        disabled={saving}
-                    >
-                        Choisir une image
-                        <input
-                            type="file"
-                            hidden
-                            accept="image/*"
-                            onChange={handlePhotoChange}
-                        />
+                  )}
+                />
+                {/* --- Photo Upload --- */} 
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography variant="subtitle1" gutterBottom>Photo</Typography>
+                  <Box
+                    sx={{
+                      width: '100%',
+                      height: 200,
+                      border: `2px dashed ${photoPreview ? 'transparent' : 'grey.400'}`, // Hide border if preview exists
+                      borderRadius: 2,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      mb: 1,
+                      position: 'relative',
+                      overflow: 'hidden', // Ensure image fits
+                      backgroundColor: 'grey.100'
+                    }}
+                  >
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="Aperçu" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <PhotoCamera sx={{ fontSize: 40, color: 'grey.500' }} />
+                    )}
+                  </Box>
+                  <Stack direction="row" spacing={1} justifyContent="center">
+                    <Button variant="outlined" component="label" disabled={saving} size="small">
+                      Choisir Fichier
+                      <input type="file" hidden accept="image/*" onChange={handlePhotoChange} />
                     </Button>
                     {photoPreview && (
-                        <Box
-                            component="img"
-                            sx={{ height: 80, width: 80, objectFit: 'cover', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}
-                            alt="Aperçu"
-                            src={photoPreview}
-                        />
+                        <Button variant="outlined" color="error" onClick={() => { setPhotoFile(null); setPhotoPreview(null); }} disabled={saving} size="small">
+                            Supprimer
+                        </Button>
                     )}
-                </Box>
-                {uploadProgress > 0 && uploadProgress < 100 && (
+                  </Stack>
+                  {uploadProgress > 0 && uploadProgress < 100 && (
                     <Box sx={{ width: '100%', mt: 1 }}>
-                        <CircularProgress variant="determinate" value={uploadProgress} />
+                      <LinearProgress variant="determinate" value={uploadProgress} />
                     </Box>
-                )}
+                  )}
+                </Box>
+              </Stack>
             </Grid>
 
-            {/* --- Submit Button --- */} 
-            <Grid item xs={12}>
-              <Button
-                type="submit"
-                variant="contained"
-                color="primary"
-                disabled={saving || loadingIngredients}
-                sx={{ mt: 3, mb: 2 }}
-              >
-                {saving ? <CircularProgress size={24} /> : (isEditMode ? 'Mettre à jour la recette' : 'Enregistrer la recette')}
-              </Button>
+            {/* --- Right Column: Ingredients & Instructions --- */} 
+            <Grid item xs={12} md={7}>
+              <Stack spacing={3}>
+                {/* --- Ingredient Adding Section --- */} 
+                <Box>
+                  <Typography variant="h6" gutterBottom>Ingrédients</Typography>
+                  <Grid container spacing={2} alignItems="flex-end">
+                    <Grid item xs={12} sm={6} md={5}>
+                      <Autocomplete
+                        options={allIngredients}
+                        getOptionLabel={(option) => option.name || ''}
+                        value={selectedIngredient}
+                        onChange={handleSelectedIngredientChange}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        loading={loadingIngredients}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="Choisir un ingrédient"
+                            variant="filled"
+                            InputProps={{
+                              ...params.InputProps,
+                              endAdornment: (
+                                <React.Fragment>
+                                  {loadingIngredients ? <CircularProgress color="inherit" size={20} /> : null}
+                                  {params.InputProps.endAdornment}
+                                </React.Fragment>
+                              ),
+                            }}
+                          />
+                        )}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3} md={2}>
+                      <TextField
+                        label="Qté"
+                        variant="filled"
+                        type="number"
+                        fullWidth
+                        value={ingredientQuantity}
+                        onChange={(e) => setIngredientQuantity(e.target.value)}
+                        disabled={!selectedIngredient || saving}
+                        inputProps={{ step: "any" }}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={3} md={3}>
+                      <FormControl variant="filled" fullWidth disabled={!selectedIngredient || saving}>
+                        <InputLabel id="ingredient-unit-label">Unité</InputLabel>
+                        <Select
+                          labelId="ingredient-unit-label"
+                          value={ingredientUnit}
+                          onChange={(e) => setIngredientUnit(e.target.value)}
+                          label="Unité"
+                        >
+                          {availableUnits.map((unit) => (
+                            <MenuItem key={unit} value={unit}>{unit}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </Grid>
+                    <Grid item xs={12} sm={12} md={2} sx={{ textAlign: { xs: 'right', md: 'left' } }}>
+                      <Button
+                        variant="contained"
+                        onClick={handleAddIngredientToList}
+                        disabled={!selectedIngredient || !ingredientQuantity || !ingredientUnit || saving}
+                        startIcon={<AddIcon />}
+                        sx={{ height: '56px' }} // Match filled textfield height
+                      >
+                        Ajouter
+                      </Button>
+                    </Grid>
+                  </Grid>
+                  {/* --- Add New Ingredient / Add New Unit Links --- */} 
+                  <Box sx={{ mt: 1, display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1 }}>
+                    <Link component="button" variant="body2" onClick={handleOpenNewIngredientDialog} disabled={saving}>
+                      + Créer un nouvel ingrédient
+                    </Link>
+                    {selectedIngredient && (
+                      <Link component="button" variant="body2" onClick={handleOpenAddNewUnitDialog} disabled={saving || !selectedIngredient}>
+                        + Ajouter une unité pour "{selectedIngredient.name}"
+                      </Link>
+                    )}
+                  </Box>
+                </Box>
+
+                {/* --- Ingredient List Display --- */} 
+                <Box>
+                  <Typography variant="subtitle1" gutterBottom>Liste des ingrédients ajoutés :</Typography>
+                  {ingredientsList.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">Aucun ingrédient ajouté.</Typography>
+                  ) : (
+                    <List dense>
+                      {ingredientsList.map((item) => (
+                        <ListItem key={item.ingredientId} divider>
+                          <ListItemText primary={item.ingredientName} secondary={`${item.quantity} ${item.unit}`} />
+                          <ListItemSecondaryAction>
+                            <IconButton edge="end" aria-label="delete" onClick={() => handleRemoveIngredientFromList(item.ingredientId)} disabled={saving}>
+                              <DeleteIcon />
+                            </IconButton>
+                          </ListItemSecondaryAction>
+                        </ListItem>
+                      ))}
+                    </List>
+                  )}
+                </Box>
+
+                {/* --- Instructions --- */} 
+                <Box>
+                  <Typography variant="h6" gutterBottom>Instructions</Typography>
+                  <TextField
+                    label="Étapes de préparation"
+                    variant="filled"
+                    fullWidth
+                    multiline
+                    rows={8}
+                    required
+                    value={instructions}
+                    onChange={(e) => setInstructions(e.target.value)}
+                    disabled={saving}
+                  />
+                </Box>
+              </Stack>
             </Grid>
           </Grid>
-        </Box>
+
+          {/* --- Form Error and Actions --- */} 
+          {formError && <Alert severity="error" sx={{ mt: 3 }}>{formError}</Alert>}
+
+          <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
+            <Button variant="outlined" onClick={() => navigate(-1)} disabled={saving}>
+              Annuler
+            </Button>
+            <Button type="submit" variant="contained" disabled={saving || loadingIngredients}>
+              {saving ? <CircularProgress size={24} /> : (isEditMode ? 'Enregistrer Modifications' : 'Créer Recette')}
+            </Button>
+          </Box>
+        </form>
       </Paper>
 
       {/* --- New Ingredient Dialog --- */} 
-      <Dialog open={newIngredientDialogOpen} onClose={handleCloseNewIngredientDialog}>
-        <DialogTitle>Ajouter un Nouvel Ingrédient</DialogTitle>
+      <Dialog open={newIngredientDialogOpen} onClose={handleCloseNewIngredientDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>Créer un Nouvel Ingrédient</DialogTitle>
         <DialogContent>
-          {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-          <TextField
-            autoFocus
-            required
-            margin="dense"
-            id="newIngredientName"
-            label="Nom de l'ingrédient"
-            type="text"
-            fullWidth
-            variant="standard"
-            value={newIngredientName}
-            onChange={(e) => setNewIngredientName(e.target.value)}
-            disabled={savingNewIngredient}
-          />
-          <Autocomplete
-              id="new-unit-select"
-              freeSolo
-              options={commonUnits}
-              value={newIngredientUnit}
-              onChange={(event, newValue) => {
-                  setNewIngredientUnit(newValue || '');
-              }}
-              onInputChange={(event, newInputValue) => {
-                  setNewIngredientUnit(newInputValue);
-              }}
-              sx={{ mt: 2 }}
-              renderInput={(params) => <TextField {...params} label="Unité Standard" variant="standard" />}
-              disabled={savingNewIngredient}
-          />
-          <Autocomplete
-              id="new-category-select"
-              options={ingredientCategories}
-              value={newIngredientCategory}
-              onChange={(event, newValue) => {
-                  setNewIngredientCategory(newValue || '');
-              }}
-              sx={{ mt: 2 }}
-              renderInput={(params) => <TextField {...params} label="Catégorie" variant="standard" />}
-              disabled={savingNewIngredient}
-          />
+          <Stack spacing={2} sx={{ pt: 1 }}>
+            <TextField
+              autoFocus
+              label="Nom de l'ingrédient"
+              fullWidth
+              variant="standard"
+              value={newIngredientName}
+              onChange={(e) => setNewIngredientName(e.target.value)}
+            />
+            <FormControl fullWidth variant="standard">
+              <InputLabel id="new-ingredient-category-label">Catégorie</InputLabel>
+              <Select
+                labelId="new-ingredient-category-label"
+                value={newIngredientCategory}
+                onChange={(e) => setNewIngredientCategory(e.target.value)}
+                label="Catégorie"
+              >
+                {ingredientCategories.map((cat) => (
+                  <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <TextField
+              label="Première Unité (ex: g, ml, pièce)"
+              fullWidth
+              variant="standard"
+              value={newIngredientFirstUnit}
+              onChange={(e) => setNewIngredientFirstUnit(e.target.value)}
+              helperText="Cette unité sera l'unité standard par défaut."
+            />
+            {/* <FormControlLabel control={<Checkbox checked={newIngredientIsStandard} onChange={(e) => setNewIngredientIsStandard(e.target.checked)} />} label="Est l'unité standard" /> */}
+            {/* Standard unit is always true for the first one */} 
+            <TextField
+              label="Prix Optionnel (pour 1 unité)"
+              fullWidth
+              variant="standard"
+              type="number"
+              value={newIngredientPrice}
+              onChange={(e) => setNewIngredientPrice(e.target.value)}
+              inputProps={{ step: "0.01" }}
+              helperText="Laissez vide si inconnu."
+            />
+            {error && <Alert severity="error" variant="outlined">{error}</Alert>}
+          </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseNewIngredientDialog} disabled={savingNewIngredient}>Annuler</Button>
           <Button onClick={handleSaveNewIngredient} disabled={savingNewIngredient}>
-            {savingNewIngredient ? <CircularProgress size={24} /> : 'Ajouter et Sélectionner'}
+            {savingNewIngredient ? <CircularProgress size={24} /> : 'Créer'}
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* --- Add New Unit Dialog --- */} 
+      {selectedIngredient && (
+        <AddNewUnitDialog
+          open={addNewUnitDialogOpen}
+          onClose={handleCloseAddNewUnitDialog}
+          onSave={handleSaveNewUnit} // Pass the save handler
+          ingredientName={selectedIngredient.name}
+          existingUnits={selectedIngredient.units || {}} // Pass existing units
+          isLoading={savingNewUnit} // Pass loading state
+          error={error} // Pass error state
+        />
+      )}
 
     </Container>
   );
