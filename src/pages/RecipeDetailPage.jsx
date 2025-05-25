@@ -43,6 +43,7 @@ import {
   Group as GroupIcon,
   Warning as WarningIcon,
   Visibility as VisibilityIcon,
+  Fastfood as FastfoodIcon,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
@@ -325,8 +326,12 @@ export default function RecipeDetailPage() {
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   mb: 1,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
                 }}
               >
+                <FastfoodIcon sx={{ color: theme.palette.primary.main }} />
                 {recipe.name}
               </Typography>
               {recipe.description && (

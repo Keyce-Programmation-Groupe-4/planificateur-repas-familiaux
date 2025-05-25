@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Logo1 from '/public/Logo1.png'
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom"
 import {
   AppBar,
@@ -38,6 +39,8 @@ import {
   Logout as LogoutIcon,
   Login as LoginIcon,
   PersonAdd as PersonAddIcon,
+  LocalDining as LocalDiningIcon,
+  Fastfood as FastfoodIcon,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { auth } from "../firebaseConfig"
@@ -92,8 +95,9 @@ export default function Layout({ children }) {
       sx={{
         width: 280,
         height: "100%",
-        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${theme.palette.background.accent} 100%)`,
         backdropFilter: "blur(20px)",
+        borderRight: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
       }}
     >
       {/* Drawer Header */}
@@ -114,9 +118,13 @@ export default function Layout({ children }) {
             backgroundClip: "text",
             WebkitBackgroundClip: "text",
             WebkitTextFillColor: "transparent",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
           }}
         >
-          Meal Planner
+          {/* <FastfoodIcon sx={{ color: theme.palette.primary.main }} /> */}
+          <div><img src={Logo1} alt="Logo de l'application" style={{ width: '40px', height: 'auto' }} />  EasyMeal 2025</div>
         </Typography>
         <IconButton onClick={handleDrawerToggle} sx={{ color: theme.palette.text.secondary }}>
           <CloseIcon />
@@ -314,13 +322,17 @@ export default function Layout({ children }) {
               textDecoration: "none",
               fontSize: { xs: "1.3rem", sm: "1.5rem" },
               letterSpacing: "-0.5px",
+              display: "flex",
+              alignItems: "center",
+              gap: 1,
               "&:hover": {
                 transform: "scale(1.02)",
               },
               transition: "transform 0.2s ease",
             }}
           >
-            Meal Planner 2025
+            {/* <LocalDiningIcon sx={{ color: theme.palette.primary.main }} /> */}
+            <div><img src={Logo1} alt="Logo de l'application" style={{ width: '50px', height: 'auto' }} />    EasyMeal 2025</div>
           </Typography>
 
           {/* Desktop Navigation */}
@@ -559,12 +571,16 @@ export default function Layout({ children }) {
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   mb: 0.5,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
                 }}
               >
-                Meal Planner 2025
+                <RestaurantIcon sx={{ color: theme.palette.primary.main }} />
+                EasyMeal 2025
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                L'avenir de la planification culinaire
+                Savourez chaque moment culinaire en famille
               </Typography>
             </Box>
 

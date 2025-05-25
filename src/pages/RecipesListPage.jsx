@@ -14,7 +14,6 @@ import {
   Button,
   Fab,
   TextField,
-  CircularProgress,
   Alert,
   Skeleton,
   useTheme,
@@ -38,6 +37,8 @@ import {
   Visibility as VisibilityIcon,
   Clear as ClearIcon,
   FilterList as FilterListIcon,
+  LocalDining as LocalDiningIcon,
+  Fastfood as FastfoodIcon,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
@@ -85,9 +86,10 @@ export default function RecipesListPage() {
     }
   }, [userData])
 
-  const filteredRecipes = recipes.filter((recipe) =>
-    recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())))
+  const filteredRecipes = recipes.filter(
+    (recipe) =>
+      recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))),
   )
 
   const clearSearch = () => {
@@ -149,12 +151,20 @@ export default function RecipesListPage() {
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 mb: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 2,
               }}
             >
-              Mes Recettes
+              <RestaurantIcon sx={{ fontSize: "3rem", color: theme.palette.primary.main }} />
+              Mes Délicieuses Recettes
+              <LocalDiningIcon sx={{ fontSize: "3rem", color: theme.palette.secondary.main }} />
             </Typography>
             <Typography variant="h6" color="text.secondary">
-              {canModify ? "Gérez votre collection de recettes" : "Découvrez les recettes de votre famille"}
+              {canModify
+                ? "Créez et partagez vos secrets culinaires"
+                : "Découvrez les trésors culinaires de votre famille"}
             </Typography>
           </Box>
         </Fade>
@@ -362,9 +372,7 @@ export default function RecipesListPage() {
                             minHeight: "2.5em",
                           }}
                         >
-                          {recipe.description ||
-                            recipe.tags?.join(", ") ||
-                            "Aucune description disponible"}
+                          {recipe.description || recipe.tags?.join(", ") || "Aucune description disponible"}
                         </Typography>
                         {recipe.tags && recipe.tags.length > 0 && (
                           <Stack direction="row" spacing={0.5} sx={{ flexWrap: "wrap", gap: 0.5 }}>
@@ -452,21 +460,21 @@ export default function RecipesListPage() {
                           fontSize: "3rem",
                         }}
                       >
-                        <RestaurantIcon sx={{ fontSize: "3rem", color: theme.palette.text.disabled }} />
+                        <FastfoodIcon sx={{ fontSize: "3rem", color: theme.palette.primary.main }} />
                       </Avatar>
                       <Typography variant="h5" color="text.secondary" sx={{ mb: 2, fontWeight: 600 }}>
                         {searchTerm
                           ? "Aucune recette trouvée"
                           : canModify
-                          ? "Aucune recette créée"
-                          : "Aucune recette disponible"}
+                            ? "Aucune recette créée"
+                            : "Aucune recette disponible"}
                       </Typography>
                       <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
                         {searchTerm
                           ? `Aucune recette ne correspond à "${searchTerm}"`
                           : canModify
-                          ? "Commencez par créer votre première recette !"
-                          : "Votre famille n'a pas encore ajouté de recettes"}
+                            ? "Commencez par créer votre première recette !"
+                            : "Votre famille n'a pas encore ajouté de recettes"}
                       </Typography>
                       {canModify && !searchTerm && (
                         <Button
