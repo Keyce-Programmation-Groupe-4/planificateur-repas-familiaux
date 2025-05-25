@@ -8,9 +8,10 @@ import ProfilePage from './pages/ProfilePage';
 import FamilyPage from './pages/FamilyPage';
 import RecipesListPage from './pages/RecipesListPage';
 import RecipeDetailPage from './pages/RecipeDetailPage';
-import RecipeFormPage from './pages/RecipeFormPage'; // <-- Import the new form page
+import RecipeFormPage from './pages/RecipeFormPage';
+import WeeklyPlannerPage from './pages/planner/WeeklyPlannerPage'; // <-- Import the new planner page
 import Layout from './components/Layout';
-import AuthProvider from './contexts/AuthContext';
+import AuthProvider from './contexts/AuthContext'; // Corrected path assuming contexts folder
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -28,9 +29,11 @@ function App() {
           <Route path="/family" element={<ProtectedRoute><FamilyPage /></ProtectedRoute>} />
           <Route path="/recipes" element={<ProtectedRoute><RecipesListPage /></ProtectedRoute>} />
           <Route path="/recipes/:recipeId" element={<ProtectedRoute><RecipeDetailPage /></ProtectedRoute>} />
-          {/* NEW: Routes for Recipe Create/Edit Form */} 
           <Route path="/recipes/new" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
           <Route path="/recipes/:recipeId/edit" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
+          
+          {/* NEW: Route for Weekly Planner */} 
+          <Route path="/planner" element={<ProtectedRoute><WeeklyPlannerPage /></ProtectedRoute>} />
 
           {/* Add other routes as needed */}
           {/* <Route path="*" element={<NotFoundPage />} /> */}
@@ -42,4 +45,3 @@ function App() {
 
 export default App;
 
-// src/App.jsx

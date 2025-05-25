@@ -30,7 +30,8 @@ export default function Layout({ children }) {
           {currentUser ? (
             <>
               <Button color="inherit" component={RouterLink} to="/">Accueil</Button>
-              {/* NEW: Link to Recipes List Page */} 
+              {/* NEW: Link to Planner Page */}
+              <Button color="inherit" component={RouterLink} to="/planner">Planificateur</Button>
               <Button color="inherit" component={RouterLink} to="/recipes">Mes Recettes</Button>
               <Button color="inherit" component={RouterLink} to="/family">Ma Famille</Button>
               <Button color="inherit" component={RouterLink} to="/profile">Profil</Button>

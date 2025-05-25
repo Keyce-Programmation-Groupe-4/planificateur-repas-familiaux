@@ -1,253 +1,188 @@
-import React, { useState, useEffect, useCallback, useContext } from 'react';
-import { DragDropContext } from '@hello-pangea/dnd';
-import { Box, Grid, CircularProgress, Typography, Alert } from '@mui/material';
-import { doc, getDoc, setDoc, collection, query, where, getDocs, Timestamp } from 'firebase/firestore';
-import { startOfWeek, addDays, subDays, format } from 'date-fns';
-import { fr } from 'date-fns/locale';
+import React from 'react';
+import {
+  Card,
+  Avatar,
+  Typography,
+  IconButton,
+  Box,
+  useTheme,
+  Skeleton,
+  alpha,
+  Tooltip
+} from '@mui/material';
+import { Close, Restaurant } from '@mui/icons-material';
 
-import { db } from '../../firebaseConfig'; // Adjust path as needed
-import { AuthContext } from '../../context/AuthContext'; // Adjust path as needed
-import WeekNavigator from './WeekNavigator';
-import DayColumn from './DayColumn';
-import RecipeListPanel from './RecipeListPanel';
+function RecipeCard({ 
+    recipeData, 
+    variant = 'compact', // 'compact' (in slot), 'list' (in modal)
+    onDeleteClick, 
+    onClick, 
+    sx = {}, 
+}) {
+  const theme = useTheme();
 
-// Helper function to get the week ID (e.g., YYYY-Www)
-const getWeekId = (date) => {
-  return format(date, 'yyyy-"W"II', { locale: fr, weekStartsOn: 1 }); // ISO week number
-};
+  // State to handle image loading errors
+  const [imgError, setImgError] = React.useState(false);
 
-const WeeklyPlannerPage = () => {
-  const { currentUser, familyId } = useContext(AuthContext); // Get user and family info
-  const [currentWeekStart, setCurrentWeekStart] = useState(startOfWeek(new Date(), { weekStartsOn: 1 }));
-  const [weeklyPlan, setWeeklyPlan] = useState(null);
-  const [recipes, setRecipes] = useState([]);
-  const [loadingPlan, setLoadingPlan] = useState(true);
-  const [loadingRecipes, setLoadingRecipes] = useState(true);
-  const [error, setError] = useState(null);
+  // Reset error state when recipeData changes
+  React.useEffect(() => {
+    setImgError(false);
+  }, [recipeData?.photoURL]);
 
-  const daysOfWeek = [
-    { key: 'monday', name: 'Lundi' },
-    { key: 'tuesday', name: 'Mardi' },
-    { key: 'wednesday', name: 'Mercredi' },
-    { key: 'thursday', name: 'Jeudi' },
-    { key: 'friday', name: 'Vendredi' },
-    { key: 'saturday', name: 'Samedi' },
-    { key: 'sunday', name: 'Dimanche' },
-  ];
-
-  // Function to fetch or create a weekly plan
-  const fetchWeeklyPlan = useCallback(async (weekStartDate) => {
-    if (!familyId) return;
-    setLoadingPlan(true);
-    setError(null);
-    const weekId = getWeekId(weekStartDate);
-    const planRef = doc(db, 'families', familyId, 'weeklyPlans', weekId);
-
-    try {
-      const docSnap = await getDoc(planRef);
-      if (docSnap.exists()) {
-        setWeeklyPlan(docSnap.data());
-      } else {
-        // Create a new empty plan structure if it doesn't exist
-        const newPlan = {
-          familyId: familyId,
-          startDate: Timestamp.fromDate(weekStartDate),
-          endDate: Timestamp.fromDate(addDays(weekStartDate, 6)),
-          createdAt: Timestamp.now(),
-          lastUpdatedAt: Timestamp.now(),
-          days: daysOfWeek.reduce((acc, day) => {
-            acc[day.key] = { breakfast: null, lunch: null, dinner: null };
-            return acc;
-          }, {}),
-        };
-        await setDoc(planRef, newPlan); // Save the new empty plan
-        setWeeklyPlan(newPlan);
-      }
-    } catch (err) {
-      console.error("Error fetching/creating weekly plan:", err);
-      setError("Erreur lors du chargement du planning de la semaine.");
-      setWeeklyPlan(null); // Reset plan on error
-    }
-    setLoadingPlan(false);
-  }, [familyId]);
-
-  // Function to fetch recipes
-  const fetchRecipes = useCallback(async () => {
-    if (!currentUser) return; // Or use familyId if recipes are family-specific
-    setLoadingRecipes(true);
-    try {
-      // Assuming recipes are stored in a top-level 'recipes' collection
-      // and linked via 'createdByUserId' or 'familyId'. Adjust query as needed.
-      // Example: Fetch recipes created by the current user
-      const q = query(collection(db, 'recipes'), where('createdByUserId', '==', currentUser.uid));
-      // OR: Fetch recipes belonging to the family (if familyId is stored on recipes)
-      // const q = query(collection(db, 'recipes'), where('familyId', '==', familyId));
-
-      const querySnapshot = await getDocs(q);
-      const recipesData = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setRecipes(recipesData);
-    } catch (err) {
-      console.error("Error fetching recipes:", err);
-      setError("Erreur lors du chargement des recettes.");
-    }
-    setLoadingRecipes(false);
-  }, [currentUser, familyId]); // Add familyId if used in query
-
-  // Initial data fetch
-  useEffect(() => {
-    fetchRecipes();
-  }, [fetchRecipes]);
-
-  useEffect(() => {
-    fetchWeeklyPlan(currentWeekStart);
-  }, [currentWeekStart, fetchWeeklyPlan]);
-
-  // --- Drag and Drop Logic ---
-  const onDragEnd = async (result) => {
-    const { source, destination, draggableId } = result;
-
-    // Dropped outside a valid droppable area
-    if (!destination) {
-      return;
-    }
-
-    // Dropped in the same place
-    if (
-      destination.droppableId === source.droppableId &&
-      destination.index === source.index
-    ) {
-      return;
-    }
-
-    const sourceDroppableId = source.droppableId;
-    const destinationDroppableId = destination.droppableId;
-    const recipeId = draggableId;
-
-    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlan)); // Deep copy
-
-    // Find the recipe object from the list
-    const draggedRecipe = recipes.find(r => r.id === recipeId);
-    if (!draggedRecipe) {
-        console.error("Dragged recipe not found in list!");
-        return;
-    }
-    const recipeDataForPlan = { recipeId: draggedRecipe.id, name: draggedRecipe.name, photoURL: draggedRecipe.photoURL || null }; // Store essential info
-
-    // --- Logic --- 
-    // 1. Dragging from Recipe List to a Meal Slot
-    if (sourceDroppableId === 'recipeList' && destinationDroppableId !== 'recipeList') {
-      const [dayKey, mealType] = destinationDroppableId.split('-'); // e.g., "monday-lunch"
-      if (updatedPlan.days[dayKey]) {
-        updatedPlan.days[dayKey][mealType] = recipeDataForPlan;
-      }
-    }
-    // 2. Moving from one Meal Slot to another Meal Slot
-    else if (sourceDroppableId !== 'recipeList' && destinationDroppableId !== 'recipeList') {
-      const [sourceDayKey, sourceMealType] = sourceDroppableId.split('-');
-      const [destDayKey, destMealType] = destinationDroppableId.split('-');
-
-      // Get the recipe being moved (it should already be in the source slot)
-      const movingRecipe = updatedPlan.days[sourceDayKey]?.[sourceMealType];
-      
-      if (movingRecipe) {
-          // Clear the source slot
-          updatedPlan.days[sourceDayKey][sourceMealType] = null;
-          // Place in the destination slot
-          if (updatedPlan.days[destDayKey]) {
-              updatedPlan.days[destDayKey][destMealType] = movingRecipe;
-          }
-      } else {
-          console.warn("Recipe not found in source slot during move");
-          // If somehow source is empty, maybe treat as adding from list?
-          // This case might indicate a state inconsistency.
-          if (updatedPlan.days[destDayKey]) {
-             updatedPlan.days[destDayKey][destMealType] = recipeDataForPlan; // Fallback: add the recipe found via draggableId
-          }
-      }
-    }
-    // 3. Dragging from a Meal Slot back to the Recipe List (or a designated trash area - not implemented here)
-    // This effectively removes the recipe from the plan.
-    else if (sourceDroppableId !== 'recipeList' && destinationDroppableId === 'recipeList') {
-        const [sourceDayKey, sourceMealType] = sourceDroppableId.split('-');
-        if (updatedPlan.days[sourceDayKey]) {
-            updatedPlan.days[sourceDayKey][sourceMealType] = null;
-        }
-    }
-    // (Add case for dragging to trash if needed)
-
-    // Update state locally immediately for responsiveness
-    updatedPlan.lastUpdatedAt = Timestamp.now();
-    setWeeklyPlan(updatedPlan);
-
-    // Save the updated plan to Firestore
-    try {
-      const weekId = getWeekId(currentWeekStart);
-      const planRef = doc(db, 'families', familyId, 'weeklyPlans', weekId);
-      await setDoc(planRef, updatedPlan, { merge: true }); // Use merge to be safe, though overwriting might be fine if state is source of truth
-    } catch (err) {
-      console.error("Error saving updated plan:", err);
-      setError("Erreur lors de la sauvegarde des modifications du planning.");
-      // Optionally revert state or notify user
-      fetchWeeklyPlan(currentWeekStart); // Refetch to revert to last saved state
-    }
+  const handleImageError = () => {
+    setImgError(true);
   };
 
-  // --- Navigation --- 
-  const handlePreviousWeek = () => {
-    setCurrentWeekStart(prev => subDays(prev, 7));
-  };
-
-  const handleNextWeek = () => {
-    setCurrentWeekStart(prev => addDays(prev, 7));
-  };
-
-  // --- Render Logic --- 
-  if (!currentUser || !familyId) {
-    return <Alert severity="warning">Veuillez vous connecter et rejoindre ou créer une famille pour accéder au planning.</Alert>;
+  if (!recipeData) {
+    // Skeleton based on variant
+    const isCompact = variant === 'compact';
+    const avatarSize = isCompact ? 32 : 56;
+    return (
+      <Card 
+        variant="outlined" 
+        sx={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          p: isCompact ? 0.5 : 1.5, 
+          borderRadius: '12px', 
+          width: '100%',
+          border: `1px solid ${theme.palette.divider}`,
+          ...sx 
+        }}
+      >
+        <Skeleton variant="circular" width={avatarSize} height={avatarSize} sx={{ mr: 1.5 }} />
+        <Skeleton variant="text" width="70%" height={20} />
+      </Card>
+    );
   }
 
-  if (loadingRecipes || loadingPlan) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}><CircularProgress /></Box>;
-  }
+  const { name, photoURL } = recipeData;
+  const isCompact = variant === 'compact';
+  const avatarSize = isCompact ? 32 : 56;
+  const typographyVariant = isCompact ? 'body2' : 'titleMedium'; // Use M3 scale
 
-  if (error) {
-    return <Alert severity="error">{error}</Alert>;
-  }
+  // Determine if we should show the image or the fallback icon
+  const showImage = photoURL && !imgError;
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <Box sx={{ p: 2 }}>
-        <WeekNavigator
-          currentWeekStart={currentWeekStart}
-          onPreviousWeek={handlePreviousWeek}
-          onNextWeek={handleNextWeek}
+    <Card
+      onClick={onClick} // Handles click for selection in modal
+      aria-label={variant === 'list' ? `Sélectionner la recette ${name}` : `Recette ${name}`}
+      role={variant === 'list' ? 'button' : undefined}
+      tabIndex={variant === 'list' ? 0 : undefined} // Make selectable cards focusable
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        p: isCompact ? 0.5 : 1.5, 
+        pr: isCompact ? 3 : 1.5, // Ensure space for delete button in compact mode
+        borderRadius: '12px',
+        width: '100%',
+        position: 'relative',
+        overflow: 'visible',
+        backgroundColor: theme.palette.background.paper,
+        variant: 'outlined',
+        border: `1px solid ${theme.palette.divider}`,
+        transition: 'box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out, border-color 0.2s ease-in-out',
+        cursor: onClick ? 'pointer' : 'default',
+        '&:hover': {
+          boxShadow: onClick ? theme.shadows[3] : 'none',
+          backgroundColor: onClick ? theme.palette.action.hover : theme.palette.background.paper,
+          borderColor: onClick ? theme.palette.primary.light : theme.palette.divider,
+          // Show delete button on hover for compact variant
+          ...(isCompact && onDeleteClick && { '& .delete-button': { opacity: 1, transform: 'scale(1)' } }),
+        },
+        // Focus styles for selectable cards
+        ...(variant === 'list' && {
+            '&:focus-visible': {
+                outline: `2px solid ${theme.palette.primary.main}`,
+                outlineOffset: '2px',
+                boxShadow: theme.shadows[3],
+                borderColor: theme.palette.primary.main,
+            }
+        }),
+        ...sx,
+      }}
+    >
+      {/* Avatar/Image */} 
+      {showImage ? (
+        <Avatar
+          src={photoURL}
+          alt="" // Alt text is handled by the main card label
+          aria-hidden="true" // Decorative image
+          sx={{ width: avatarSize, height: avatarSize, mr: 1.5 }}
+          onError={handleImageError} // Handle image load error
         />
+      ) : (
+        // Fallback Icon Avatar
+        <Avatar 
+            aria-hidden="true"
+            sx={{ 
+                width: avatarSize, 
+                height: avatarSize, 
+                mr: 1.5, 
+                bgcolor: alpha(theme.palette.secondary.main, 0.1), // Use theme color
+                color: theme.palette.secondary.main 
+            }}
+        >
+          <Restaurant />
+        </Avatar>
+      )}
 
-        <Grid container spacing={2}>
-          {/* Recipe List Panel */} 
-          <Grid item xs={12} md={3}>
-            <RecipeListPanel recipes={recipes} />
-          </Grid>
-
-          {/* Weekly Planner Grid */} 
-          <Grid item xs={12} md={9}>
-            <Grid container spacing={1} sx={{ height: '100%' }}>
-              {daysOfWeek.map(day => (
-                <Grid item xs={12} sm={6} md key={day.key} sx={{ minWidth: '150px' /* Ensure columns don't get too narrow */ }}>
-                  <DayColumn
-                    dayName={day.name}
-                    dayKey={day.key}
-                    meals={weeklyPlan?.days?.[day.key] || { breakfast: null, lunch: null, dinner: null }} // Provide default empty meals
-                  />
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-        </Grid>
+      {/* Recipe Name */} 
+      <Box sx={{ flexGrow: 1, overflow: 'hidden', mr: 1 }}>
+        <Typography 
+            variant={typographyVariant} 
+            noWrap 
+            title={name} 
+            sx={{ fontWeight: isCompact ? 400 : 500 }}
+            id={`recipe-card-name-${recipeData.id}`} // ID for aria-labelledby
+        >
+          {name}
+        </Typography>
       </Box>
-    </DragDropContext>
-  );
-};
 
-export default WeeklyPlannerPage;
+      {/* Delete Button (Compact Variant Only) */} 
+      {isCompact && onDeleteClick && (
+        <Tooltip title="Supprimer cette recette du planning">
+            <IconButton
+                aria-label={`Supprimer la recette ${name}`}
+                aria-controls={`recipe-card-name-${recipeData.id}`} // Associates button with the recipe name
+                size="small"
+                onClick={(e) => { 
+                    e.stopPropagation(); // Prevent card click/drag
+                    onDeleteClick(); 
+                }}
+                className="delete-button"
+                sx={{
+                    position: 'absolute',
+                    top: -6, 
+                    right: -6,
+                    opacity: 0,
+                    transform: 'scale(0.8)',
+                    transition: 'opacity 0.2s ease-in-out, transform 0.2s ease-in-out',
+                    backgroundColor: theme.palette.background.paper,
+                    border: `1px solid ${theme.palette.divider}`,
+                    boxShadow: theme.shadows[1],
+                    color: theme.palette.error.main,
+                    '&:hover': {
+                        backgroundColor: alpha(theme.palette.error.main, 0.1),
+                        transform: 'scale(1.05)',
+                    },
+                    '&:focus-visible': { // Ensure focus is visible
+                        opacity: 1,
+                        transform: 'scale(1)',
+                        boxShadow: `0 0 0 2px ${alpha(theme.palette.error.main, 0.5)}`,
+                    },
+                    zIndex: 2 
+                }}
+            >
+                <Close fontSize="inherit" />
+            </IconButton>
+        </Tooltip>
+      )}
+    </Card>
+  );
+}
+
+export default RecipeCard;
 
