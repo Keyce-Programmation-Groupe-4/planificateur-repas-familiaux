@@ -16,15 +16,15 @@ import {
 } from "@mui/material"
 import { PriceCheck } from "@mui/icons-material"
 import { formatQuantityUnit } from "../../utils/unitConverter"
+import { useSwipeable } from "react-swipeable"
 
 // Helper to format currency
 const formatCurrency = (value) => {
-  if (typeof value !== 'number') {
-    return '';
+  if (typeof value !== "number") {
+    return ""
   }
-  return value.toLocaleString('fr-FR', { style: 'currency', currency: 'XAF' });
-};
-
+  return value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })
+}
 
 function ShoppingListItem({ item, onToggleCheck, onOpenPriceDialog }) {
   const theme = useTheme()
@@ -43,9 +43,26 @@ function ShoppingListItem({ item, onToggleCheck, onOpenPriceDialog }) {
     }
   }
 
+  const swipeHandlers = useSwipeable({
+    onSwipedRight: () => {
+      if (!checked) {
+        handleToggle()
+      }
+    },
+    onSwipedLeft: () => {
+      if (checked) {
+        handleToggle()
+      }
+    },
+    trackMouse: false,
+    preventScrollOnSwipe: true,
+    delta: 50,
+  })
+
   return (
     <Fade in timeout={300}>
       <ListItem
+        {...swipeHandlers}
         disablePadding
         sx={{
           mb: 1,
@@ -53,15 +70,35 @@ function ShoppingListItem({ item, onToggleCheck, onOpenPriceDialog }) {
           transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           background: checked
             ? `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.08)} 0%, ${alpha(theme.palette.success.main, 0.04)} 100%)`
-            : `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-          border: `1px solid ${checked ? alpha(theme.palette.success.main, 0.2) : alpha(theme.palette.divider, 0.5)}`,
+            : `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha("#FF6B35", 0.02)} 100%)`,
+          border: `1px solid ${checked ? alpha(theme.palette.success.main, 0.2) : alpha("#FF6B35", 0.2)}`,
           backdropFilter: "blur(10px)",
+          position: "relative",
+          overflow: "hidden",
           "&:hover": {
             transform: checked ? "none" : "translateX(4px)",
             boxShadow: checked
               ? `0 4px 20px ${alpha(theme.palette.success.main, 0.15)}`
-              : `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
-            border: `1px solid ${checked ? alpha(theme.palette.success.main, 0.3) : alpha(theme.palette.primary.main, 0.3)}`,
+              : `0 8px 25px ${alpha("#FF6B35", 0.15)}`,
+            border: `1px solid ${checked ? alpha(theme.palette.success.main, 0.3) : alpha("#FF6B35", 0.3)}`,
+          },
+          // Indicateur de swipe
+          "&::before": {
+            content: checked ? '"← Swipe pour décocher"' : '"Swipe pour cocher →"',
+            position: "absolute",
+            top: "50%",
+            left: checked ? "10px" : "auto",
+            right: checked ? "auto" : "10px",
+            transform: "translateY(-50%)",
+            fontSize: "0.7rem",
+            color: alpha(theme.palette.text.secondary, 0.5),
+            opacity: 0,
+            transition: "opacity 0.3s ease",
+            pointerEvents: "none",
+            display: { xs: "block", md: "none" },
+          },
+          "&:active::before": {
+            opacity: 1,
           },
           display: "flex",
           alignItems: "center",
