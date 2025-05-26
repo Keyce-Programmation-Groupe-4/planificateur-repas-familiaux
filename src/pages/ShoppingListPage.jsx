@@ -1,5 +1,6 @@
+"use client";
 
-import React, { useState, useEffect, useContext, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Container,
   Box,
@@ -21,8 +22,13 @@ import {
   Paper,
   Stack,
   Skeleton,
-  Tooltip
+  Tooltip,
+  Button, // Added Button
+  Chip, // Added Chip
+  Snackbar, // Added Snackbar
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
+
 import {
   MoreVert,
   Refresh,
@@ -31,11 +37,15 @@ import {
   Add as AddIcon,
   Print,
   Share,
-  PictureAsPdf // Icône pour l'export PDF
+  PictureAsPdf, // Icône pour l'export PDF
+  ShoppingCartCheckout as ShoppingCartCheckoutIcon, // Icon for check/uncheck
+  Inventory2 as InventoryIcon, // Icon for stock related info
+  InfoOutlined as InfoIcon, // Icon for info tooltips
+  Sync as SyncIcon, // Icon for refresh button
 } from '@mui/icons-material';
 
 // --- Firebase Imports --- 
-import { db } from '../firebaseConfig';
+import { db, functions } from '../firebaseConfig'; // Assuming functions is exported from firebaseConfig
 import {
   doc,
   getDoc,
@@ -45,8 +55,11 @@ import {
   where,
   Timestamp,
   updateDoc,
-  serverTimestamp
+  setDoc, // Use setDoc for upserting the list
+  serverTimestamp,
+  writeBatch
 } from 'firebase/firestore';
+import { httpsCallable } from 'firebase/functions'; // For calling Cloud Functions
 
 // --- Context Import --- 
 import { useAuth } from '../contexts/AuthContext';
@@ -56,14 +69,12 @@ import ShoppingListCategory from '../components/ShoppingList/ShoppingListCategor
 import PriceInputDialog from '../components/ShoppingList/PriceInputDialog';
 
 // --- Utility Import --- 
-import { convertToStandardUnit, formatQuantityUnit } from '../utils/unitConverter';
+import { convertToStandardUnit, formatQuantityUnit, findStandardUnit } from '../utils/unitConverter'; // Assuming findStandardUnit exists
 
 // --- PDFMake Import --- 
 import pdfMake from 'pdfmake/build/pdfmake';
 import pdfFonts from 'pdfmake/build/vfs_fonts';
-
 pdfMake.vfs = pdfFonts.vfs;
-
 
 // --- Helper Functions --- 
 const getStartOfWeek = (date) => {
@@ -84,12 +95,11 @@ const getWeekId = (date) => {
 };
 
 const formatCurrency = (value) => {
-  if (typeof value !== "number") {
-    return ""
+  if (typeof value !== 'number') {
+    return "N/A"; // Return N/A if cost cannot be calculated
   }
-  // Modification ici : 'XFA' remplacé par 'XAF'
-  return value.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })
-}
+  return value.toLocaleString("fr-FR", { style: "currency", currency: "XAF" });
+};
 // --- End Helper Functions ---
 
 function ShoppingListPage() {
@@ -100,9 +110,13 @@ function ShoppingListPage() {
   const [targetWeekStart, setTargetWeekStart] = useState(getStartOfWeek(new Date()));
   const targetWeekId = getWeekId(targetWeekStart);
 
-  const [shoppingListData, setShoppingListData] = useState({});
+  const [shoppingListDoc, setShoppingListDoc] = useState(null); // Holds the entire Firestore document
+  const [shoppingListItems, setShoppingListItems] = useState({}); // Holds the items grouped by category for UI
   const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false); // Specific state for generation/refresh
+  const [isUpdatingStock, setIsUpdatingStock] = useState(false); // State for stock update process
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState('');
 
   const [anchorEl, setAnchorEl] = useState(null);
   const menuOpen = Boolean(anchorEl);
@@ -110,27 +124,25 @@ function ShoppingListPage() {
   const [priceDialogOpen, setPriceDialogOpen] = useState(false);
   const [priceDialogData, setPriceDialogData] = useState({ ingredientId: null, ingredientName: '', unit: '' });
 
-  // --- Data Fetching and Aggregation Logic --- 
-  const generateShoppingList = useCallback(async () => {
+  // --- Data Fetching and List Generation/Refresh Logic --- 
+  const generateOrRefreshShoppingList = useCallback(async (isRefresh = false) => {
     if (!familyId) {
       if (!authLoading) setIsLoading(false);
       console.warn("Waiting for familyId...");
       return;
     }
 
-    setIsLoading(true);
+    setIsGenerating(true);
     setError(null);
-    setShoppingListData({});
-    console.log(`Generating shopping list for family ${familyId}, week: ${targetWeekId}`);
+    setSuccessMessage('');
+    console.log(`${isRefresh ? 'Refreshing' : 'Generating'} shopping list for family ${familyId}, week: ${targetWeekId}`);
 
     try {
       // 1. Get Weekly Plan
       const planDocRef = doc(db, 'families', familyId, 'weeklyPlans', targetWeekId);
       const planDocSnap = await getDoc(planDocRef);
       if (!planDocSnap.exists()) {
-        console.log(`No plan found for ${targetWeekId}.`);
-        setIsLoading(false);
-        return;
+        throw new Error(`Aucun planning trouvé pour la semaine ${targetWeekId}.`);
       }
       const planData = planDocSnap.data();
 
@@ -142,9 +154,7 @@ function ShoppingListPage() {
         });
       });
       if (recipeIds.size === 0) {
-        console.log("Plan has no recipes.");
-        setIsLoading(false);
-        return;
+        throw new Error("Le planning ne contient aucune recette.");
       }
 
       // 3. Fetch Recipe Details
@@ -152,7 +162,7 @@ function ShoppingListPage() {
       const recipeDocs = await Promise.all(recipePromises);
       const recipesData = recipeDocs.filter(doc => doc.exists()).map(doc => ({ id: doc.id, ...doc.data() }));
 
-      // 4. Create Raw Ingredient List
+      // 4. Create Raw Ingredient List (Gross Requirements)
       const rawIngredientItems = [];
       recipesData.forEach(recipe => {
         if (recipe.ingredientsList && Array.isArray(recipe.ingredientsList)) {
@@ -166,9 +176,7 @@ function ShoppingListPage() {
         }
       });
       if (rawIngredientItems.length === 0) {
-        console.log("No valid ingredients found.");
-        setIsLoading(false);
-        return;
+        throw new Error("Aucun ingrédient valide trouvé dans les recettes.");
       }
 
       // 5. Fetch Unique Ingredient Details
@@ -182,124 +190,234 @@ function ShoppingListPage() {
         }
       });
 
-      // 6. Aggregate, Convert to Standard Unit, Calculate Costs
+      // 6. Fetch Current Stock
+      const stockItemsRef = collection(db, 'families', familyId, 'stockItems');
+      const stockSnapshot = await getDocs(stockItemsRef);
+      const stockItemsMap = {}; // Key: ingredientId, Value: { quantity, unit }
+      stockSnapshot.forEach(doc => {
+        stockItemsMap[doc.id] = doc.data();
+      });
+      console.log("Current stock fetched:", stockItemsMap);
+
+      // 7. Aggregate, Convert, Calculate Net Quantity and Costs
       const aggregatedList = {}; // Key: ingredientId
       rawIngredientItems.forEach(item => {
         const details = ingredientDetailsMap[item.ingredientId];
         if (!details || !details.units) {
           console.warn(`Details/units missing for ingredient ${item.ingredientId}`);
-          return;
+          return; // Skip this ingredient if details are missing
         }
 
         const ingredientId = item.ingredientId;
-        const quantity = item.quantity;
-        const unit = item.unit;
+        const grossQuantity = item.quantity;
+        const requiredUnit = item.unit;
 
-        const conversionResult = convertToStandardUnit(quantity, unit, details.units);
+        // Aggregate gross quantities first (handling potential different units for the same ingredient)
+        if (!aggregatedList[ingredientId]) {
+          aggregatedList[ingredientId] = {
+            ingredientId: ingredientId,
+            name: details.name || 'Inconnu',
+            category: details.category || 'Autre',
+            unitsData: details.units,
+            grossQuantities: {}, // Stores { unit: totalGrossQuantity }
+            stockInfo: stockItemsMap[ingredientId] || { quantity: 0, unit: findStandardUnit(details.units) || requiredUnit }, // Default to 0 stock
+            netQuantities: {}, // Stores { unit: netQuantity }
+            costs: {} // Stores { unit: { theoretical, actual, needsPriceInput, priceSource } }
+          };
+        }
+        if (!aggregatedList[ingredientId].grossQuantities[requiredUnit]) {
+          aggregatedList[ingredientId].grossQuantities[requiredUnit] = 0;
+        }
+        aggregatedList[ingredientId].grossQuantities[requiredUnit] += grossQuantity;
+      });
 
-        if (!conversionResult) {
-          if (!aggregatedList[ingredientId]) {
-            aggregatedList[ingredientId] = {
-              ingredientId: ingredientId,
-              name: details.name || 'Inconnu',
-              category: details.category || 'Autres',
-              unitsData: details.units,
-              aggregatedQuantities: {}
-            };
-          }
-          if (!aggregatedList[ingredientId].aggregatedQuantities[unit]) {
-            aggregatedList[ingredientId].aggregatedQuantities[unit] = { totalQuantity: 0, cost: null, needsPriceInput: false, priceSource: null };
-          }
-          aggregatedList[ingredientId].aggregatedQuantities[unit].totalQuantity += quantity;
+      // Now, for each aggregated ingredient, calculate net quantity and costs
+      Object.values(aggregatedList).forEach(aggItem => {
+        const details = ingredientDetailsMap[aggItem.ingredientId];
+        const stockInfo = aggItem.stockInfo;
+        let totalGrossInStandard = 0;
+        let totalStockInStandard = 0;
+        const standardUnit = findStandardUnit(details.units);
+
+        if (!standardUnit) {
+            console.warn(`No standard unit found for ${aggItem.name}, calculations might be inaccurate.`);
+            // Handle this case: maybe skip stock deduction or use a default logic?
+        }
+
+        // Convert all gross quantities to standard unit
+        Object.entries(aggItem.grossQuantities).forEach(([unit, quantity]) => {
+            if (unit === standardUnit) {
+                totalGrossInStandard += quantity;
+            } else {
+                const conversion = convertToStandardUnit(quantity, unit, details.units);
+                if (conversion && conversion.standardUnit === standardUnit) {
+                    totalGrossInStandard += conversion.standardQuantity;
+                } else {
+                    console.warn(`Cannot convert gross quantity ${quantity} ${unit} to standard unit ${standardUnit} for ${aggItem.name}`);
+                    // Decide how to handle: add as separate item? ignore? For now, we might ignore conversion errors.
+                }
+            }
+        });
+
+        // Convert stock quantity to standard unit
+        if (stockInfo.quantity > 0 && standardUnit) {
+            if (stockInfo.unit === standardUnit) {
+                totalStockInStandard = stockInfo.quantity;
+            } else {
+                const conversion = convertToStandardUnit(stockInfo.quantity, stockInfo.unit, details.units);
+                 if (conversion && conversion.standardUnit === standardUnit) {
+                    totalStockInStandard = conversion.standardQuantity;
+                } else {
+                    console.warn(`Cannot convert stock quantity ${stockInfo.quantity} ${stockInfo.unit} to standard unit ${standardUnit} for ${aggItem.name}`);
+                }
+            }
+        }
+        
+        aggItem.totalGrossInStandard = totalGrossInStandard;
+        aggItem.totalStockInStandard = totalStockInStandard;
+        aggItem.standardUnit = standardUnit;
+
+        // Calculate Net Quantity in standard unit
+        const netQuantityInStandard = Math.max(0, totalGrossInStandard - totalStockInStandard);
+        aggItem.netQuantityInStandard = netQuantityInStandard;
+
+        // Calculate Costs (using standard unit price if available)
+        let pricePerStandardUnit = null;
+        let priceSource = null;
+        let needsInput = true;
+        if (standardUnit && details.units[standardUnit] && typeof details.units[standardUnit].standardPrice === 'number') {
+            pricePerStandardUnit = details.units[standardUnit].standardPrice;
+            priceSource = details.units[standardUnit].priceSource || 'unknown';
+            needsInput = false;
         } else {
-          const { standardQuantity, standardUnit } = conversionResult;
-          if (!aggregatedList[ingredientId]) {
-            aggregatedList[ingredientId] = {
-              ingredientId: ingredientId,
-              name: details.name || 'Inconnu',
-              category: details.category || 'Autres',
-              unitsData: details.units,
-              aggregatedQuantities: {}
+            // If standard unit price is missing, mark as needs input
+            needsInput = true;
+        }
+
+        aggItem.costs = {
+            theoretical: pricePerStandardUnit !== null ? totalGrossInStandard * pricePerStandardUnit : null,
+            actual: pricePerStandardUnit !== null ? netQuantityInStandard * pricePerStandardUnit : null,
+            needsPriceInput: needsInput,
+            priceSource: priceSource,
+            pricePerStandardUnit: pricePerStandardUnit
+        };
+      });
+
+      // 8. Prepare Firestore Document Data
+      const listItemsForFirestore = [];
+      let totalTheoreticalCost = 0;
+      let totalActualCost = 0;
+
+      Object.values(aggregatedList).forEach(aggItem => {
+        // Only add items that need to be bought (net quantity > 0)
+        if (aggItem.netQuantityInStandard > 0) {
+            const itemData = {
+                itemId: `${aggItem.ingredientId}_${aggItem.standardUnit || 'unit'}`, // Use standard unit in ID
+                ingredientId: aggItem.ingredientId,
+                name: aggItem.name,
+                category: aggItem.category,
+                // Store quantities in standard unit for consistency
+                grossQuantity: aggItem.totalGrossInStandard,
+                stockQuantity: aggItem.totalStockInStandard,
+                netQuantity: aggItem.netQuantityInStandard,
+                unit: aggItem.standardUnit || 'unité', // Use standard unit
+                // Costs
+                theoreticalItemCost: aggItem.costs.theoretical,
+                actualItemCost: aggItem.costs.actual,
+                needsPriceInput: aggItem.costs.needsPriceInput,
+                priceSource: aggItem.costs.priceSource,
+                // Status
+                isChecked: false, // Default to not checked
             };
-          }
-          if (!aggregatedList[ingredientId].aggregatedQuantities[standardUnit]) {
-            aggregatedList[ingredientId].aggregatedQuantities[standardUnit] = { totalQuantity: 0, cost: null, needsPriceInput: false, priceSource: null };
-          }
-          aggregatedList[ingredientId].aggregatedQuantities[standardUnit].totalQuantity += standardQuantity;
+            listItemsForFirestore.push(itemData);
+
+            if (typeof itemData.theoreticalItemCost === 'number') {
+                totalTheoreticalCost += itemData.theoreticalItemCost;
+            }
+            if (typeof itemData.actualItemCost === 'number') {
+                totalActualCost += itemData.actualItemCost;
+            }
+        } else {
+             // Optionally, still calculate theoretical cost for items fully in stock
+             if (typeof aggItem.costs.theoretical === 'number') {
+                totalTheoreticalCost += aggItem.costs.theoretical;
+            }
         }
       });
 
-      // Calculate costs after aggregation
-      Object.values(aggregatedList).forEach(aggItem => {
-        Object.keys(aggItem.aggregatedQuantities).forEach(unitKey => {
-          const q = aggItem.aggregatedQuantities[unitKey];
-          const unitData = aggItem.unitsData[unitKey];
-          let price = null;
-          let source = null;
-          let needsInput = true;
+      const shoppingListDocData = {
+        weekId: targetWeekId,
+        familyId: familyId,
+        createdAt: isRefresh ? shoppingListDoc?.createdAt || serverTimestamp() : serverTimestamp(), // Keep original creation date on refresh
+        lastGeneratedAt: serverTimestamp(),
+        status: 'active', // or 'refreshed'
+        totalTheoreticalCost: totalTheoreticalCost,
+        totalActualCost: totalActualCost,
+        items: listItemsForFirestore,
+      };
 
-          if (unitData && typeof unitData.standardPrice === 'number') {
-            price = unitData.standardPrice;
-            source = unitData.priceSource || 'unknown';
-            needsInput = false;
-          } else {
-            let standardUnitKey = null;
-            let standardUnitData = null;
-            for (const key in aggItem.unitsData) {
-              if (aggItem.unitsData[key].isStandard) {
-                standardUnitKey = key;
-                standardUnitData = aggItem.unitsData[key];
-                break;
-              }
-            }
-            if (unitKey === standardUnitKey && price === null) {
-                needsInput = true;
-            } 
-            else if (unitKey !== standardUnitKey && (!standardUnitData || typeof standardUnitData.standardPrice !== 'number')) {
-                needsInput = true;
-            } 
-            else if (unitKey !== standardUnitKey && standardUnitData && typeof standardUnitData.standardPrice === 'number' && unitData && typeof unitData.conversionFactor === 'number') {
-                price = standardUnitData.standardPrice / unitData.conversionFactor;
-                source = 'calculated';
-                needsInput = false;
-            } else {
-                needsInput = true;
-            }
-          }
+      // 9. Save to Firestore
+      const listDocRef = doc(db, 'families', familyId, 'shoppingLists', targetWeekId);
+      await setDoc(listDocRef, shoppingListDocData, { merge: true }); // Use setDoc with merge for upsert
 
-          if (price !== null) {
-            q.cost = q.totalQuantity * price;
-            q.priceSource = source;
-            q.needsPriceInput = false;
-          } else {
-            q.cost = null;
-            q.needsPriceInput = needsInput;
-            q.priceSource = null;
-          }
-        });
-      });
+      console.log("Shopping list saved/updated successfully:", shoppingListDocData);
+      setShoppingListDoc(shoppingListDocData); // Update local state with the full document
+      setSuccessMessage(isRefresh ? 'Liste actualisée avec succès !' : 'Liste de courses générée avec succès !');
+      setTimeout(() => setSuccessMessage(''), 3000);
 
-      // 7. Transform to Final UI Structure (Grouped by Category)
+    } catch (err) {
+      console.error(`Error ${isRefresh ? 'refreshing' : 'generating'} shopping list: `, err);
+      setError(err.message || `Erreur lors de ${isRefresh ? 'l\'actualisation' : 'la génération'} de la liste.`);
+    } finally {
+      setIsGenerating(false);
+      setIsLoading(false); // Also set main loading to false
+    }
+  }, [familyId, targetWeekId, authLoading, shoppingListDoc]); // Added shoppingListDoc dependency for refresh
+
+  // --- Fetch Existing List on Load --- 
+  useEffect(() => {
+    const fetchExistingList = async () => {
+      if (!familyId) {
+        if (!authLoading) setIsLoading(false);
+        return;
+      }
+      setIsLoading(true);
+      setError(null);
+      const listDocRef = doc(db, 'families', familyId, 'shoppingLists', targetWeekId);
+      try {
+        const docSnap = await getDoc(listDocRef);
+        if (docSnap.exists()) {
+          console.log("Existing shopping list found for", targetWeekId);
+          setShoppingListDoc(docSnap.data());
+        } else {
+          console.log("No existing shopping list for", targetWeekId, ". Need to generate.");
+          setShoppingListDoc(null); // Explicitly set to null if not found
+          // Optionally trigger generation automatically if no list exists?
+          // generateOrRefreshShoppingList(false); 
+        }
+      } catch (err) {
+        console.error("Error fetching existing shopping list:", err);
+        setError("Erreur lors du chargement de la liste existante.");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (!authLoading) {
+      fetchExistingList();
+    }
+  }, [familyId, targetWeekId, authLoading]);
+
+  // --- Process Firestore Doc into UI State --- 
+  useEffect(() => {
+    if (shoppingListDoc && shoppingListDoc.items) {
       const finalGroupedList = {};
-      Object.values(aggregatedList).forEach(aggItem => {
-        const category = aggItem.category;
+      shoppingListDoc.items.forEach(item => {
+        const category = item.category || 'Autre';
         if (!finalGroupedList[category]) {
           finalGroupedList[category] = [];
         }
-        Object.keys(aggItem.aggregatedQuantities).forEach(unitKey => {
-          const q = aggItem.aggregatedQuantities[unitKey];
-          finalGroupedList[category].push({
-            itemId: `${aggItem.ingredientId}_${unitKey}`,
-            ingredientId: aggItem.ingredientId,
-            name: aggItem.name,
-            quantity: q.totalQuantity,
-            unit: unitKey,
-            checked: false,
-            cost: q.cost,
-            needsPriceInput: q.needsPriceInput,
-            priceSource: q.priceSource
-          });
-        });
+        finalGroupedList[category].push(item);
       });
 
       // Sort categories and items within categories
@@ -307,82 +425,159 @@ function ShoppingListPage() {
       Object.keys(finalGroupedList).sort().forEach(category => {
         sortedFinalList[category] = finalGroupedList[category].sort((a, b) => a.name.localeCompare(b.name));
       });
-
-      setShoppingListData(sortedFinalList);
-      console.log("Shopping list generated:", sortedFinalList);
-
-    } catch (err) {
-      console.error("Error generating shopping list: ", err);
-      setError('Erreur lors de la génération de la liste.');
-    } finally {
-      setIsLoading(false);
+      setShoppingListItems(sortedFinalList);
+    } else {
+      setShoppingListItems({}); // Clear UI list if doc is null or has no items
     }
-  }, [familyId, targetWeekId, authLoading]);
-
-  // --- Initial Fetch --- 
-  useEffect(() => {
-    if (!authLoading && familyId) {
-      generateShoppingList();
-    }
-  }, [authLoading, familyId, generateShoppingList]);
+  }, [shoppingListDoc]);
 
   // --- UI Event Handlers --- 
   const handleMenuClick = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
-  const handleRefresh = () => { handleMenuClose(); generateShoppingList(); };
+  const handleRefresh = () => { handleMenuClose(); generateOrRefreshShoppingList(true); }; // Call with isRefresh = true
 
-  const handleToggleCheck = useCallback((category, itemId, checked) => {
-    setShoppingListData(prevData => {
-      const newData = { ...prevData };
-      if (!newData[category]) return prevData;
-      const itemIndex = newData[category].findIndex(item => item.itemId === itemId);
-      if (itemIndex === -1) return prevData;
-      const updatedCategoryItems = [...newData[category]];
-      updatedCategoryItems[itemIndex] = { ...updatedCategoryItems[itemIndex], checked: checked };
-      newData[category] = updatedCategoryItems;
-      return newData;
-    });
-  }, []);
+  // --- Toggle Check and Update Stock --- 
+  const handleToggleCheck = useCallback(async (itemId, currentCheckedStatus) => {
+    if (!familyId || !shoppingListDoc) return;
 
-  const handleUncheckAll = () => {
+    const newCheckedStatus = !currentCheckedStatus;
+    const itemIndex = shoppingListDoc.items.findIndex(item => item.itemId === itemId);
+    if (itemIndex === -1) return;
+
+    const updatedItems = [...shoppingListDoc.items];
+    const itemToUpdate = { ...updatedItems[itemIndex], isChecked: newCheckedStatus };
+    updatedItems[itemIndex] = itemToUpdate;
+
+    // Optimistically update UI state first
+    setShoppingListDoc(prevDoc => ({ ...prevDoc, items: updatedItems }));
+
+    // Prepare Firestore update
+    const listDocRef = doc(db, 'families', familyId, 'shoppingLists', targetWeekId);
+    const updatePayload = { items: updatedItems };
+
+    // Prepare stock update only if checking the item (adding to stock)
+    let stockUpdatePromise = Promise.resolve();
+    if (newCheckedStatus) { // Only update stock when checking item ON
+        console.log(`Item ${itemToUpdate.name} checked. Preparing stock update.`);
+        // *** Using Cloud Function is recommended here for atomicity ***
+        // For now, implement client-side update (less robust)
+        setIsUpdatingStock(true); // Show indicator
+        const stockItemRef = doc(db, 'families', familyId, 'stockItems', itemToUpdate.ingredientId);
+        const stockUpdateData = { 
+            ingredientName: itemToUpdate.name, // Ensure name is present
+            category: itemToUpdate.category, // Ensure category is present
+            unit: itemToUpdate.unit, // The unit in which it was bought (standard unit)
+            lastUpdated: serverTimestamp()
+        };
+        
+        stockUpdatePromise = getDoc(stockItemRef).then(stockSnap => {
+            const currentStockQuantity = stockSnap.exists() ? (stockSnap.data().quantity || 0) : 0;
+            // Ensure units match before adding - should match as we use standard unit
+            if (stockSnap.exists() && stockSnap.data().unit !== itemToUpdate.unit) {
+                console.warn(`Stock unit (${stockSnap.data().unit}) differs from list unit (${itemToUpdate.unit}) for ${itemToUpdate.name}. Cannot update stock automatically.`);
+                // Maybe show an error to the user?
+                return Promise.reject(new Error("Unit mismatch")); 
+            }
+            stockUpdateData.quantity = currentStockQuantity + itemToUpdate.netQuantity; 
+            return setDoc(stockItemRef, stockUpdateData, { merge: true });
+        }).finally(() => setIsUpdatingStock(false));
+    }
+
+    try {
+        // Update the shopping list document
+        await updateDoc(listDocRef, updatePayload);
+        console.log(`Item ${itemId} status updated to ${newCheckedStatus}`);
+        
+        // Wait for the stock update (if any) to complete
+        await stockUpdatePromise;
+        if (newCheckedStatus) {
+            console.log(`Stock updated for ${itemToUpdate.name}`);
+            setSuccessMessage(`Stock mis à jour pour ${itemToUpdate.name}.`);
+            setTimeout(() => setSuccessMessage(''), 2000);
+        }
+
+    } catch (err) {
+        console.error("Error updating item status or stock:", err);
+        setError("Erreur lors de la mise à jour de l'article ou du stock.");
+        // Revert optimistic UI update on error?
+        setShoppingListDoc(prevDoc => {
+            const revertedItems = [...prevDoc.items];
+            const revertIndex = revertedItems.findIndex(item => item.itemId === itemId);
+            if (revertIndex !== -1) {
+                revertedItems[revertIndex] = { ...revertedItems[revertIndex], isChecked: currentCheckedStatus };
+            }
+            return { ...prevDoc, items: revertedItems };
+        });
+    }
+}, [familyId, shoppingListDoc, targetWeekId]);
+
+
+  const handleUncheckAll = async () => {
     handleMenuClose();
-    setShoppingListData(prevData => {
-      const newData = {};
-      Object.keys(prevData).forEach(category => {
-        newData[category] = prevData[category].map(item => ({ ...item, checked: false }));
-      });
-      return newData;
-    });
+    if (!familyId || !shoppingListDoc || !shoppingListDoc.items) return;
+
+    const updatedItems = shoppingListDoc.items.map(item => ({ ...item, isChecked: false }));
+    
+    // Optimistically update UI
+    setShoppingListDoc(prevDoc => ({ ...prevDoc, items: updatedItems }));
+
+    const listDocRef = doc(db, 'families', familyId, 'shoppingLists', targetWeekId);
+    try {
+        await updateDoc(listDocRef, { items: updatedItems });
+        console.log("All items unchecked.");
+    } catch (err) {
+        console.error("Error unchecking all items:", err);
+        setError("Erreur lors de la désélection de tous les articles.");
+        // Revert UI?
+        setShoppingListDoc(shoppingListDoc); // Revert to original doc state
+    }
   };
 
-  const handleClearChecked = () => {
+  const handleClearChecked = async () => {
     handleMenuClose();
-    setShoppingListData(prevData => {
-      const newData = {};
-      Object.keys(prevData).forEach(category => {
-        const remainingItems = prevData[category].filter(item => !item.checked);
-        if (remainingItems.length > 0) newData[category] = remainingItems;
-      });
-      return newData;
-    });
+     if (!familyId || !shoppingListDoc || !shoppingListDoc.items) return;
+
+    const remainingItems = shoppingListDoc.items.filter(item => !item.isChecked);
+    
+    // Optimistically update UI
+    setShoppingListDoc(prevDoc => ({ ...prevDoc, items: remainingItems }));
+
+    const listDocRef = doc(db, 'families', familyId, 'shoppingLists', targetWeekId);
+    try {
+        await updateDoc(listDocRef, { items: remainingItems });
+        console.log("Checked items cleared.");
+    } catch (err) {
+        console.error("Error clearing checked items:", err);
+        setError("Erreur lors de la suppression des articles cochés.");
+        // Revert UI?
+        setShoppingListDoc(shoppingListDoc); // Revert to original doc state
+    }
   };
 
   // --- Price Input Handling --- 
   const handleOpenPriceDialog = useCallback((ingredientId, ingredientName, unit) => {
-    setPriceDialogData({ ingredientId, ingredientName, unit });
+    // We need the standard unit price, so we pass the standard unit
+    const itemDetails = Object.values(aggregatedList || {}).find(i => i.ingredientId === ingredientId);
+    const standardUnit = itemDetails?.standardUnit;
+    if (!standardUnit) {
+        alert("Impossible de déterminer l'unité standard pour cet ingrédient.");
+        return;
+    }
+    setPriceDialogData({ ingredientId, ingredientName, unit: standardUnit }); // Use standard unit
     setPriceDialogOpen(true);
-  }, []);
+  }, [shoppingListItems]); // Depends on aggregatedList which is now part of generate function state
 
   const handleClosePriceDialog = () => {
     setPriceDialogOpen(false);
   };
 
   const handleSavePrice = async (ingredientId, unit, price) => {
+    // This should save the price for the STANDARD unit
     if (typeof price !== 'number' || price < 0) {
       alert("Veuillez entrer un prix valide.");
       return;
     }
-    console.log(`Saving price for ${ingredientId}, unit ${unit}: ${price}`);
+    console.log(`Saving standard price for ${ingredientId}, unit ${unit}: ${price}`);
     const ingredientRef = doc(db, 'ingredients', ingredientId);
     try {
       await updateDoc(ingredientRef, {
@@ -391,55 +586,68 @@ function ShoppingListPage() {
         [`units.${unit}.lastPriceUpdate`]: serverTimestamp(),
         'updatedAt': serverTimestamp()
       });
-      console.log("Price updated successfully in Firestore.");
+      console.log("Standard price updated successfully in Firestore.");
       handleClosePriceDialog();
-      generateShoppingList(); // Re-generate list to reflect new price/cost
+      generateOrRefreshShoppingList(true); // Re-generate/refresh list to reflect new price/cost
     } catch (error) {
-      console.error("Error updating price in Firestore: ", error);
-      alert("Erreur lors de la sauvegarde du prix.");
+      console.error("Error updating standard price in Firestore: ", error);
+      alert("Erreur lors de la sauvegarde du prix standard.");
     }
   };
 
   // --- Total Cost Calculation --- 
-  const totalCost = useMemo(() => {
-    let total = 0;
-    Object.values(shoppingListData).forEach(categoryItems => {
-      categoryItems.forEach(item => {
-        // Coût total estimé basé sur les items NON cochés
-        if (!item.checked && typeof item.cost === 'number') {
-          total += item.cost;
-        }
-      });
-    });
-    return total;
-  }, [shoppingListData]);
+  const { totalActualCostToPay, totalTheoreticalCostValue } = useMemo(() => {
+    let actual = 0;
+    let theoretical = shoppingListDoc?.totalTheoreticalCost || 0; // Get theoretical from doc if available
+    
+    // Recalculate actual cost to pay based on current checked status
+    if (shoppingListDoc && shoppingListDoc.items) {
+        shoppingListDoc.items.forEach(item => {
+            if (!item.isChecked && typeof item.actualItemCost === 'number') {
+                actual += item.actualItemCost;
+            }
+        });
+    }
+    
+    return { totalActualCostToPay: actual, totalTheoreticalCostValue: theoretical };
+  }, [shoppingListDoc]);
 
   // --- Export PDF Handler --- 
   const handleExportPdf = () => {
     handleMenuClose();
-    console.log("Exporting PDF with data:", shoppingListData);
+    console.log("Exporting PDF with data:", shoppingListItems);
 
-    if (!shoppingListData || Object.keys(shoppingListData).length === 0) {
+    if (!shoppingListItems || Object.keys(shoppingListItems).length === 0) {
       alert("La liste de courses est vide, impossible d'exporter.");
       return;
     }
 
     const content = [];
 
-    // Titre et date
+    // Title and date
     content.push({ text: 'Liste de Courses', style: 'header', alignment: 'center' });
-    content.push({ text: `Semaine du ${targetWeekStart.toLocaleDateString('fr-FR')}`, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 20] });
+    content.push({ text: `Semaine du ${targetWeekStart.toLocaleDateString('fr-FR')}`, style: 'subheader', alignment: 'center', margin: [0, 0, 0, 10] });
 
-    // Items par catégorie
-    Object.entries(shoppingListData).forEach(([category, items]) => {
+    // Costs Summary
+    content.push({
+        columns: [
+            { text: `Coût Réel à Payer: ${formatCurrency(totalActualCostToPay)}`, style: 'costSummary' },
+            { text: `Coût Théorique (sans stock): ${formatCurrency(totalTheoreticalCostValue)}`, style: 'costSummary', alignment: 'right' }
+        ],
+        margin: [0, 0, 0, 15]
+    });
+
+    // Items by category
+    Object.entries(shoppingListItems).forEach(([category, items]) => {
       content.push({ text: category, style: 'categoryHeader', margin: [0, 10, 0, 5] });
       
       const categoryItemsContent = items.map(item => {
-        const quantityText = formatQuantityUnit(item.quantity, item.unit);
-        const costText = item.cost !== null ? formatCurrency(item.cost) : (item.needsPriceInput ? '(Prix manquant)' : '');
-        const itemStyle = item.checked ? { decoration: 'lineThrough', color: 'grey' } : {};
+        const quantityText = formatQuantityUnit(item.netQuantity, item.unit); // Display net quantity
+        const costText = item.actualItemCost !== null ? formatCurrency(item.actualItemCost) : (item.needsPriceInput ? '(Prix?!)' : '');
+        const itemStyle = item.isChecked ? { decoration: 'lineThrough', color: 'grey' } : {};
         
         return [
+          { text: item.isChecked ? { text: '✓', bold: true, color: 'green' } : { text: '☐' } , style: ['checkbox', itemStyle] }, // Checkbox column
           { text: item.name, style: ['itemText', itemStyle] },
           { text: quantityText, style: ['itemText', itemStyle], alignment: 'right' },
           { text: costText, style: ['itemText', itemStyle], alignment: 'right' }
@@ -450,162 +658,193 @@ function ShoppingListPage() {
         layout: 'lightHorizontalLines', // optional
         table: {
           headerRows: 0,
-          widths: ['*', 'auto', 'auto'], // Nom prend l'espace, Quantité et Coût s'adaptent
+          widths: ['auto', '*', 'auto', 'auto'], // Widths for checkbox, name, quantity, cost
           body: categoryItemsContent
         },
-        margin: [0, 0, 0, 15] // Marge après chaque table de catégorie
+        // Remove borders
+        layout: {
+            hLineWidth: function (i, node) { return (i === 0 || i === node.table.body.length) ? 0 : 0.5; },
+            vLineWidth: function (i, node) { return 0; },
+            hLineColor: function (i, node) { return '#dddddd'; },
+            paddingLeft: function(i, node) { return (i === 0) ? 0 : 8; }, // Padding for checkbox
+            paddingRight: function(i, node) { return 8; },
+            paddingTop: function(i, node) { return 4; },
+            paddingBottom: function(i, node) { return 4; },
+        }
       });
     });
-
-    // Coût total estimé (des items non cochés)
-    content.push({ text: `Total estimé (non cochés): ${formatCurrency(totalCost)}`, style: 'totalCost', alignment: 'right', margin: [0, 20, 0, 0] });
 
     const docDefinition = {
       content: content,
       styles: {
-        header: {
-          fontSize: 18,
-          bold: true,
-          margin: [0, 0, 0, 5]
-        },
-        subheader: {
-          fontSize: 14,
-          color: 'gray',
-          italics: true
-        },
-        categoryHeader: {
-          fontSize: 14,
-          bold: true,
-          color: theme.palette.primary.main, // Utilise la couleur primaire du thème MUI
-          margin: [0, 10, 0, 5]
-        },
-        itemText: {
-          fontSize: 10,
-          margin: [0, 2, 0, 2] // Ajoute un peu d'espace vertical entre les items
-        },
-        totalCost: {
-            fontSize: 12,
-            bold: true,
-            margin: [0, 10, 0, 0]
-        }
+        header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
+        subheader: { fontSize: 14, margin: [0, 0, 0, 10], color: 'gray' },
+        categoryHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5], color: theme.palette.primary.main },
+        itemText: { fontSize: 10 },
+        costSummary: { fontSize: 12, bold: true, margin: [0, 5, 0, 5] },
+        checkbox: { fontSize: 12, margin: [0, 0, 5, 0] }
       },
       defaultStyle: {
-        // font: 'Roboto' // Si vous avez chargé une police spécifique
+        // font: 'Roboto' // Ensure you have Roboto font configured if needed
       }
     };
 
     try {
-      const pdfFileName = `liste_courses_${targetWeekId}.pdf`;
-      pdfMake.createPdf(docDefinition).download(pdfFileName);
-      console.log(`PDF "${pdfFileName}" generated and download initiated.`);
-    } catch (error) {
-        console.error("Error generating PDF: ", error);
-        alert("Une erreur est survenue lors de la génération du PDF.");
+        pdfMake.createPdf(docDefinition).download(`liste_courses_${targetWeekId}.pdf`);
+    } catch (e) {
+        console.error("Error creating PDF:", e);
+        alert("Une erreur est survenue lors de la création du PDF.");
     }
   };
 
-  // Placeholder actions (Keep for now)
-  const handlePrint = () => { handleMenuClose(); alert('Imprimer - Non implémenté'); };
-  const handleShare = () => { handleMenuClose(); alert('Partager - Non implémenté'); };
-
-  // --- Rendering Logic --- 
-  const renderSkeletons = () => (
-    <Stack spacing={3} sx={{ p: 2 }}>
-      {[1, 2, 3].map((cat) => (
-        <Paper key={cat} elevation={0} sx={{ p: 2, borderRadius: 3, border: `1px solid ${theme.palette.divider}` }}>
-          <Skeleton variant="text" width="30%" height={30} sx={{ mb: 2 }} />
-          <Stack spacing={1.5}>
-            {[1, 2, 3, 4].map((item) => (
-              <Box key={item} sx={{ display: 'flex', alignItems: 'center' }}>
-                <Skeleton variant="circular" width={24} height={24} sx={{ mr: 1.5 }} />
-                <Skeleton variant="text" width="60%" height={20} />
-                <Skeleton variant="text" width="20%" height={20} sx={{ ml: 'auto' }} />
-              </Box>
-            ))}
-          </Stack>
-        </Paper>
-      ))}
-    </Stack>
-  );
-
-  const hasItems = useMemo(() => Object.keys(shoppingListData).length > 0, [shoppingListData]);
+  // --- Render Logic --- 
+  if (isLoading) {
+    return (
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Skeleton variant="text" width="60%" height={40} />
+        <Skeleton variant="rectangular" width="100%" height={60} sx={{ mt: 2, borderRadius: 2 }} />
+        <Skeleton variant="rectangular" width="100%" height={200} sx={{ mt: 2, borderRadius: 2 }} />
+      </Container>
+    );
+  }
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)' }}>
-      <AppBar position="static" color="default" elevation={1} sx={{ backgroundColor: theme.palette.background.paper }}>
+    <Box sx={{ pb: 10 }}> {/* Add padding bottom for FAB */}
+      {/* App Bar for Title and Actions */}
+      <AppBar position="sticky" color="default" elevation={1} sx={{ 
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`
+      }}>
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-            Liste de Courses
-          </Typography>
-          {hasItems && (
-            <Typography variant="subtitle1" sx={{ mr: 2, fontWeight: 'medium' }}>
-              Total: {formatCurrency(totalCost)}
+          <InventoryIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
+          <Box sx={{ flexGrow: 1 }}>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              Liste de Courses
             </Typography>
-          )}
-          <Tooltip title="Rafraîchir la liste">
-            <IconButton color="inherit" onClick={handleRefresh} disabled={isLoading}>
-              <Refresh />
-            </IconButton>
+            <Typography variant="body2" color="text.secondary">
+              Semaine du {targetWeekStart.toLocaleDateString('fr-FR')}
+            </Typography>
+          </Box>
+          <Tooltip title="Actualiser la liste avec le stock actuel">
+            <span> {/* Span needed for disabled button tooltip */} 
+              <IconButton onClick={handleRefresh} disabled={isGenerating || isUpdatingStock}>
+                {isGenerating ? <CircularProgress size={24} /> : <SyncIcon />}
+              </IconButton>
+            </span>
           </Tooltip>
-          <Tooltip title="Options">
-            <IconButton color="inherit" id="options-button" onClick={handleMenuClick} disabled={isLoading || !hasItems}>
-              <MoreVert />
-            </IconButton>
-          </Tooltip>
-          <Menu id="options-menu" anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
-            {/* --- Option Export PDF --- */}
-            <MenuItem onClick={handleExportPdf} disabled={isLoading || !hasItems}>
+          <IconButton
+            aria-label="more"
+            aria-controls="long-menu"
+            aria-haspopup="true"
+            onClick={handleMenuClick}
+            disabled={isGenerating || isUpdatingStock}
+          >
+            <MoreVert />
+          </IconButton>
+          <Menu
+            id="long-menu"
+            anchorEl={anchorEl}
+            keepMounted
+            open={menuOpen}
+            onClose={handleMenuClose}
+          >
+            <MenuItem onClick={handleUncheckAll}>
+              <ListItemIcon><PlaylistAddCheck fontSize="small" /></ListItemIcon>
+              <ListItemText>Tout décocher</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={handleClearChecked}>
+              <ListItemIcon><DeleteSweep fontSize="small" /></ListItemIcon>
+              <ListItemText>Supprimer les articles cochés</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleExportPdf}>
               <ListItemIcon><PictureAsPdf fontSize="small" /></ListItemIcon>
               <ListItemText>Exporter en PDF</ListItemText>
             </MenuItem>
-            <Divider />
-            {/* --- Options existantes --- */}
-            <MenuItem onClick={handleUncheckAll} disabled={isLoading || !hasItems}><ListItemIcon><PlaylistAddCheck fontSize="small" /></ListItemIcon><ListItemText>Décocher tout</ListItemText></MenuItem>
-            <MenuItem onClick={handleClearChecked} disabled={isLoading || !hasItems}><ListItemIcon><DeleteSweep fontSize="small" /></ListItemIcon><ListItemText>Supprimer les cochés</ListItemText></MenuItem>
-            <Divider />
-            {/* --- Placeholders conservés --- */}
-            <MenuItem onClick={handlePrint} disabled><ListItemIcon><Print fontSize="small" /></ListItemIcon><ListItemText>Imprimer</ListItemText></MenuItem>
-            <MenuItem onClick={handleShare} disabled><ListItemIcon><Share fontSize="small" /></ListItemIcon><ListItemText>Partager</ListItemText></MenuItem>
+            {/* Add Share option later */}
+            {/* <MenuItem onClick={() => { handleMenuClose(); alert('Partage bientôt disponible !'); }}>
+              <ListItemIcon><Share fontSize="small" /></ListItemIcon>
+              <ListItemText>Partager</ListItemText>
+            </MenuItem> */}
           </Menu>
         </Toolbar>
+        {/* Progress indicator for stock updates */}
+        {isUpdatingStock && <LinearProgress color="secondary" sx={{ position: 'absolute', bottom: 0, left: 0, width: '100%' }} />}
       </AppBar>
 
-      {isLoading && <LinearProgress />}
+      <Container maxWidth="md" sx={{ mt: 3 }}>
+        {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>{error}</Alert>}
+        {successMessage && <Snackbar open={!!successMessage} autoHideDuration={3000} onClose={() => setSuccessMessage('')} message={successMessage} />}
 
-      <Box sx={{ flexGrow: 1, overflowY: 'auto', p: { xs: 1, sm: 2 } }}>
-        {isLoading ? (
-          renderSkeletons()
-        ) : error ? (
-          <Alert severity="error" sx={{ m: 2 }}>{error}</Alert>
-        ) : !hasItems ? (
-          <Typography sx={{ textAlign: 'center', mt: 4, color: 'text.secondary' }}>
-            Votre liste de courses est vide. Ajoutez des recettes au planning de la semaine !
-          </Typography>
-        ) : (
-          <List sx={{ width: '100%' }}>
-            {Object.entries(shoppingListData).map(([category, items]) => (
-              <ShoppingListCategory
-                key={category}
-                category={category}
-                items={items}
-                onToggleCheck={handleToggleCheck}
-                onOpenPriceDialog={handleOpenPriceDialog}
-              />
-            ))}
-          </List>
+        {Object.keys(shoppingListItems).length === 0 && !isGenerating && (
+          <Paper elevation={0} sx={{ p: 3, textAlign: 'center', borderRadius: 4, background: alpha(theme.palette.info.main, 0.05), border: `1px solid ${alpha(theme.palette.info.main, 0.2)}` }}>
+            <Typography color="text.secondary">
+              Votre liste de courses est vide pour cette semaine.
+              {shoppingListDoc === null && " Cliquez sur Actualiser pour la générer si un planning existe."}
+            </Typography>
+          </Paper>
         )}
-      </Box>
 
-      {/* Price Input Dialog */} 
-      <PriceInputDialog
-        open={priceDialogOpen}
-        onClose={handleClosePriceDialog}
-        onSave={handleSavePrice}
-        ingredientId={priceDialogData.ingredientId}
-        ingredientName={priceDialogData.ingredientName}
-        unit={priceDialogData.unit}
-      />
+        {/* Costs Summary */} 
+        {Object.keys(shoppingListItems).length > 0 && (
+            <Paper elevation={0} sx={{ 
+                p: 2, 
+                mb: 3, 
+                borderRadius: 4, 
+                background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.05)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.divider, 0.1)}`
+            }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+                    <Box>
+                        <Typography variant="body2" color="text.secondary">Coût Réel à Payer:</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.success.dark }}>
+                            {formatCurrency(totalActualCostToPay)}
+                        </Typography>
+                    </Box>
+                    <Divider orientation="vertical" flexItem />
+                    <Box sx={{ textAlign: 'right' }}>
+                        <Typography variant="body2" color="text.secondary">Coût Théorique (sans stock):</Typography>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                            {formatCurrency(totalTheoreticalCostValue)}
+                        </Typography>
+                    </Box>
+                </Stack>
+                <Tooltip title="Le coût réel est basé sur les articles non cochés et déduit le stock. Le coût théorique est basé sur tous les ingrédients des recettes planifiées, sans déduire le stock.">
+                    <IconButton size="small" sx={{ position: 'absolute', top: 8, right: 8 }}>
+                        <InfoIcon fontSize="small" color="action" />
+                    </IconButton>
+                </Tooltip>
+            </Paper>
+        )}
 
+        {/* List Items */} 
+        <List sx={{ p: 0 }}>
+          {Object.entries(shoppingListItems).map(([category, items]) => (
+            <ShoppingListCategory
+              key={category}
+              category={category}
+              items={items}
+              onToggleCheck={handleToggleCheck}
+              onPriceInputClick={handleOpenPriceDialog}
+            />
+          ))}
+        </List>
+
+        {/* Add Item Manually FAB? - Maybe later */}
+        {/* <Fab color="primary" aria-label="add" sx={{ position: 'fixed', bottom: 16, right: 16 }}>
+          <AddIcon />
+        </Fab> */}
+
+        {/* Price Input Dialog */}
+        <PriceInputDialog
+          open={priceDialogOpen}
+          onClose={handleClosePriceDialog}
+          onSave={handleSavePrice}
+          ingredientName={priceDialogData.ingredientName}
+          unit={priceDialogData.unit}
+          ingredientId={priceDialogData.ingredientId}
+        />
+      </Container>
     </Box>
   );
 }

@@ -11,6 +11,7 @@ import RecipeDetailPage from './pages/RecipeDetailPage';
 import RecipeFormPage from './pages/RecipeFormPage';
 import WeeklyPlannerPage from './pages/planner/WeeklyPlannerPage'; // Corrected path for planner
 import ShoppingListPage from './pages/ShoppingListPage'; // <-- Import the new shopping list page
+import StockPage from './pages/StockPage';
 import Layout from './components/Layout';
 import AuthProvider from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -34,6 +35,7 @@ function App() {
           <Route path="/recipes/new" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
           <Route path="/recipes/:recipeId/edit" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
           <Route path="/planner" element={<ProtectedRoute><WeeklyPlannerPage /></ProtectedRoute>} />
+          <Route path="/stock" element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
           
           {/* NEW: Route for Shopping List */} 
           <Route path="/shopping-list" element={<ProtectedRoute><ShoppingListPage /></ProtectedRoute>} />

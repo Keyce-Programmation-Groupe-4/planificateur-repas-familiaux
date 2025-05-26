@@ -30,20 +30,10 @@ export function convertToStandardUnit(quantity, unit, ingredientUnitsData) {
     return { standardQuantity: quantity, standardUnit: unit };
   }
 
-  // Trouver l'unité standard correspondante (même type de mesure, ex: poids, volume)
-  // On suppose pour l'instant qu'il n'y a qu'une seule unité standard par ingrédient
-  // Une logique plus complexe pourrait être nécessaire si un ingrédient a un standard poids ET volume
-  let standardUnitKey = null;
-  let standardUnitData = null;
-  for (const key in ingredientUnitsData) {
-    if (ingredientUnitsData[key].isStandard) {
-      standardUnitKey = key;
-      standardUnitData = ingredientUnitsData[key];
-      break;
-    }
-  }
+  // Trouver l'unité standard correspondante
+  const standardUnitKey = findStandardUnit(ingredientUnitsData);
 
-  if (!standardUnitKey || !standardUnitData) {
+  if (!standardUnitKey) {
     console.warn(`convertToStandardUnit: No standard unit defined for this ingredient.`);
     return null; // Pas d'unité standard définie
   }
@@ -74,7 +64,7 @@ export function formatQuantityUnit(quantity, unit) {
 
     // Gestion simple du pluriel pour certaines unités
     let displayUnit = unit;
-    if (quantity > 1) {
+    if (quantity > 1 || quantity === 0) { // Also handle 0 quantity for plural (e.g., 0 pièces)
         if (unit === 'piece') displayUnit = 'pièces';
         // Ajouter d'autres règles de pluriel si nécessaire (ex: 'boite' -> 'boites')
     }
@@ -83,5 +73,25 @@ export function formatQuantityUnit(quantity, unit) {
     const formattedQuantity = Number.isInteger(quantity) ? quantity : quantity.toFixed(2).replace(/\.00$/, '');
 
     return `${formattedQuantity} ${displayUnit}`;
+}
+
+/**
+ * Finds the key (name) of the standard unit within an ingredient's units data.
+ *
+ * @param {object} ingredientUnitsData The 'units' object from the ingredient document.
+ *                                    Ex: { kg: {isStandard: true, ...}, g: {conversionFactor: 1000, ...} }
+ * @returns {string | null} The key of the standard unit (e.g., "kg"), or null if none is found.
+ */
+export function findStandardUnit(ingredientUnitsData) {
+  if (!ingredientUnitsData || typeof ingredientUnitsData !== 'object') {
+    return null;
+  }
+  for (const unitKey in ingredientUnitsData) {
+    if (ingredientUnitsData[unitKey] && ingredientUnitsData[unitKey].isStandard === true) {
+      return unitKey;
+    }
+  }
+  console.warn("findStandardUnit: No standard unit found in", ingredientUnitsData);
+  return null; // No standard unit found
 }
 
