@@ -87,7 +87,7 @@ const formatCurrency = (value) => {
   if (typeof value !== "number") {
     return ""
   }
-  // Modification ici : 'EUR' remplacé par 'XAF'
+  // Modification ici : 'XFA' remplacé par 'XAF'
   return value.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })
 }
 // --- End Helper Functions ---

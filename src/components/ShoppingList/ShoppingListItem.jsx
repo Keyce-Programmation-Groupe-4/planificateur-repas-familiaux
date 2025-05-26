@@ -23,7 +23,7 @@ const formatCurrency = (value) => {
   if (typeof value !== "number") {
     return ""
   }
-  return value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })
+  return value.toLocaleString("fr-FR", { style: "currency", currency: "XFA" })
 }
 
 function ShoppingListItem({ item, onToggleCheck, onOpenPriceDialog }) {
