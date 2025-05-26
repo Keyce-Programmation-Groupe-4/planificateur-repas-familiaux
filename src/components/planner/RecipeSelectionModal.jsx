@@ -1,6 +1,6 @@
-"use client"
+"use client";
 
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -22,119 +22,109 @@ import {
   Zoom,
   Chip,
   Stack,
-} from "@mui/material"
-import { Search, Clear, Close, Restaurant } from "@mui/icons-material"
-import RecipeCard from "./RecipeCard"
+  Divider, // Added for separation
+  ListSubheader, // Added for section titles
+} from "@mui/material";
+import {
+  Search,
+  Clear,
+  Close,
+  Restaurant,
+  FamilyRestroom as FamilyIcon, // Added
+  Public as PublicIcon, // Added
+} from "@mui/icons-material";
+import RecipeCard from "./RecipeCard"; // Assuming this component exists and displays a recipe
 
 const Transition = React.forwardRef(function Transition(props, ref) {
-  return <Slide direction="up" ref={ref} {...props} />
-})
+  return <Slide direction="up" ref={ref} {...props} />;
+});
 
-function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, availableRecipes = [] }) {
-  const theme = useTheme()
-  const [searchTerm, setSearchTerm] = useState("")
-  const [recipesToDisplay, setRecipesToDisplay] = useState([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [selectedFilter, setSelectedFilter] = useState("all")
+function RecipeSelectionModal({
+  open,
+  onClose,
+  onRecipeSelect,
+  targetSlotInfo,
+  // Expecting availableRecipes to be pre-sorted with family recipes first
+  // and each recipe having an 'isFamilyRecipe' boolean flag
+  availableRecipes = [], 
+}) {
+  const theme = useTheme();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  // Note: Removed local filtering state (selectedFilter) as it wasn't used in the provided code
+  // and the primary filtering is now based on family/public structure.
+
+  // Separate recipes into family and public based on the flag
+  const { familyRecipes, publicExternalRecipes } = useMemo(() => {
+    const family = [];
+    const publicExternal = [];
+    availableRecipes.forEach(recipe => {
+        // Apply search term filtering here before separating
+        const nameMatch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase());
+        const tagMatch = recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+        
+        if (!searchTerm || nameMatch || tagMatch) {
+            if (recipe.isFamilyRecipe) {
+                family.push(recipe);
+            } else {
+                publicExternal.push(recipe);
+            }
+        }
+    });
+    return { familyRecipes: family, publicExternalRecipes: publicExternal };
+  }, [availableRecipes, searchTerm]);
 
   useEffect(() => {
     if (open) {
-      setIsLoading(true)
-      setError(null)
-      setSearchTerm("")
-      setSelectedFilter("all")
-
+      setIsLoading(true);
+      setError(null);
+      setSearchTerm("");
+      // Simulate loading, actual data comes from props
       const timer = setTimeout(() => {
-        setRecipesToDisplay(availableRecipes)
-        setIsLoading(false)
-      }, 200)
+        setIsLoading(false);
+      }, 150); // Shorter delay as data is pre-loaded
 
-      return () => clearTimeout(timer)
-    } else {
-      setRecipesToDisplay([])
+      return () => clearTimeout(timer);
     }
-  }, [open, availableRecipes])
+  }, [open]);
 
   const handleSearchChange = (event) => {
-    setSearchTerm(event.target.value)
-  }
+    setSearchTerm(event.target.value);
+  };
 
   const clearSearch = () => {
-    setSearchTerm("")
-  }
+    setSearchTerm("");
+  };
 
   const handleRecipeClick = (recipe) => {
     if (targetSlotInfo) {
-      onRecipeSelect(recipe.id, targetSlotInfo.day, targetSlotInfo.mealType)
+      onRecipeSelect(recipe.id, targetSlotInfo.day, targetSlotInfo.mealType);
     }
-    onClose()
-  }
-
-  // Filter recipes based on search and category
-  const filteredRecipes = useMemo(() => {
-    let filtered = recipesToDisplay
-
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (recipe) =>
-          recipe.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()))),
-      )
-    }
-
-    if (selectedFilter !== "all") {
-      filtered = filtered.filter((recipe) => {
-        switch (selectedFilter) {
-          case "quick":
-            return recipe.cookingTime && recipe.cookingTime <= 30
-          case "vegetarian":
-            return recipe.tags && recipe.tags.includes("végétarien")
-          case "favorites":
-            return recipe.isFavorite
-          default:
-            return true
-        }
-      })
-    }
-
-    return filtered
-  }, [recipesToDisplay, searchTerm, selectedFilter])
+    onClose();
+  };
 
   const formatTargetSlot = () => {
-    if (!targetSlotInfo) return ""
-    const dayName = targetSlotInfo.day?.charAt(0).toUpperCase() + targetSlotInfo.day?.slice(1)
-    let mealName = ""
+    if (!targetSlotInfo) return "";
+    const dayName =
+      targetSlotInfo.day?.charAt(0).toUpperCase() +
+      targetSlotInfo.day?.slice(1);
+    let mealName = "";
     switch (targetSlotInfo.mealType) {
       case "breakfast":
-        mealName = "Petit-déjeuner"
-        break
+        mealName = "Petit-déjeuner";
+        break;
       case "lunch":
-        mealName = "Déjeuner"
-        break
+        mealName = "Déjeuner";
+        break;
       case "dinner":
-        mealName = "Dîner"
-        break
+        mealName = "Dîner";
+        break;
       default:
-        mealName = ""
+        mealName = "";
     }
-    return `${dayName} - ${mealName}`
-  }
-
-  const filterOptions = [
-    { key: "all", label: "Toutes", count: recipesToDisplay.length },
-    {
-      key: "quick",
-      label: "Rapides",
-      count: recipesToDisplay.filter((r) => r.cookingTime && r.cookingTime <= 30).length,
-    },
-    {
-      key: "vegetarian",
-      label: "Végétarien",
-      count: recipesToDisplay.filter((r) => r.tags && r.tags.includes("végétarien")).length,
-    },
-    { key: "favorites", label: "Favoris", count: recipesToDisplay.filter((r) => r.isFavorite).length },
-  ]
+    return `${dayName} - ${mealName}`;
+  };
 
   return (
     <Dialog
@@ -147,7 +137,10 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
       PaperProps={{
         sx: {
           borderRadius: 6,
-          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(
+            theme.palette.primary.main,
+            0.02
+          )} 100%)`,
           backdropFilter: "blur(20px)",
           border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
           boxShadow: `0 20px 60px ${alpha(theme.palette.primary.main, 0.2)}`,
@@ -165,11 +158,20 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
       <DialogTitle
         sx={{
           pb: 2,
-          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+          background: `linear-gradient(135deg, ${alpha(
+            theme.palette.primary.main,
+            0.05
+          )} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
           borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600, mb: 0.5 }}>
               Choisir une recette
@@ -203,11 +205,14 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
       </DialogTitle>
 
       <DialogContent sx={{ p: 0 }}>
-        {/* Search and Filter Section */}
+        {/* Search Section */}
         <Box
           sx={{
             p: 3,
-            background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            background: `linear-gradient(135deg, ${alpha(
+              theme.palette.background.paper,
+              0.8
+            )} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
             borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
           }}
         >
@@ -215,10 +220,9 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
           <TextField
             fullWidth
             variant="outlined"
-            placeholder="Rechercher une recette ou un ingrédient..."
+            placeholder="Rechercher une recette..."
             value={searchTerm}
             onChange={handleSearchChange}
-            sx={{ mb: 2 }}
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">
@@ -245,33 +249,10 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
               },
             }}
           />
-
-          {/* Filter Chips */}
-          <Stack direction="row" spacing={1} sx={{ flexWrap: "wrap", gap: 1 }}>
-            {filterOptions.map((option) => (
-              <Chip
-                key={option.key}
-                label={`${option.label} (${option.count})`}
-                onClick={() => setSelectedFilter(option.key)}
-                variant={selectedFilter === option.key ? "filled" : "outlined"}
-                sx={{
-                  borderRadius: 3,
-                  transition: "all 0.2s ease",
-                  ...(selectedFilter === option.key && {
-                    backgroundColor: theme.palette.primary.main,
-                    color: theme.palette.primary.contrastText,
-                    "&:hover": {
-                      backgroundColor: theme.palette.primary.dark,
-                    },
-                  }),
-                }}
-              />
-            ))}
-          </Stack>
         </Box>
 
         {/* Recipe List */}
-        <Box sx={{ maxHeight: "50vh", overflowY: "auto", p: 2 }}>
+        <Box sx={{ maxHeight: "50vh", overflowY: "auto", p: 1 }}>
           {isLoading ? (
             <Box
               sx={{
@@ -284,7 +265,9 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
               }}
             >
               <CircularProgress size={48} thickness={4} />
-              <Typography color="text.secondary">Chargement des recettes...</Typography>
+              <Typography color="text.secondary">
+                Chargement des recettes...
+              </Typography>
             </Box>
           ) : error ? (
             <Box sx={{ textAlign: "center", p: 4 }}>
@@ -295,26 +278,78 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
             </Box>
           ) : (
             <List disablePadding>
-              {filteredRecipes.length > 0 ? (
-                filteredRecipes.map((recipe, index) => (
-                  <Zoom in timeout={200 + index * 50} key={recipe.id}>
-                    <ListItem disablePadding sx={{ p: 0.5 }}>
-                      <RecipeCard
-                        recipeData={recipe}
-                        variant="list"
-                        onClick={() => handleRecipeClick(recipe)}
-                        sx={{
-                          width: "100%",
-                          "&:hover": {
-                            transform: "translateX(8px)",
-                            boxShadow: `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
-                          },
-                        }}
-                      />
-                    </ListItem>
-                  </Zoom>
-                ))
-              ) : (
+              {/* Family Recipes Section */}
+              {familyRecipes.length > 0 && (
+                <li key="family-section">
+                  <ul> {/* Required for ListSubheader */} 
+                    <ListSubheader sx={{ bgcolor: alpha(theme.palette.secondary.main, 0.05), borderRadius: 2, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FamilyIcon fontSize="small" color="secondary"/>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.palette.secondary.dark }}>Recettes Familiales</Typography>
+                    </ListSubheader>
+                    {familyRecipes.map((recipe, index) => (
+                      <Zoom in timeout={200 + index * 50} key={`family-${recipe.id}`}>
+                        <ListItem disablePadding sx={{ p: 0.5 }}>
+                          <RecipeCard
+                            recipeData={recipe}
+                            variant="list"
+                            onClick={() => handleRecipeClick(recipe)}
+                            sx={{
+                              width: "100%",
+                              "&:hover": {
+                                transform: "translateX(8px)",
+                                boxShadow: `0 8px 25px ${alpha(
+                                  theme.palette.primary.main,
+                                  0.15
+                                )}`,
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      </Zoom>
+                    ))}
+                  </ul>
+                </li>
+              )}
+
+              {/* Public Recipes Section (only if both exist) */}
+              {familyRecipes.length > 0 && publicExternalRecipes.length > 0 && (
+                  <Divider sx={{ my: 2 }} />
+              )}
+              
+              {publicExternalRecipes.length > 0 && (
+                <li key="public-section">
+                  <ul>
+                    <ListSubheader sx={{ bgcolor: alpha(theme.palette.info.main, 0.05), borderRadius: 2, mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <PublicIcon fontSize="small" color="info"/>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 600, color: theme.palette.info.dark }}>Autres Recettes Publiques</Typography>
+                    </ListSubheader>
+                    {publicExternalRecipes.map((recipe, index) => (
+                      <Zoom in timeout={200 + index * 50} key={`public-${recipe.id}`}>
+                        <ListItem disablePadding sx={{ p: 0.5 }}>
+                          <RecipeCard
+                            recipeData={recipe}
+                            variant="list"
+                            onClick={() => handleRecipeClick(recipe)}
+                            sx={{
+                              width: "100%",
+                              "&:hover": {
+                                transform: "translateX(8px)",
+                                boxShadow: `0 8px 25px ${alpha(
+                                  theme.palette.primary.main,
+                                  0.15
+                                )}`,
+                              },
+                            }}
+                          />
+                        </ListItem>
+                      </Zoom>
+                    ))}
+                  </ul>
+                </li>
+              )}
+
+              {/* No Results Message */}
+              {familyRecipes.length === 0 && publicExternalRecipes.length === 0 && (
                 <Fade in>
                   <Box sx={{ textAlign: "center", p: 6 }}>
                     <Restaurant
@@ -324,13 +359,19 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
                         mb: 2,
                       }}
                     />
-                    <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
-                      {searchTerm || selectedFilter !== "all" ? "Aucune recette trouvée" : "Aucune recette disponible"}
+                    <Typography
+                      variant="h6"
+                      color="text.secondary"
+                      sx={{ mb: 1 }}
+                    >
+                      {searchTerm
+                        ? "Aucune recette trouvée"
+                        : "Aucune recette disponible pour la planification"}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
                       {searchTerm
                         ? `Essayez de modifier votre recherche "${searchTerm}"`
-                        : "Commencez par ajouter des recettes à votre collection"}
+                        : "Ajoutez des recettes ou explorez les recettes publiques"}
                     </Typography>
                   </Box>
                 </Fade>
@@ -343,7 +384,10 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
       <DialogActions
         sx={{
           p: 3,
-          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          background: `linear-gradient(135deg, ${alpha(
+            theme.palette.background.paper,
+            0.8
+          )} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
           borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
         }}
       >
@@ -364,7 +408,8 @@ function RecipeSelectionModal({ open, onClose, onRecipeSelect, targetSlotInfo, a
         </Button>
       </DialogActions>
     </Dialog>
-  )
+  );
 }
 
-export default RecipeSelectionModal
+export default RecipeSelectionModal;
+

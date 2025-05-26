@@ -45,6 +45,8 @@ import {
   getDocs,
   serverTimestamp,
   Timestamp,
+  orderBy, // Added for sorting
+  limit, // Added for potential performance optimization
 } from "firebase/firestore"
 
 // --- Context Import ---
@@ -100,7 +102,8 @@ function WeeklyPlannerPage() {
 
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()))
   const [weeklyPlanData, setWeeklyPlanData] = useState(null)
-  const [recipes, setRecipes] = useState({})
+  // State to hold all recipes available for planning (family + public)
+  const [availableRecipesForPlanning, setAvailableRecipesForPlanning] = useState([]) 
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -142,19 +145,67 @@ function WeeklyPlannerPage() {
       setIsLoading(true)
       setError(null)
       setWeeklyPlanData(null)
+      setAvailableRecipesForPlanning([]) // Reset recipes on week change
 
       console.log(`Fetching data for family ${familyId}, week: ${weekId}`)
 
       try {
-        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", familyId))
-        const recipesSnapshot = await getDocs(recipesQuery)
-        const fetchedRecipes = {}
-        recipesSnapshot.forEach((doc) => {
-          fetchedRecipes[doc.id] = { id: doc.id, ...doc.data() }
-        })
-        setRecipes(fetchedRecipes)
-        console.log(`Fetched ${Object.keys(fetchedRecipes).length} recipes.`)
+        // Fetch recipes available for planning
+        const recipesRef = collection(db, "recipes")
+        
+        // Query 1: Get all recipes belonging to the user's family (sorted by creation date)
+        const familyRecipesQuery = query(
+            recipesRef, 
+            where("familyId", "==", familyId), 
+            orderBy("createdAt", "desc")
+        );
+        
+        // Query 2: Get all public recipes NOT belonging to the user's family (sorted by creation date)
+        // Note: Firestore doesn't support != directly in compound queries easily.
+        // We fetch all public recipes and filter client-side, or fetch all and categorize.
+        // Let's fetch all public and categorize.
+        const publicRecipesQuery = query(
+            recipesRef, 
+            where("visibility", "==", "public"), 
+            orderBy("createdAt", "desc")
+            // limit(100) // Consider limiting public recipes for performance
+        );
 
+        const [familySnapshot, publicSnapshot] = await Promise.all([
+            getDocs(familyRecipesQuery),
+            getDocs(publicRecipesQuery)
+        ]);
+
+        const familyRecipes = familySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isFamilyRecipe: true }));
+        const publicRecipes = publicSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isFamilyRecipe: doc.data().familyId === familyId }));
+
+        // Combine and prioritize: Family recipes first, then external public recipes
+        // Remove duplicates (public recipes from the family might appear in both lists)
+        const combinedRecipesMap = new Map();
+        familyRecipes.forEach(recipe => combinedRecipesMap.set(recipe.id, recipe));
+        // Add public recipes only if they are not already in the map (i.e., not from the family)
+        publicRecipes.forEach(recipe => {
+            if (!combinedRecipesMap.has(recipe.id)) {
+                combinedRecipesMap.set(recipe.id, recipe); // isFamilyRecipe will be false here
+            }
+        });
+
+        const combinedRecipes = Array.from(combinedRecipesMap.values());
+        
+        // Sort: Family recipes first, then external public, both sorted by creation date (desc)
+        combinedRecipes.sort((a, b) => {
+            if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1; // a (family) comes before b (public)
+            if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1;  // b (family) comes before a (public)
+            // If both are family or both are public, sort by creation date (newest first)
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+            return dateB - dateA; 
+        });
+
+        setAvailableRecipesForPlanning(combinedRecipes);
+        console.log(`Fetched and combined ${combinedRecipes.length} recipes for planning.`);
+
+        // Fetch the weekly plan
         const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId)
         const planDocSnap = await getDoc(planDocRef)
 
@@ -176,7 +227,7 @@ function WeeklyPlannerPage() {
     if (!authLoading) {
       fetchData()
     }
-  }, [weekId, familyId, authLoading])
+  }, [weekId, familyId, authLoading]) // Rerun when week or family changes
 
   // --- Function to create default plan structure ---
   const createDefaultPlan = (currentFamilyId, weekStartDate, useServerTimestamps = true) => {
@@ -396,6 +447,9 @@ function WeeklyPlannerPage() {
       const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
       const recipeAtDestination = updatedPlan.days[destDay]?.[destMealType]
 
+      // Find the full recipe object being dragged from the available recipes
+      const draggedRecipeData = availableRecipesForPlanning.find(r => r.id === recipeIdBeingDragged);
+
       if (updatedPlan.days[destDay]) {
         updatedPlan.days[destDay][destMealType] = recipeIdBeingDragged
       }
@@ -408,7 +462,7 @@ function WeeklyPlannerPage() {
         savePlan(updatedPlan, false)
       }
     },
-    [weeklyPlanData, savePlan, isSaving, isNotifying],
+    [weeklyPlanData, savePlan, isSaving, isNotifying, availableRecipesForPlanning], // Added availableRecipesForPlanning dependency
   )
 
   // --- Navigate to Shopping List ---
@@ -447,263 +501,117 @@ function WeeklyPlannerPage() {
     setNotificationResult({ ...notificationResult, open: false });
   };
 
-  // --- Enhanced Skeleton Rendering ---
-  const renderSkeletons = () => (
-    <Grid container spacing={{ xs: 2, sm: 3, md: 4 }} justifyContent="center">
-      {orderedDays.map((day, index) => (
-        <Grid item xs={12} sm={6} md={4} key={day}>
-          <Fade in timeout={300 + index * 100}>
-            <Paper
-              elevation={0}
-              sx={{
-                p: { xs: 2, md: 3 },
-                borderRadius: 6,
-                border: `1px solid ${theme.palette.divider}`,
-                height: "100%",
-                minHeight: "450px",
-                background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-              }}
-            >
-              <Skeleton
-                variant="text"
-                width="60%"
-                sx={{
-                  mb: 3,
-                  mx: "auto",
-                  height: "2.5rem",
-                  borderRadius: 2,
-                }}
-              />
-              <Stack spacing={2.5}>
-                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
-                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
-                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
-              </Stack>
-            </Paper>
-          </Fade>
-        </Grid>
-      ))}
-    </Grid>
-  )
+  // --- Render Logic ---
+  if (authLoading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "calc(100vh - 64px)" }}>
+        <ButtonCircularProgress />
+      </Box>
+    )
+  }
 
-  const combinedLoading = authLoading || isLoading
-  const totalRecipes = Object.keys(recipes).length
-  const plannedMeals = weeklyPlanData
-    ? Object.values(weeklyPlanData.days || {}).reduce(
-        (count, day) => count + Object.values(day).filter((meal) => meal !== null).length,
-        0,
-      )
-    : 0
+  if (!familyId && !authLoading) {
+    return (
+      <Container maxWidth="sm" sx={{ textAlign: "center", mt: 8 }}>
+        <Alert severity="warning" sx={{ mb: 3, borderRadius: 3 }}>
+          Vous devez rejoindre ou créer une famille pour utiliser le planificateur.
+        </Alert>
+        <Button variant="contained" onClick={() => navigate("/family")}>
+          Gérer ma Famille
+        </Button>
+      </Container>
+    )
+  }
 
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      {/* Modifier le Box principal pour inclure les gestes de swipe : */}
-      <Box
-        {...swipeHandlers}
-        sx={{
-          py: { xs: 3, md: 5 },
-          px: { xs: 2, sm: 3, md: 4 },
-          background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
-          minHeight: "calc(100vh - 64px)",
-          position: "relative",
-          // Indicateur visuel pour les gestes
-          "&::before": {
-            content: '""',
-            position: "absolute",
-            top: 10,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "60px",
-            height: "4px",
-            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.3)} 0%, ${alpha(theme.palette.secondary.main, 0.3)} 100%)`,
-            borderRadius: "2px",
-            display: { xs: "block", md: "none" },
-          },
-        }}
-      >
-        {/* Decorative Background Elements */}
-        <Box
+    <Box sx={{ position: "relative", overflowX: "hidden" }} {...swipeHandlers}>
+      {(isLoading || isSaving) && (
+        <LinearProgress
           sx={{
             position: "absolute",
             top: 0,
-            right: 0,
-            width: "300px",
-            height: "300px",
-            background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.1)} 0%, transparent 70%)`,
-            borderRadius: "50%",
-            transform: "translate(50%, -50%)",
-            opacity: 0.5,
-            zIndex: 0,
-          }}
-        />
-        <Box
-          sx={{
-            position: "absolute",
-            bottom: 0,
             left: 0,
-            width: "200px",
-            height: "200px",
-            background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.08)} 0%, transparent 70%)`,
-            borderRadius: "50%",
-            transform: "translate(-50%, 50%)",
-            opacity: 0.5,
-            zIndex: 0,
+            width: "100%",
+            zIndex: 1201,
           }}
         />
+      )}
+      <Container maxWidth={false} sx={{ px: { xs: 1, sm: 2, md: 3 }, py: 3 }}>
+        <WeekNavigator
+          currentWeekStart={currentWeekStart}
+          onPreviousWeek={handlePreviousWeek}
+          onNextWeek={handleNextWeek}
+          onGoToToday={handleGoToToday}
+          isLoading={isLoading || isSaving || isNotifying}
+        />
 
-        <Container maxWidth="xl" sx={{ position: "relative", zIndex: 1 }}>
-          {/* Header and Navigation */}
-          <Fade in timeout={500}>
-            <Box
-              sx={{
-                display: "flex",
-                flexDirection: { xs: "column", md: "row" },
-                justifyContent: "space-between",
-                alignItems: "center",
-                mb: { xs: 3, md: 4 },
-                p: 2,
-                background: alpha(theme.palette.background.paper, 0.7),
-                backdropFilter: "blur(10px)",
-                borderRadius: 4,
-                border: `1px solid ${theme.palette.divider}`,
-              }}
-            >
-              <WeekNavigator
-                currentWeekStart={currentWeekStart}
-                onPreviousWeek={handlePreviousWeek}
-                onNextWeek={handleNextWeek}
-                onGoToToday={handleGoToToday}
-                isLoading={combinedLoading || isSaving || isNotifying}
-              />
-              <Stack direction="row" spacing={1} sx={{ mt: { xs: 2, md: 0 } }}>
-                {/* --- Bouton Notifier Famille (Admin seulement) --- */}
-                {isFamilyAdmin && familyId && (
-                  <Tooltip title="Notifier la famille que le planning est prêt">
-                    <span> {/* Span requis pour Tooltip sur bouton désactivé */} 
-                      <Button
-                        variant="contained"
-                        color="secondary"
-                        startIcon={isNotifying ? <ButtonCircularProgress size={20} color="inherit" /> : <NotifyIcon />}
-                        onClick={handleNotifyFamily}
-                        disabled={combinedLoading || isSaving || isNotifying || plannedMeals === 0}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        Notifier Famille
-                      </Button>
-                    </span>
-                  </Tooltip>
-                )}
-                <Tooltip title="Voir la liste de courses pour cette semaine">
-                  <Button
-                    variant="outlined"
-                    startIcon={<ShoppingCartIcon />}
-                    onClick={handleGoToShoppingList}
-                    disabled={combinedLoading || isSaving || isNotifying}
-                    sx={{ borderRadius: 3 }}
-                  >
-                    Liste de Courses
-                  </Button>
-                </Tooltip>
-              </Stack>
-            </Box>
-          </Fade>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>
+            {error}
+          </Alert>
+        )}
 
-          {/* Loading/Saving Indicator */}
-          {(combinedLoading || isSaving) && (
-            <LinearProgress
-              sx={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 4,
-                borderTopLeftRadius: 4,
-                borderTopRightRadius: 4,
-                backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                "& .MuiLinearProgress-bar": {
-                  background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                },
-              }}
-            />
-          )}
-
-          {/* Error Alert */}
-          {error && (
-            <Fade in>
-              <Alert
-                severity="error"
-                sx={{
-                  mb: 3,
-                  borderRadius: 3,
-                  background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
-                }}
-              >
-                {error}
-              </Alert>
-            </Fade>
-          )}
-
-          {/* No Family Alert */}
-          {!familyId && !combinedLoading && (
-            <Fade in>
-              <Alert
-                severity="warning"
-                icon={NotifyIcon}
-                sx={{
-                  mb: 3,
-                  borderRadius: 3,
-                  background: `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.1)} 0%, ${alpha(theme.palette.warning.main, 0.05)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
-                }}
-              >
-                Vous devez créer ou rejoindre une famille pour utiliser le planning hebdomadaire.
-                <Button size="small" onClick={() => navigate("/family")} sx={{ ml: 1 }}>
-                  Aller à la page Famille
-                </Button>
-              </Alert>
-            </Fade>
-          )}
-
-          {/* Planner Grid */}
-          {combinedLoading ? (
-            renderSkeletons()
-          ) : !weeklyPlanData || !familyId ? (
-            <Typography sx={{ textAlign: "center", mt: 5, color: "text.secondary" }}>
-              {familyId ? "Chargement du planning..." : "Veuillez rejoindre une famille."}
-            </Typography>
-          ) : (
-            <Zoom in timeout={600}>
-              <Grid container spacing={{ xs: 2, sm: 3, md: 4 }} justifyContent="center">
-                {orderedDays.map((day, index) => (
-                  <Grid item xs={12} sm={6} md={4} key={day}>
-                    <DayColumn
-                      dayKey={day} // Pass day as dayKey
-                      dayName={dayNames[day]}
-                      meals={weeklyPlanData.days[day]}
-                      recipes={recipes}
-                      onOpenModal={handleOpenModal}
-                      onDeleteRecipe={handleDeleteRecipeFromSlot}
-                      currentDate={new Date()} // Pass current date for 'isToday' check
-                      weekStartDate={currentWeekStart} // Pass week start date
-                    />
-                  </Grid>
-                ))}
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Grid container spacing={{ xs: 1, sm: 2 }} columns={{ xs: 1, sm: 2, md: 7 }}>
+            {orderedDays.map((day) => (
+              <Grid item xs={1} key={day}>
+                <DayColumn
+                  day={day}
+                  dayName={dayNames[day]}
+                  meals={weeklyPlanData?.days?.[day]}
+                  recipes={availableRecipesForPlanning.reduce((acc, recipe) => { // Pass all recipes
+                      acc[recipe.id] = recipe;
+                      return acc;
+                  }, {})} 
+                  onOpenModal={handleOpenModal}
+                  onDeleteRecipe={handleDeleteRecipeFromSlot}
+                  isLoading={isLoading}
+                />
               </Grid>
-            </Zoom>
+            ))}
+          </Grid>
+        </DragDropContext>
+
+        {/* Action Buttons */}
+        <Stack 
+            direction={{ xs: 'column', sm: 'row' }} 
+            spacing={2} 
+            justifyContent="center" 
+            sx={{ mt: 4 }}
+        >
+          <Button
+            variant="contained"
+            startIcon={<ShoppingCartIcon />}
+            onClick={handleGoToShoppingList}
+            disabled={isLoading || isSaving || isNotifying}
+            sx={{ borderRadius: 3, px: 3 }}
+          >
+            Voir la Liste de Courses
+          </Button>
+          {isFamilyAdmin && (
+            <Tooltip title="Envoyer une notification à la famille quand le planning est prêt">
+              <Button
+                variant="outlined"
+                startIcon={isNotifying ? <ButtonCircularProgress size={20} color="inherit" /> : <NotifyIcon />}
+                onClick={handleNotifyFamily}
+                disabled={isLoading || isSaving || isNotifying}
+                sx={{ borderRadius: 3, px: 3 }}
+              >
+                {isNotifying ? "Envoi en cours..." : "Notifier la Famille"}
+              </Button>
+            </Tooltip>
           )}
-        </Container>
+        </Stack>
 
         {/* Recipe Selection Modal */}
-        {targetSlotInfo && (
-          <RecipeSelectionModal
-            open={modalOpen}
-            onClose={handleCloseModal}
-            onRecipeSelect={(recipeId) => handleRecipeSelected(recipeId, targetSlotInfo.day, targetSlotInfo.mealType)}
-            availableRecipes={Object.values(recipes)}
-            targetSlotInfo={targetSlotInfo}
-          />
-        )}
+        <RecipeSelectionModal
+          open={modalOpen}
+          onClose={handleCloseModal}
+          onRecipeSelect={handleRecipeSelected}
+          targetSlotInfo={targetSlotInfo}
+          // Pass the combined & sorted list to the modal
+          availableRecipes={availableRecipesForPlanning} 
+        />
 
         {/* Success Snackbar */}
         <Snackbar
@@ -711,23 +619,26 @@ function WeeklyPlannerPage() {
           autoHideDuration={2000}
           onClose={() => setShowSuccess(false)}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-          message="Planning sauvegardé !"
-          sx={{ bottom: { xs: 70, sm: 20 } }} // Adjust position for potential FAB
-        />
+        >
+          <Alert onClose={() => setShowSuccess(false)} severity="success" sx={{ width: "100%", borderRadius: 3 }}>
+            Planning sauvegardé !
+          </Alert>
+        </Snackbar>
+        
         {/* Notification Result Snackbar */}
         <Snackbar
           open={notificationResult.open}
-          autoHideDuration={4000}
+          autoHideDuration={6000}
           onClose={handleCloseSnackbar}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-          sx={{ bottom: { xs: 70, sm: 20 } }} // Adjust position
         >
-            <Alert onClose={handleCloseSnackbar} severity={notificationResult.severity} variant="filled" sx={{ width: '100%' }}>
-                {notificationResult.message}
-            </Alert>
+          <Alert onClose={handleCloseSnackbar} severity={notificationResult.severity} sx={{ width: "100%", borderRadius: 3 }}>
+            {notificationResult.message}
+          </Alert>
         </Snackbar>
-      </Box>
-    </DragDropContext>
+
+      </Container>
+    </Box>
   )
 }
 
