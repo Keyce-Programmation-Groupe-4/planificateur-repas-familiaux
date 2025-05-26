@@ -44,10 +44,13 @@ import {
   Warning as WarningIcon,
   Visibility as VisibilityIcon,
   Fastfood as FastfoodIcon,
+  Favorite as FavoriteIcon,
+  FavoriteBorder as FavoriteBorderIcon,
+  WhatsApp as WhatsAppIcon,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
-import { doc, getDoc, deleteDoc } from "firebase/firestore"
+import { doc, getDoc, deleteDoc, updateDoc } from "firebase/firestore"
 import { ref, deleteObject } from "firebase/storage"
 import ReactMarkdown from "react-markdown"
 
@@ -80,8 +83,8 @@ export default function RecipeDetailPage() {
         const docSnap = await getDoc(recipeDocRef)
 
         if (docSnap.exists()) {
-          const fetchedRecipe = { id: docSnap.id, ...docSnap.data() }
-          if (fetchedRecipe.familyId === userData.familyId) {
+          const fetchedRecipe = { id: docSnap.id, ...docSnap.data(), likes: docSnap.data().likes || [] }
+          if (fetchedRecipe.familyId === userData.familyId || fetchedRecipe.visibility === "public") {
             setRecipe(fetchedRecipe)
           } else {
             setError("Accès non autorisé à cette recette.")
@@ -137,6 +140,47 @@ export default function RecipeDetailPage() {
       setIsDeleting(false)
       handleCloseConfirmDelete()
     }
+  }
+
+  const handleLike = async () => {
+    if (!currentUser) {
+      setError("Vous devez être connecté pour liker une recette.")
+      setTimeout(() => setError(""), 3000)
+      return
+    }
+
+    try {
+      const recipeRef = doc(db, "recipes", recipeId)
+      const isLiked = recipe.likes.includes(currentUser.uid)
+      const updatedLikes = isLiked
+        ? recipe.likes.filter((uid) => uid !== currentUser.uid)
+        : [...recipe.likes, currentUser.uid]
+
+      await updateDoc(recipeRef, { likes: updatedLikes })
+      setRecipe((prev) => ({ ...prev, likes: updatedLikes }))
+    } catch (err) {
+      console.error("Error updating likes:", err)
+      setError("Erreur lors de la mise à jour du like.")
+      setTimeout(() => setError(""), 3000)
+    }
+  }
+
+  const handleShareWhatsApp = () => {
+    const recipeUrl = `${window.location.origin}/recipes/${recipeId}`
+    const message = `Découvrez la recette "${recipe.name}" : ${recipeUrl}`
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`
+    window.open(whatsappUrl, "_blank")
+  }
+
+  // Convert instructions array to Markdown string if needed
+  const formatInstructions = (instructions) => {
+    if (typeof instructions === "string") {
+      return instructions
+    }
+    if (Array.isArray(instructions)) {
+      return instructions.map((step) => `- ${step}`).join("\n")
+    }
+    return "Aucune instruction fournie."
   }
 
   if (loading) {
@@ -267,53 +311,91 @@ export default function RecipeDetailPage() {
                 >
                   Retour à la liste
                 </Button>
-                {canModify && (
-                  <Stack direction="row" spacing={1}>
+                <Stack direction="row" spacing={1} alignItems="center">
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                     <IconButton
-                      aria-label="modifier"
-                      component={RouterLink}
-                      to={`/recipes/${recipe.id}/edit`}
-                      sx={{
-                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                        color: theme.palette.primary.main,
-                        "&:hover": {
-                          backgroundColor: alpha(theme.palette.primary.main, 0.2),
-                          transform: "scale(1.05)",
-                        },
-                        transition: "all 0.2s ease",
-                      }}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton
-                      aria-label="supprimer"
-                      onClick={handleOpenConfirmDelete}
+                      aria-label="liker"
+                      onClick={handleLike}
+                      disabled={!currentUser}
                       sx={{
                         backgroundColor: alpha(theme.palette.error.main, 0.1),
                         color: theme.palette.error.main,
                         "&:hover": {
                           backgroundColor: alpha(theme.palette.error.main, 0.2),
-                          transform: "scale(1.05)",
                         },
-                        transition: "all 0.2s ease",
                       }}
                     >
-                      <DeleteIcon />
+                      {recipe.likes.includes(currentUser?.uid) ? (
+                        <FavoriteIcon />
+                      ) : (
+                        <FavoriteBorderIcon />
+                      )}
                     </IconButton>
-                  </Stack>
-                )}
-                {!canModify && (
-                  <Chip
-                    icon={<VisibilityIcon />}
-                    label="Lecture seule"
-                    size="small"
+                    <Typography variant="body2" color="text.secondary">
+                      {recipe.likes.length} {recipe.likes.length === 1 ? "like" : "likes"}
+                    </Typography>
+                  </Box>
+                  <IconButton
+                    aria-label="partager sur WhatsApp"
+                    onClick={handleShareWhatsApp}
                     sx={{
-                      backgroundColor: alpha(theme.palette.info.main, 0.1),
-                      color: theme.palette.info.main,
-                      fontWeight: 500,
+                      backgroundColor: alpha(theme.palette.success.main, 0.1),
+                      color: theme.palette.success.main,
+                      "&:hover": {
+                        backgroundColor: alpha(theme.palette.success.main, 0.2),
+                      },
                     }}
-                  />
-                )}
+                  >
+                    <WhatsAppIcon />
+                  </IconButton>
+                  {canModify && (
+                    <>
+                      <IconButton
+                        aria-label="modifier"
+                        component={RouterLink}
+                        to={`/recipes/${recipe.id}/edit`}
+                        sx={{
+                          backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                          color: theme.palette.primary.main,
+                          "&:hover": {
+                            backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                            transform: "scale(1.05)",
+                          },
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton
+                        aria-label="supprimer"
+                        onClick={handleOpenConfirmDelete}
+                        sx={{
+                          backgroundColor: alpha(theme.palette.error.main, 0.1),
+                          color: theme.palette.error.main,
+                          "&:hover": {
+                            backgroundColor: alpha(theme.palette.error.main, 0.2),
+                            transform: "scale(1.05)",
+                          },
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <DeleteIcon />
+                      </IconButton>
+                    </>
+                  )}
+                  {!canModify && (
+                    <Chip
+                      icon={<VisibilityIcon />}
+                      label="Lecture seule"
+                      size="small"
+                      sx={{
+                        backgroundColor: alpha(theme.palette.info.main, 0.1),
+                        color: theme.palette.info.main,
+                        fontWeight: 500,
+                      }}
+                    />
+                  )}
+                </Stack>
               </Stack>
 
               <Typography
@@ -501,7 +583,7 @@ export default function RecipeDetailPage() {
                   sx={{ mb: 3, display: "flex", alignItems: "center", gap: 1, fontWeight: 600 }}
                 >
                   <LocalDiningIcon color="primary" />
-                  Ingrédients ({recipe.ingredientsList?.length || 0})
+                  Ingrédients ({recipe.ingredients?.length || 0})
                 </Typography>
                 <Card
                   elevation={0}
@@ -511,33 +593,15 @@ export default function RecipeDetailPage() {
                   }}
                 >
                   <List disablePadding>
-                    {recipe.ingredientsList?.map((item, index) => (
+                    {recipe.ingredients?.map((item, index) => (
                       <ListItem
                         key={index}
-                        divider={index < recipe.ingredientsList.length - 1}
+                        divider={index < recipe.ingredients.length - 1}
                         sx={{
                           backgroundColor: index % 2 === 0 ? "transparent" : alpha(theme.palette.primary.main, 0.02),
                         }}
                       >
-                        <ListItemIcon>
-                          <Avatar
-                            sx={{
-                              width: 32,
-                              height: 32,
-                              backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                              color: theme.palette.primary.main,
-                              fontSize: "0.8rem",
-                              fontWeight: 600,
-                            }}
-                          >
-                            {item.quantity}
-                          </Avatar>
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={item.ingredientName}
-                          secondary={`${item.quantity} ${item.unit}`}
-                          primaryTypographyProps={{ fontWeight: 500 }}
-                        />
+                        <ListItemText primary={item} />
                       </ListItem>
                     ))}
                   </List>
@@ -573,7 +637,7 @@ export default function RecipeDetailPage() {
                         fontSize: "1.1rem",
                       }}
                     >
-                      <ReactMarkdown>{recipe.instructions || "Aucune instruction fournie."}</ReactMarkdown>
+                      <ReactMarkdown>{formatInstructions(recipe.instructions)}</ReactMarkdown>
                     </Box>
                   </CardContent>
                 </Card>
