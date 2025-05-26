@@ -21,7 +21,6 @@ const app = initializeApp(firebaseConfig);
 // Initialiser les services Firebase
 const db = getFirestore(app);
 const auth = getAuth(app);
-const storage = getStorage(app);
 const functions = getFunctions(app, "europe-west1"); // 👈 Initialiser Functions (adaptez la région si nécessaire)
 const storage = getStorage(app); 
 
