@@ -23,12 +23,15 @@ import {
   InputAdornment,
   Chip,
   Stack,
-  Avatar,
   IconButton,
   Tooltip,
-  Tabs, // Added
-  Tab, // Added
-  Paper, // Added for Tabs background
+  Tabs,
+  Tab,
+  Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -41,10 +44,12 @@ import {
   Clear as ClearIcon,
   FilterList as FilterListIcon,
   LocalDining as LocalDiningIcon,
-  Fastfood as FastfoodIcon,
-  Public as PublicIcon, // Added
-  FamilyRestroom as FamilyIcon, // Added
+  Public as PublicIcon,
+  FamilyRestroom as FamilyIcon,
+  CloudDownload as ExportIcon,
+  CloudUpload as ImportIcon,
 } from "@mui/icons-material";
+import Papa from "papaparse";
 import { useAuth } from "../contexts/AuthContext";
 import { db } from "../firebaseConfig";
 import {
@@ -53,8 +58,10 @@ import {
   where,
   getDocs,
   orderBy,
-  or, // Added for combined query
+  writeBatch,
+  doc,
 } from "firebase/firestore";
+import { exportRecipesToCSV, parseRecipesFromCSV } from "../utils/csvUtils";
 
 // Helper to render skeletons
 const renderSkeletons = (theme) => (
@@ -94,21 +101,24 @@ export default function RecipesListPage() {
   const { currentUser, userData } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
-  
-  const [allFamilyRecipes, setAllFamilyRecipes] = useState([]); // Stores all recipes from the user's family
-  const [allPublicRecipes, setAllPublicRecipes] = useState([]); // Stores all public recipes from any family
+
+  const [allFamilyRecipes, setAllFamilyRecipes] = useState([]);
+  const [allPublicRecipes, setAllPublicRecipes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("family"); // 'family' or 'public'
+  const [activeTab, setActiveTab] = useState("family");
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importFile, setImportFile] = useState(null);
+  const [importError, setImportError] = useState("");
 
-  // Check if user can modify recipes (only Admins)
   const canModify = userData?.familyRole === "Admin";
   const familyId = userData?.familyId;
 
   useEffect(() => {
     const fetchRecipes = async () => {
-      if (!familyId) { // User must have a family to see anything for now
+      if (!familyId) {
         setLoading(false);
         setAllFamilyRecipes([]);
         setAllPublicRecipes([]);
@@ -119,42 +129,33 @@ export default function RecipesListPage() {
       setError("");
       try {
         const recipesRef = collection(db, "recipes");
-        
-        // Query 1: Get all recipes belonging to the user's family
         const familyQuery = query(
-            recipesRef, 
-            where("familyId", "==", familyId), 
-            orderBy("createdAt", "desc")
+          recipesRef,
+          where("familyId", "==", familyId),
+          orderBy("createdAt", "desc")
         );
-        
-        // Query 2: Get all public recipes (including the family's public ones)
         const publicQuery = query(
-            recipesRef, 
-            where("visibility", "==", "public"), 
-            orderBy("createdAt", "desc")
+          recipesRef,
+          where("visibility", "==", "public"),
+          orderBy("createdAt", "desc")
         );
 
-        // Execute queries (consider running in parallel for performance)
         const [familySnapshot, publicSnapshot] = await Promise.all([
-            getDocs(familyQuery),
-            getDocs(publicQuery)
+          getDocs(familyQuery),
+          getDocs(publicQuery),
         ]);
 
-        const fetchedFamilyRecipes = familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        const fetchedPublicRecipes = publicSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        
-        // Handle recipes created before visibility field: treat them as public
-        // We can implicitly do this by how we display, or explicitly update them.
-        // For display: If a family recipe doesn't have 'visibility', it shows in family tab.
-        // If a public recipe doesn't have 'visibility', it shows in public tab.
-        // Let's adjust the public list to include old recipes without the field.
-        // Note: Firestore doesn't easily query for null/undefined. A better approach might be a migration script.
-        // For now, we rely on the explicit 'public' flag for the public tab.
-        // We assume new recipes WILL have the visibility field.
+        const fetchedFamilyRecipes = familySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
+        const fetchedPublicRecipes = publicSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        }));
 
         setAllFamilyRecipes(fetchedFamilyRecipes);
         setAllPublicRecipes(fetchedPublicRecipes);
-
       } catch (err) {
         console.error("Error fetching recipes:", err);
         setError("Erreur lors de la récupération des recettes.");
@@ -163,16 +164,15 @@ export default function RecipesListPage() {
       }
     };
 
-    if (userData) { // Fetch only when user data (including familyId) is available
+    if (userData) {
       fetchRecipes();
     }
-  }, [userData, familyId]); // Depend on userData to get familyId
+  }, [userData, familyId]);
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
   };
 
-  // Filter recipes based on active tab and search term
   const filteredRecipes = useMemo(() => {
     const sourceList = activeTab === "family" ? allFamilyRecipes : allPublicRecipes;
     if (!searchTerm) {
@@ -188,6 +188,96 @@ export default function RecipesListPage() {
 
   const clearSearch = () => {
     setSearchTerm("");
+  };
+
+  // Export recipes to CSV
+  const handleExport = () => {
+    try {
+      const recipesToExport = activeTab === "family" ? allFamilyRecipes : allPublicRecipes;
+      exportRecipesToCSV(recipesToExport, `recipes_${activeTab}_${new Date().toISOString()}.csv`);
+      setSuccess(`Recettes ${activeTab === "family" ? "familiales" : "publiques"} exportées avec succès !`);
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error exporting recipes:", err);
+      setError("Erreur lors de l'exportation des recettes.");
+    }
+  };
+
+  // Handle import dialog
+  const handleOpenImportDialog = () => {
+    setImportDialogOpen(true);
+    setImportError("");
+    setImportFile(null);
+  };
+
+  const handleCloseImportDialog = () => {
+    setImportDialogOpen(false);
+    setImportError("");
+    setImportFile(null);
+  };
+
+  const handleFileChange = (event) => {
+    const file = event.target.files[0];
+    if (file && file.type === "text/csv") {
+      setImportFile(file);
+      setImportError("");
+    } else {
+      setImportError("Veuillez sélectionner un fichier CSV valide.");
+      setImportFile(null);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) {
+      setImportError("Aucun fichier sélectionné.");
+      return;
+    }
+
+    setLoading(true);
+    setImportError("");
+    try {
+      const recipes = await parseRecipesFromCSV(importFile);
+      if (recipes.length === 0) {
+        setImportError("Aucune recette valide trouvée dans le fichier CSV.");
+        setLoading(false);
+        return;
+      }
+
+      const batch = writeBatch(db);
+      const recipesRef = collection(db, "recipes");
+
+      recipes.forEach((recipe) => {
+        const newRecipe = {
+          ...recipe,
+          familyId,
+          createdAt: new Date().toISOString(),
+          createdBy: currentUser.uid,
+          visibility: recipe.visibility || "family",
+        };
+        // Create a new document reference without writing to Firestore
+        const docRef = doc(recipesRef);
+        batch.set(docRef, newRecipe);
+      });
+
+      await batch.commit();
+      setSuccess(`${recipes.length} recette(s) importée(s) avec succès !`);
+      setTimeout(() => setSuccess(""), 3000);
+      handleCloseImportDialog();
+
+      // Refresh recipes
+      const familyQuery = query(
+        recipesRef,
+        where("familyId", "==", familyId),
+        orderBy("createdAt", "desc")
+      );
+      const familySnapshot = await getDocs(familyQuery);
+      setAllFamilyRecipes(familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+    } catch (err) {
+      console.error("Error importing recipes:", err);
+      setImportError("Erreur lors de l'importation des recettes : " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -237,6 +327,15 @@ export default function RecipesListPage() {
           </Box>
         </Fade>
 
+        {/* Success Alert */}
+        {success && (
+          <Fade in>
+            <Alert severity="success" sx={{ mb: 3, borderRadius: 3 }}>
+              {success}
+            </Alert>
+          </Fade>
+        )}
+
         {/* No Family Alert */}
         {!loading && !familyId && (
           <Fade in>
@@ -252,22 +351,21 @@ export default function RecipesListPage() {
                 border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
               }}
             >
-              Vous devez faire partie d'une famille pour pouvoir voir ou créer des
-              recettes.
+              Vous devez faire partie d'une famille pour pouvoir voir ou créer des recettes.
             </Alert>
           </Fade>
         )}
 
-        {/* Tabs and Search Bar - Only show if familyId exists */}
+        {/* Tabs, Search Bar, and Import/Export Buttons */}
         {familyId && (
-          <Paper 
-            elevation={0} 
-            sx={{ 
-                mb: 4, 
-                borderRadius: 3, 
-                overflow: 'hidden', 
-                border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-                background: theme.palette.background.paper,
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 4,
+              borderRadius: 3,
+              overflow: "hidden",
+              border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              background: theme.palette.background.paper,
             }}
           >
             <Tabs
@@ -277,53 +375,101 @@ export default function RecipesListPage() {
               textColor="primary"
               variant="fullWidth"
               aria-label="Recipe visibility tabs"
-              sx={{ borderBottom: 1, borderColor: 'divider' }}
+              sx={{ borderBottom: 1, borderColor: "divider" }}
             >
-              <Tab 
-                label="Ma Famille" 
-                value="family" 
-                icon={<FamilyIcon />} 
-                iconPosition="start" 
-                sx={{ textTransform: 'none', fontWeight: 600 }}
+              <Tab
+                label="Ma Famille"
+                value="family"
+                icon={<FamilyIcon />}
+                iconPosition="start"
+                sx={{ textTransform: "none", fontWeight: 600 }}
               />
-              <Tab 
-                label="Publiques" 
-                value="public" 
-                icon={<PublicIcon />} 
-                iconPosition="start" 
-                sx={{ textTransform: 'none', fontWeight: 600 }}
+              <Tab
+                label="Publiques"
+                value="public"
+                icon={<PublicIcon />}
+                iconPosition="start"
+                sx={{ textTransform: "none", fontWeight: 600 }}
               />
             </Tabs>
-            <Box sx={{ p: 2 }}>
-                <TextField
-                    fullWidth
-                    placeholder={`Rechercher dans les recettes ${activeTab === 'family' ? 'familiales' : 'publiques'}...`}
+            <Box sx={{ p: 2, display: "flex", gap: 2, alignItems: "center" }}>
+              <TextField
+                fullWidth
+                placeholder={`Rechercher dans les recettes ${activeTab === "family" ? "familiales" : "publiques"}...`}
+                variant="outlined"
+                size="small"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                InputProps={{
+                  startAdornment: (
+                    <InputAdornment position="start">
+                      <SearchIcon color="action" />
+                    </InputAdornment>
+                  ),
+                  endAdornment: searchTerm && (
+                    <InputAdornment position="end">
+                      <IconButton onClick={clearSearch} edge="end" size="small">
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                  sx: { borderRadius: 3 },
+                }}
+              />
+              {canModify && (
+                <>
+                  <Button
                     variant="outlined"
-                    size="small"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    InputProps={{
-                    startAdornment: (
-                        <InputAdornment position="start">
-                        <SearchIcon color="action" />
-                        </InputAdornment>
-                    ),
-                    endAdornment: searchTerm && (
-                        <InputAdornment position="end">
-                        <IconButton onClick={clearSearch} edge="end" size="small">
-                            <ClearIcon fontSize="small" />
-                        </IconButton>
-                        </InputAdornment>
-                    ),
-                    sx: {
-                        borderRadius: 3,
-                        // backgroundColor: alpha(theme.palette.background.default, 0.5),
-                    },
-                    }}
-                />
+                    startIcon={<ExportIcon />}
+                    onClick={handleExport}
+                    sx={{ textTransform: "none", borderRadius: 3 }}
+                  >
+                    Exporter
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ImportIcon />}
+                    onClick={handleOpenImportDialog}
+                    sx={{ textTransform: "none", borderRadius: 3 }}
+                  >
+                    Importer
+                  </Button>
+                </>
+              )}
             </Box>
           </Paper>
         )}
+
+        {/* Import Dialog */}
+        <Dialog open={importDialogOpen} onClose={handleCloseImportDialog}>
+          <DialogTitle>Importer des Recettes</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Sélectionnez un fichier CSV contenant des recettes. Les colonnes attendues sont : name, description, prepTime, servings, ingredients, instructions, tags, visibility, photoUrl.
+            </Typography>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={handleFileChange}
+              style={{ marginBottom: "16px" }}
+            />
+            {importError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {importError}
+              </Alert>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseImportDialog}>Annuler</Button>
+            <Button
+              onClick={handleImport}
+              variant="contained"
+              disabled={!importFile || loading}
+            >
+              Importer
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Error Alert */}
         {error && (
@@ -334,7 +480,7 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {/* Stats Bar - Adjust based on active tab */}
+        {/* Stats Bar */}
         {!loading && familyId && (
           <Fade in timeout={1000}>
             <Box sx={{ mb: 4, textAlign: "center" }}>
@@ -346,7 +492,7 @@ export default function RecipesListPage() {
               >
                 <Chip
                   icon={<RestaurantIcon />}
-                  label={`${filteredRecipes.length} recette${filteredRecipes.length !== 1 ? "s" : ""} ${activeTab === 'family' ? 'familiale' : 'publique'}${filteredRecipes.length !== 1 ? "s" : ""}`}
+                  label={`${filteredRecipes.length} recette${filteredRecipes.length !== 1 ? "s" : ""} ${activeTab === "family" ? "familiale" : "publique"}${filteredRecipes.length !== 1 ? "s" : ""}`}
                   sx={{
                     backgroundColor: alpha(theme.palette.primary.main, 0.1),
                     color: theme.palette.primary.main,
@@ -424,7 +570,6 @@ export default function RecipesListPage() {
                                 },
                               }}
                             />
-                            {/* Recipe Stats & Visibility Overlay */}
                             <Box
                               sx={{
                                 position: "absolute",
@@ -432,20 +577,37 @@ export default function RecipesListPage() {
                                 right: 12,
                                 display: "flex",
                                 gap: 1,
-                                alignItems: 'center',
+                                alignItems: "center",
                               }}
                             >
-                              {/* Visibility Icon */}
-                              <Tooltip title={recipe.visibility === 'family' ? 'Recette Familiale' : 'Recette Publique'}>
-                                <Chip 
-                                    icon={recipe.visibility === 'family' ? <FamilyIcon /> : <PublicIcon />}
-                                    size="small"
-                                    sx={{
-                                        backgroundColor: alpha(theme.palette.background.paper, 0.9),
-                                        backdropFilter: "blur(4px)",
-                                        fontSize: "0.75rem",
-                                        color: recipe.visibility === 'family' ? theme.palette.secondary.main : theme.palette.info.main,
-                                    }}
+                              <Tooltip
+                                title={
+                                  recipe.visibility === "family"
+                                    ? "Recette Familiale"
+                                    : "Recette Publique"
+                                }
+                              >
+                                <Chip
+                                  icon={
+                                    recipe.visibility === "family" ? (
+                                      <FamilyIcon />
+                                    ) : (
+                                      <PublicIcon />
+                                    )
+                                  }
+                                  size="small"
+                                  sx={{
+                                    backgroundColor: alpha(
+                                      theme.palette.background.paper,
+                                      0.9
+                                    ),
+                                    backdropFilter: "blur(4px)",
+                                    fontSize: "0.75rem",
+                                    color:
+                                      recipe.visibility === "family"
+                                        ? theme.palette.secondary.main
+                                        : theme.palette.info.main,
+                                  }}
                                 />
                               </Tooltip>
                               {recipe.prepTime && (
@@ -505,7 +667,7 @@ export default function RecipesListPage() {
                                 display: "-webkit-box",
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: "vertical",
-                                minHeight: "2.5em", // Approx 2 lines height
+                                minHeight: "2.5em",
                               }}
                             >
                               {recipe.description ||
@@ -518,24 +680,22 @@ export default function RecipesListPage() {
                                 spacing={0.5}
                                 sx={{ flexWrap: "wrap", gap: 0.5 }}
                               >
-                                {recipe.tags
-                                  .slice(0, 3)
-                                  .map((tag, tagIndex) => (
-                                    <Chip
-                                      key={tagIndex}
-                                      label={tag}
-                                      size="small"
-                                      sx={{
-                                        backgroundColor: alpha(
-                                          theme.palette.secondary.main,
-                                          0.1
-                                        ),
-                                        color: theme.palette.secondary.main,
-                                        fontSize: "0.7rem",
-                                        height: "20px",
-                                      }}
-                                    />
-                                  ))}
+                                {recipe.tags.slice(0, 3).map((tag, tagIndex) => (
+                                  <Chip
+                                    key={tagIndex}
+                                    label={tag}
+                                    size="small"
+                                    sx={{
+                                      backgroundColor: alpha(
+                                        theme.palette.secondary.main,
+                                        0.1
+                                      ),
+                                      color: theme.palette.secondary.main,
+                                      fontSize: "0.7rem",
+                                      height: "20px",
+                                    }}
+                                  />
+                                ))}
                                 {recipe.tags.length > 3 && (
                                   <Chip
                                     label={`+${recipe.tags.length - 3}`}
@@ -569,7 +729,6 @@ export default function RecipesListPage() {
                             >
                               Voir Détails
                             </Button>
-                            {/* Edit button only if user can modify AND (it's a family recipe OR it's a public recipe from their family) */}
                             {canModify && recipe.familyId === familyId && (
                               <Button
                                 size="small"
@@ -599,7 +758,7 @@ export default function RecipesListPage() {
                         align="center"
                         sx={{ mt: 4 }}
                       >
-                        {`Aucune recette ${activeTab === 'family' ? 'familiale' : 'publique'} trouvée`}
+                        {`Aucune recette ${activeTab === "family" ? "familiale" : "publique"} trouvée`}
                         {searchTerm && ` pour "${searchTerm}"`}.
                       </Typography>
                     </Fade>
@@ -608,7 +767,7 @@ export default function RecipesListPage() {
               </Grid>
             )}
 
-        {/* FAB to Add Recipe - Only if user can modify */}
+        {/* FAB to Add Recipe */}
         {canModify && familyId && (
           <Zoom in timeout={1200}>
             <Fab
@@ -630,4 +789,3 @@ export default function RecipesListPage() {
     </Box>
   );
 }
-
