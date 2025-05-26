@@ -19,11 +19,12 @@ import { formatQuantityUnit } from "../../utils/unitConverter"
 
 // Helper to format currency
 const formatCurrency = (value) => {
-  if (typeof value !== "number") {
-    return ""
+  if (typeof value !== 'number') {
+    return '';
   }
-  return value.toLocaleString("fr-FR", { style: "currency", currency: "EUR" })
-}
+  return value.toLocaleString('fr-FR', { style: 'currency', currency: 'XAF' });
+};
+
 
 function ShoppingListItem({ item, onToggleCheck, onOpenPriceDialog }) {
   const theme = useTheme()
