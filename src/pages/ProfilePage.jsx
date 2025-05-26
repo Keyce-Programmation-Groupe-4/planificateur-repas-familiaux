@@ -416,7 +416,7 @@ export default function ProfilePage() {
   const getRoleIcon = (role) => {
     switch (role) {
       case "Admin":
-        return <AdminIcon />
+        return <AdminPanelSettingsIcon />
       case "Member":
         return <PersonIcon />
       default:
