@@ -55,6 +55,9 @@ import WeekNavigator from "../../components/planner/WeekNavigator"
 import DayColumn from "../../components/planner/DayColumn"
 import RecipeSelectionModal from "../../components/planner/RecipeSelectionModal"
 
+// Ajouter après les imports existants
+import { useSwipeable } from "react-swipeable"
+
 // --- Helper Functions ---
 const getStartOfWeek = (date) => {
   const dateCopy = new Date(date)
@@ -107,6 +110,22 @@ function WeeklyPlannerPage() {
 
   const [modalOpen, setModalOpen] = useState(false)
   const [targetSlotInfo, setTargetSlotInfo] = useState(null)
+
+  // Dans le composant WeeklyPlannerPage, ajouter après les états existants :
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => {
+      if (!isLoading && !isSaving) {
+        handleNextWeek()
+      }
+    },
+    onSwipedRight: () => {
+      if (!isLoading && !isSaving) {
+        handlePreviousWeek()
+      }
+    },
+    trackMouse: true,
+    preventScrollOnSwipe: true,
+  })
 
   const weekId = getWeekId(currentWeekStart)
 
@@ -478,13 +497,28 @@ function WeeklyPlannerPage() {
 
   return (
     <DragDropContext onDragEnd={onDragEnd}>
+      {/* Modifier le Box principal pour inclure les gestes de swipe : */}
       <Box
+        {...swipeHandlers}
         sx={{
           py: { xs: 3, md: 5 },
           px: { xs: 2, sm: 3, md: 4 },
           background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
           minHeight: "calc(100vh - 64px)",
           position: "relative",
+          // Indicateur visuel pour les gestes
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            top: 10,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "60px",
+            height: "4px",
+            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.3)} 0%, ${alpha(theme.palette.secondary.main, 0.3)} 100%)`,
+            borderRadius: "2px",
+            display: { xs: "block", md: "none" },
+          },
         }}
       >
         {/* Decorative Background Elements */}

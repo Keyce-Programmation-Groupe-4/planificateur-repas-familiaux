@@ -23,6 +23,7 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 const storage = getStorage(app);
 const functions = getFunctions(app, "europe-west1"); // 👈 Initialiser Functions (adaptez la région si nécessaire)
+const storage = getStorage(app); 
 
 // Exporter les instances
 export { app, db, auth, storage, functions }; // 👈 Exporter functions
