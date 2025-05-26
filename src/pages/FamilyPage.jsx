@@ -248,7 +248,12 @@ export default function FamilyPage() {
       if (!existingInviteSnap.empty) {
         throw new Error("Une invitation est déjà en attente pour cet email.")
       }
-      await addDoc(invitationsRef, {
+      // Créer l'invitation ET l'email dans un batch pour l'atomicité
+      const batch = writeBatch(db)
+
+      // 1. Créer le document d'invitation
+      const newInvitationRef = doc(collection(db, "invitations"))
+      batch.set(newInvitationRef, {
         familyId: familyData.id,
         familyName: familyData.familyName,
         inviterUid: currentUser.uid,
@@ -257,7 +262,29 @@ export default function FamilyPage() {
         status: "pending",
         createdAt: serverTimestamp(),
       })
-      setSuccessMessage(`Invitation envoyée à ${inviteEmail} !`)
+
+      // 2. Créer le document pour déclencher l'email via l'extension Trigger Email
+      const mailRef = doc(collection(db, "mail")) // Assurez-vous que "mail" est le nom de collection configuré pour l'extension
+      batch.set(mailRef, {
+        to: [inviteEmail.trim()],
+        message: {
+          subject: `Invitation à rejoindre la famille ${familyData.familyName} !`,
+          html: `Bonjour,<br><br>${userData.displayName} vous invite à rejoindre la famille <strong>${familyData.familyName}</strong> sur notre application de planification de repas.<br><br>Connectez-vous à l'application pour accepter l'invitation.<br><br>À bientôt !`,
+          // Alternativement, utiliser un template SendGrid si configuré:
+          // template: {
+          //   name: 'invitationTemplate',
+          //   data: {
+          //     inviterName: userData.displayName,
+          //     familyName: familyData.familyName,
+          //   }
+          // }
+        },
+      })
+
+      // 3. Exécuter le batch
+      await batch.commit()
+
+      setSuccessMessage(`Invitation envoyée à ${inviteEmail} ! Un email de notification a également été envoyé.`)
       setInviteEmail("")
     } catch (err) {
       console.error("Error sending invitation:", err)
