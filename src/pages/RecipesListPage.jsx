@@ -48,6 +48,8 @@ import {
   FamilyRestroom as FamilyIcon,
   CloudDownload as ExportIcon,
   CloudUpload as ImportIcon,
+  Favorite as FavoriteIcon,
+  FavoriteBorder as FavoriteBorderIcon,
 } from "@mui/icons-material";
 import Papa from "papaparse";
 import { useAuth } from "../contexts/AuthContext";
@@ -60,6 +62,7 @@ import {
   orderBy,
   writeBatch,
   doc,
+  updateDoc,
 } from "firebase/firestore";
 import { exportRecipesToCSV, parseRecipesFromCSV } from "../utils/csvUtils";
 
@@ -148,10 +151,12 @@ export default function RecipesListPage() {
         const fetchedFamilyRecipes = familySnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
+          likes: doc.data().likes || [], // Ensure likes is always an array
         }));
         const fetchedPublicRecipes = publicSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
+          likes: doc.data().likes || [], // Ensure likes is always an array
         }));
 
         setAllFamilyRecipes(fetchedFamilyRecipes);
@@ -253,8 +258,8 @@ export default function RecipesListPage() {
           createdAt: new Date().toISOString(),
           createdBy: currentUser.uid,
           visibility: recipe.visibility || "family",
+          likes: [], // Initialize likes as empty array
         };
-        // Create a new document reference without writing to Firestore
         const docRef = doc(recipesRef);
         batch.set(docRef, newRecipe);
       });
@@ -271,12 +276,43 @@ export default function RecipesListPage() {
         orderBy("createdAt", "desc")
       );
       const familySnapshot = await getDocs(familyQuery);
-      setAllFamilyRecipes(familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() })));
+      setAllFamilyRecipes(familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data(), likes: doc.data().likes || [] })));
     } catch (err) {
       console.error("Error importing recipes:", err);
       setImportError("Erreur lors de l'importation des recettes : " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Handle like/unlike action
+  const handleLike = async (recipeId, currentLikes) => {
+    if (!currentUser) {
+      setError("Vous devez être connecté pour liker une recette.");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+
+    try {
+      const recipeRef = doc(db, "recipes", recipeId);
+      const isLiked = currentLikes.includes(currentUser.uid);
+      const updatedLikes = isLiked
+        ? currentLikes.filter((uid) => uid !== currentUser.uid)
+        : [...currentLikes, currentUser.uid];
+
+      await updateDoc(recipeRef, { likes: updatedLikes });
+
+      // Update local state to reflect change
+      const updateRecipes = (recipes) =>
+        recipes.map((recipe) =>
+          recipe.id === recipeId ? { ...recipe, likes: updatedLikes } : recipe
+        );
+      setAllFamilyRecipes(updateRecipes(allFamilyRecipes));
+      setAllPublicRecipes(updateRecipes(allPublicRecipes));
+    } catch (err) {
+      console.error("Error updating likes:", err);
+      setError("Erreur lors de la mise à jour du like.");
+      setTimeout(() => setError(""), 3000);
     }
   };
 
@@ -713,6 +749,22 @@ export default function RecipesListPage() {
                                 )}
                               </Stack>
                             )}
+                            <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleLike(recipe.id, recipe.likes)}
+                                disabled={!currentUser}
+                              >
+                                {recipe.likes.includes(currentUser?.uid) ? (
+                                  <FavoriteIcon color="error" fontSize="small" />
+                                ) : (
+                                  <FavoriteBorderIcon fontSize="small" />
+                                )}
+                              </IconButton>
+                              <Typography variant="body2" color="text.secondary">
+                                {recipe.likes.length} {recipe.likes.length === 1 ? "like" : "likes"}
+                              </Typography>
+                            </Box>
                           </CardContent>
 
                           <CardActions sx={{ p: 3, pt: 0 }}>
