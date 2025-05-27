@@ -370,14 +370,19 @@ function UserDashboard() {
         const recentRecipesQuery = query(
           collection(db, "recipes"),
           where("familyId", "==", userData.familyId),
+          where("createdAt", "!=", null),
           orderBy("createdAt", "desc"),
-          limit(3),
+          limit(3)
         )
         const recentRecipesSnapshot = await getDocs(recentRecipesQuery)
-        const recentRecipesData = recentRecipesSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }))
+        const recentRecipesData = recentRecipesSnapshot.docs.map((doc) => {
+          const data = doc.data()
+          console.log("Recipe ID:", doc.id, "createdAt:", data.createdAt)
+          return {
+            id: doc.id,
+            ...data,
+          }
+        })
 
         // Fetch family members count
         const familyMembersQuery = query(collection(db, "users"), where("familyId", "==", userData.familyId))
@@ -432,10 +437,33 @@ function UserDashboard() {
 
   const formatDate = (timestamp) => {
     if (!timestamp) return ""
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp._seconds * 1000)
-    if (isToday(date)) return "Aujourd'hui"
-    if (isTomorrow(date)) return "Demain"
-    return format(date, "d MMM", { locale: fr })
+
+    try {
+      let date
+
+      if (timestamp.toDate && typeof timestamp.toDate === "function") {
+        date = timestamp.toDate()
+      } else if (timestamp._seconds && typeof timestamp._seconds === "number") {
+        date = new Date(timestamp._seconds * 1000)
+      } else if (typeof timestamp === "string" || typeof timestamp === "number") {
+        date = new Date(timestamp)
+      } else {
+        console.warn("Invalid timestamp format:", timestamp)
+        return ""
+      }
+
+      if (isNaN(date.getTime())) {
+        console.warn("Invalid date created from timestamp:", timestamp)
+        return ""
+      }
+
+      if (isToday(date)) return "Aujourd'hui"
+      if (isTomorrow(date)) return "Demain"
+      return format(date, "d MMM", { locale: fr })
+    } catch (error) {
+      console.error("Error formatting date:", error, "Timestamp:", timestamp)
+      return ""
+    }
   }
 
   return (
