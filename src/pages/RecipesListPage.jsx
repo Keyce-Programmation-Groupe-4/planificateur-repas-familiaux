@@ -58,6 +58,7 @@ import {
   Merge as MergeIcon,
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
+  Delete as DeleteIcon, // Ajoutez cette ligne
 } from "@mui/icons-material";
 import Papa from "papaparse";
 import { useAuth } from "../contexts/AuthContext";
@@ -358,6 +359,47 @@ export default function RecipesListPage() {
     navigate("/recipes/aggregate", { state: { selectedRecipeIds: selectedRecipes } });
   };
 
+  const handleBulkDelete = async () => {
+  if (selectedRecipes.length === 0) {
+    setError("Veuillez sélectionner au moins une recette à supprimer.");
+    setTimeout(() => setError(""), 3000);
+    return;
+  }
+
+  if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${selectedRecipes.length} recette(s) ? Cette action est irréversible.`)) {
+    return;
+  }
+
+  setLoading(true);
+  setError("");
+  try {
+    const batch = writeBatch(db);
+    const recipesRef = collection(db, "recipes");
+
+    selectedRecipes.forEach((recipeId) => {
+      const docRef = doc(recipesRef, recipeId);
+      batch.delete(docRef);
+    });
+
+    await batch.commit();
+
+    // Mettre à jour les listes locales
+    setAllFamilyRecipes(allFamilyRecipes.filter((recipe) => !selectedRecipes.includes(recipe.id)));
+    setAllPublicRecipes(allPublicRecipes.filter((recipe) => !selectedRecipes.includes(recipe.id)));
+    setSelectedRecipes([]);
+    setSelectionMode(false);
+
+    setSuccess(`${selectedRecipes.length} recette(s) supprimée(s) avec succès !`);
+    setTimeout(() => setSuccess(""), 3000);
+  } catch (err) {
+    console.error("Error deleting recipes:", err);
+    setError("Erreur lors de la suppression des recettes : " + err.message);
+    setTimeout(() => setError(""), 3000);
+  } finally {
+    setLoading(false);
+  }
+};
+
   return (
     <Box
       sx={{
@@ -587,20 +629,37 @@ export default function RecipesListPage() {
                       {selectionMode ? "Annuler" : "Sélectionner"}
                     </Button>
                     {selectionMode && (
-                      <Button
-                        variant="contained"
-                        startIcon={<MergeIcon />}
-                        onClick={handleAggregateRecipes}
-                        disabled={selectedRecipes.length < 2}
-                        sx={{ 
-                          textTransform: "none", 
-                          borderRadius: 3, 
-                          minWidth: 140,
-                          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                        }}
-                      >
-                        Agréger ({selectedRecipes.length})
-                      </Button>
+                      <>
+                        <Button
+                          variant="contained"
+                          startIcon={<MergeIcon />}
+                          onClick={handleAggregateRecipes}
+                          disabled={selectedRecipes.length < 2}
+                          sx={{ 
+                            textTransform: "none", 
+                            borderRadius: 3, 
+                            minWidth: 140,
+                            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                          }}
+                        >
+                          Agréger ({selectedRecipes.length})
+                        </Button>
+                        <Button
+                          variant="contained"
+                          color="error"
+                          startIcon={<DeleteIcon />}
+                          onClick={handleBulkDelete}
+                          disabled={selectedRecipes.length === 0}
+                          sx={{ 
+                            textTransform: "none", 
+                            borderRadius: 3, 
+                            minWidth: 140,
+                            background: `linear-gradient(135deg, ${theme.palette.error.main} 0%, ${theme.palette.error.dark} 100%)`,
+                          }}
+                        >
+                          Supprimer ({selectedRecipes.length})
+                        </Button>
+                      </>
                     )}
                   </Stack>
                 )}
