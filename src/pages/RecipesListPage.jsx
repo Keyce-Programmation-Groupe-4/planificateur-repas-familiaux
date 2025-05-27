@@ -33,6 +33,10 @@ import {
   DialogContent,
   DialogActions,
   useMediaQuery,
+  Checkbox,
+  FormControlLabel,
+  Badge,
+  Divider,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -51,6 +55,9 @@ import {
   CloudUpload as ImportIcon,
   Favorite as FavoriteIcon,
   FavoriteBorder as FavoriteBorderIcon,
+  Merge as MergeIcon,
+  CheckCircle as CheckCircleIcon,
+  RadioButtonUnchecked as RadioButtonUncheckedIcon,
 } from "@mui/icons-material";
 import Papa from "papaparse";
 import { useAuth } from "../contexts/AuthContext";
@@ -71,7 +78,7 @@ import { exportRecipesToCSV, parseRecipesFromCSV } from "../utils/csvUtils";
 const renderSkeletons = (theme) => (
   <Grid container spacing={3}>
     {[...Array(6)].map((_, index) => (
-      <Grid item xs={12} sm={6} md={4} key={index}>
+      <Grid item xs={12} sm={6} md={4} lg={3} key={index}>
         <Fade in timeout={300 + index * 100}>
           <Card
             elevation={0}
@@ -79,20 +86,28 @@ const renderSkeletons = (theme) => (
               borderRadius: 4,
               border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
               height: "100%",
+              background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(
+                theme.palette.primary.main,
+                0.02
+              )} 100%)`,
             }}
           >
-            <Skeleton variant="rectangular" height={200} />
-            <CardContent>
+            <Skeleton variant="rectangular" height={200} sx={{ borderRadius: "16px 16px 0 0" }} />
+            <CardContent sx={{ p: 3 }}>
               <Skeleton variant="text" sx={{ fontSize: "1.25rem", mb: 1 }} />
-              <Skeleton variant="text" width="80%" />
-              <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+              <Skeleton variant="text" width="80%" sx={{ mb: 2 }} />
+              <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
                 <Skeleton variant="rounded" width={60} height={24} />
                 <Skeleton variant="rounded" width={80} height={24} />
               </Stack>
+              <Stack direction="row" spacing={0.5}>
+                <Skeleton variant="rounded" width={50} height={20} />
+                <Skeleton variant="rounded" width={60} height={20} />
+              </Stack>
             </CardContent>
-            <CardActions sx={{ p: 2 }}>
-              <Skeleton variant="rounded" width={80} height={32} />
-              <Skeleton variant="rounded" width={80} height={32} />
+            <CardActions sx={{ p: 3, pt: 0 }}>
+              <Skeleton variant="rounded" width={90} height={36} />
+              <Skeleton variant="rounded" width={90} height={36} />
             </CardActions>
           </Card>
         </Fade>
@@ -117,6 +132,8 @@ export default function RecipesListPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [importError, setImportError] = useState("");
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedRecipes, setSelectedRecipes] = useState([]);
 
   const canModify = userData?.familyRole === "Admin" || userData?.familyRole === "SecondaryAdmin";
   const familyId = userData?.familyId;
@@ -178,6 +195,8 @@ export default function RecipesListPage() {
 
   const handleTabChange = (event, newValue) => {
     setActiveTab(newValue);
+    setSelectedRecipes([]);
+    setSelectionMode(false);
   };
 
   const filteredRecipes = useMemo(() => {
@@ -313,6 +332,32 @@ export default function RecipesListPage() {
     }
   };
 
+  const toggleSelectionMode = () => {
+    const newSelectionMode = !selectionMode;
+    setSelectionMode(newSelectionMode);
+    setSelectedRecipes([]);
+    console.log("Selection mode toggled to:", newSelectionMode);
+  };
+
+  const handleRecipeSelect = (recipeId) => {
+    setSelectedRecipes((prev) => {
+      const newSelection = prev.includes(recipeId)
+        ? prev.filter((id) => id !== recipeId)
+        : [...prev, recipeId];
+      console.log("Selected recipes:", newSelection);
+      return newSelection;
+    });
+  };
+
+  const handleAggregateRecipes = () => {
+    if (selectedRecipes.length < 2) {
+      setError("Veuillez sélectionner au moins deux recettes pour les agréger.");
+      setTimeout(() => setError(""), 3000);
+      return;
+    }
+    navigate("/recipes/aggregate", { state: { selectedRecipeIds: selectedRecipes } });
+  };
+
   return (
     <Box
       sx={{
@@ -352,9 +397,9 @@ export default function RecipesListPage() {
                 sx={{ fontSize: "3rem", color: theme.palette.secondary.main }}
               />
             </Typography>
-            <Typography variant="h6" color="text.secondary">
+            <Typography variant="h6" color="text.secondary" sx={{ maxWidth: 600, mx: "auto" }}>
               {canModify
-                ? "Explorez, créez et partagez vos secrets culinaires"
+                ? "Explorez, créez et partagez vos secrets culinaires en famille"
                 : "Découvrez les trésors culinaires publics et familiaux"}
             </Typography>
           </Box>
@@ -362,8 +407,32 @@ export default function RecipesListPage() {
 
         {success && (
           <Fade in>
-            <Alert severity="success" sx={{ mb: 3, borderRadius: 3 }}>
+            <Alert 
+              severity="success" 
+              sx={{ 
+                mb: 3, 
+                borderRadius: 3,
+                background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
+              }}
+            >
               {success}
+            </Alert>
+          </Fade>
+        )}
+
+        {error && (
+          <Fade in>
+            <Alert 
+              severity="error" 
+              sx={{ 
+                mb: 3, 
+                borderRadius: 3,
+                background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
+              }}
+            >
+              {error}
             </Alert>
           </Fade>
         )}
@@ -392,10 +461,14 @@ export default function RecipesListPage() {
             elevation={0}
             sx={{
               mb: 4,
-              borderRadius: 3,
+              borderRadius: 4,
               overflow: "hidden",
               border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-              background: theme.palette.background.paper,
+              background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(
+                theme.palette.primary.main,
+                0.01
+              )} 100%)`,
+              backdropFilter: "blur(10px)",
             }}
           >
             <Tabs
@@ -405,108 +478,178 @@ export default function RecipesListPage() {
               textColor="primary"
               variant="fullWidth"
               aria-label="Recipe visibility tabs"
-              sx={{ borderBottom: 1, borderColor: "divider" }}
+              sx={{ 
+                borderBottom: 1, 
+                borderColor: "divider",
+                "& .MuiTab-root": {
+                  textTransform: "none",
+                  fontWeight: 600,
+                  fontSize: "1rem",
+                  py: 2,
+                },
+              }}
             >
               <Tab
-                label="Ma Famille"
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <FamilyIcon />
+                    Ma Famille
+                    <Badge 
+                      badgeContent={allFamilyRecipes.length} 
+                      color="primary" 
+                      sx={{ ml: 1 }}
+                    />
+                  </Box>
+                }
                 value="family"
-                icon={<FamilyIcon />}
-                iconPosition="start"
-                sx={{ textTransform: "none", fontWeight: 600 }}
               />
               <Tab
-                label="Publiques"
+                label={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <PublicIcon />
+                    Publiques
+                    <Badge 
+                      badgeContent={allPublicRecipes.length} 
+                      color="secondary" 
+                      sx={{ ml: 1 }}
+                    />
+                  </Box>
+                }
                 value="public"
-                icon={<PublicIcon />}
-                iconPosition="start"
-                sx={{ textTransform: "none", fontWeight: 600 }}
               />
             </Tabs>
-            <Box sx={{ p: 2, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 2, alignItems: "center" }}>
-              <TextField
-                fullWidth
-                placeholder={`Rechercher dans les recettes ${activeTab === "family" ? "familiales" : "publiques"}...`}
-                variant="outlined"
-                size="small"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon color="action" />
-                    </InputAdornment>
-                  ),
-                  endAdornment: searchTerm && (
-                    <InputAdornment position="end">
-                      <IconButton onClick={clearSearch} edge="end" size="small">
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    </InputAdornment>
-                  ),
-                  sx: { borderRadius: 3 },
-                }}
-              />
-              {canModify && (
-                <Stack direction={isMobile ? "column" : "row"} spacing={2} sx={{ width: isMobile ? "100%" : "auto" }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<ExportIcon />}
-                    onClick={handleExport}
-                    sx={{ textTransform: "none", borderRadius: 3, width: isMobile ? "100%" : "auto" }}
-                  >
-                    Exporter
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<ImportIcon />}
-                    onClick={handleOpenImportDialog}
-                    sx={{ textTransform: "none", borderRadius: 3, width: isMobile ? "100%" : "auto" }}
-                  >
-                    Importer
-                  </Button>
-                </Stack>
-              )}
+            
+            <Box sx={{ p: 3 }}>
+              <Stack direction={isMobile ? "column" : "row"} spacing={2} alignItems="center">
+                <TextField
+                  fullWidth
+                  placeholder={`Rechercher dans les recettes ${activeTab === "family" ? "familiales" : "publiques"}...`}
+                  variant="outlined"
+                  size="small"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon color="action" />
+                      </InputAdornment>
+                    ),
+                    endAdornment: searchTerm && (
+                      <InputAdornment position="end">
+                        <IconButton onClick={clearSearch} edge="end" size="small">
+                          <ClearIcon fontSize="small" />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                    sx: { borderRadius: 3 },
+                  }}
+                />
+                
+                {canModify && (
+                  <Stack direction={isMobile ? "column" : "row"} spacing={1} sx={{ minWidth: isMobile ? "100%" : "auto" }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<ExportIcon />}
+                      onClick={handleExport}
+                      sx={{ 
+                        textTransform: "none", 
+                        borderRadius: 3, 
+                        minWidth: 120,
+                        background: alpha(theme.palette.background.paper, 0.8),
+                      }}
+                    >
+                      Exporter
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<ImportIcon />}
+                      onClick={handleOpenImportDialog}
+                      sx={{ 
+                        textTransform: "none", 
+                        borderRadius: 3, 
+                        minWidth: 120,
+                        background: alpha(theme.palette.background.paper, 0.8),
+                      }}
+                    >
+                      Importer
+                    </Button>
+                    <Button
+                      variant={selectionMode ? "contained" : "outlined"}
+                      startIcon={selectionMode ? <CheckCircleIcon /> : <MergeIcon />}
+                      onClick={toggleSelectionMode}
+                      sx={{ 
+                        textTransform: "none", 
+                        borderRadius: 3, 
+                        minWidth: 160,
+                        background: selectionMode ? undefined : alpha(theme.palette.background.paper, 0.8),
+                      }}
+                    >
+                      {selectionMode ? "Annuler" : "Sélectionner"}
+                    </Button>
+                    {selectionMode && (
+                      <Button
+                        variant="contained"
+                        startIcon={<MergeIcon />}
+                        onClick={handleAggregateRecipes}
+                        disabled={selectedRecipes.length < 2}
+                        sx={{ 
+                          textTransform: "none", 
+                          borderRadius: 3, 
+                          minWidth: 140,
+                          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                        }}
+                      >
+                        Agréger ({selectedRecipes.length})
+                      </Button>
+                    )}
+                  </Stack>
+                )}
+              </Stack>
             </Box>
           </Paper>
         )}
 
         <Dialog open={importDialogOpen} onClose={handleCloseImportDialog} fullScreen={isMobile}>
-          <DialogTitle>Importer des Recettes</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          <DialogTitle sx={{ background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`, color: "white" }}>
+            Importer des Recettes
+          </DialogTitle>
+          <DialogContent sx={{ mt: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Sélectionnez un fichier CSV contenant des recettes. Les colonnes attendues sont : name, description, prepTime, servings, ingredients, instructions, tags, visibility, photoUrl.
             </Typography>
             <input
               type="file"
               accept=".csv"
               onChange={handleFileChange}
-              style={{ marginBottom: "16px" }}
+              style={{ 
+                marginBottom: "16px",
+                padding: "12px",
+                border: `2px dashed ${theme.palette.divider}`,
+                borderRadius: "8px",
+                width: "100%",
+                background: alpha(theme.palette.background.paper, 0.5),
+              }}
             />
             {importError && (
-              <Alert severity="error" sx={{ mb: 2 }}>
+              <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
                 {importError}
               </Alert>
             )}
           </DialogContent>
-          <DialogActions>
-            <Button onClick={handleCloseImportDialog}>Annuler</Button>
+          <DialogActions sx={{ p: 3 }}>
+            <Button onClick={handleCloseImportDialog} sx={{ borderRadius: 2 }}>
+              Annuler
+            </Button>
             <Button
               onClick={handleImport}
               variant="contained"
               disabled={!importFile || loading}
+              sx={{ borderRadius: 2 }}
             >
               Importer
             </Button>
           </DialogActions>
         </Dialog>
-
-        {error && (
-          <Fade in>
-            <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>
-              {error}
-            </Alert>
-          </Fade>
-        )}
 
         {!loading && familyId && (
           <Fade in timeout={1000}>
@@ -525,6 +668,7 @@ export default function RecipesListPage() {
                     color: theme.palette.primary.main,
                     fontWeight: 600,
                     borderRadius: 3,
+                    px: 1,
                   }}
                 />
                 {searchTerm && (
@@ -537,6 +681,20 @@ export default function RecipesListPage() {
                       color: theme.palette.secondary.main,
                       fontWeight: 600,
                       borderRadius: 3,
+                      px: 1,
+                    }}
+                  />
+                )}
+                {selectionMode && (
+                  <Chip
+                    icon={<MergeIcon />}
+                    label={`${selectedRecipes.length} recette(s) sélectionnée(s)`}
+                    sx={{
+                      backgroundColor: alpha(theme.palette.info.main, 0.1),
+                      color: theme.palette.info.main,
+                      fontWeight: 600,
+                      borderRadius: 3,
+                      px: 1,
                     }}
                   />
                 )}
@@ -564,21 +722,56 @@ export default function RecipesListPage() {
                               theme.palette.primary.main,
                               0.02
                             )} 100%)`,
-                            border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                            border: selectedRecipes.includes(recipe.id) 
+                              ? `2px solid ${theme.palette.primary.main}`
+                              : `1px solid ${alpha(theme.palette.divider, 0.5)}`,
                             transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                            position: "relative",
                             "&:hover": {
-                              transform: "translateY(-8px)",
-                              boxShadow: `0 20px 60px ${alpha(
+                              transform: selectionMode ? "none" : "translateY(-8px)",
+                              boxShadow: selectionMode
+                                ? "none"
+                                : `0 20px 60px ${alpha(theme.palette.primary.main, 0.15)}`,
+                              border: `2px solid ${alpha(
                                 theme.palette.primary.main,
-                                0.15
-                              )}`,
-                              border: `1px solid ${alpha(
-                                theme.palette.primary.main,
-                                0.3
+                                selectionMode ? 1 : 0.3
                               )}`,
                             },
+                            ...(selectedRecipes.includes(recipe.id) && {
+                              background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                              boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.2)}`,
+                            }),
                           }}
                         >
+                          {/* Selection Checkbox - Fixed positioning and visibility */}
+                          {selectionMode && (
+                            <Box
+                              sx={{
+                                position: "absolute",
+                                top: 12,
+                                left: 12,
+                                zIndex: 10,
+                                background: theme.palette.background.paper,
+                                borderRadius: "50%",
+                                boxShadow: `0 4px 12px ${alpha(theme.palette.common.black, 0.15)}`,
+                                p: 0.5,
+                              }}
+                            >
+                              <Checkbox
+                                checked={selectedRecipes.includes(recipe.id)}
+                                onChange={() => handleRecipeSelect(recipe.id)}
+                                icon={<RadioButtonUncheckedIcon />}
+                                checkedIcon={<CheckCircleIcon />}
+                                sx={{
+                                  color: theme.palette.primary.main,
+                                  "&.Mui-checked": {
+                                    color: theme.palette.primary.main,
+                                  },
+                                }}
+                              />
+                            </Box>
+                          )}
+
                           <Box sx={{ position: "relative", overflow: "hidden" }}>
                             <CardMedia
                               component="img"
@@ -592,9 +785,7 @@ export default function RecipesListPage() {
                                 objectFit: "cover",
                                 width: "100%",
                                 transition: "transform 0.3s ease",
-                                "&:hover": {
-                                  transform: "scale(1.05)",
-                                },
+                                "&:hover": selectionMode ? {} : { transform: "scale(1.05)" },
                               }}
                             />
                             <Box
@@ -605,6 +796,7 @@ export default function RecipesListPage() {
                                 display: "flex",
                                 gap: 1,
                                 alignItems: "center",
+                                flexDirection: "column",
                               }}
                             >
                               <Tooltip
@@ -626,64 +818,96 @@ export default function RecipesListPage() {
                                   sx={{
                                     backgroundColor: alpha(
                                       theme.palette.background.paper,
-                                      0.9
+                                      0.95
                                     ),
-                                    backdropFilter: "blur(4px)",
+                                    backdropFilter: "blur(8px)",
                                     fontSize: "0.75rem",
                                     color:
                                       recipe.visibility === "family"
                                         ? theme.palette.secondary.main
                                         : theme.palette.info.main,
+                                    border: `1px solid ${alpha(
+                                      recipe.visibility === "family"
+                                        ? theme.palette.secondary.main
+                                        : theme.palette.info.main,
+                                      0.2
+                                    )}`,
                                   }}
                                 />
                               </Tooltip>
-                              {recipe.prepTime && (
-                                <Chip
-                                  icon={<AccessTimeIcon />}
-                                  label={`${recipe.prepTime}min`}
-                                  size="small"
-                                  sx={{
-                                    backgroundColor: alpha(
-                                      theme.palette.background.paper,
-                                      0.9
-                                    ),
-                                    backdropFilter: "blur(4px)",
-                                    fontSize: "0.75rem",
-                                  }}
-                                />
-                              )}
-                              {recipe.servings && (
-                                <Chip
-                                  icon={<GroupIcon />}
-                                  label={recipe.servings}
-                                  size="small"
-                                  sx={{
-                                    backgroundColor: alpha(
-                                      theme.palette.background.paper,
-                                      0.9
-                                    ),
-                                    backdropFilter: "blur(4px)",
-                                    fontSize: "0.75rem",
-                                  }}
-                                />
-                              )}
+                              <Stack direction="row" spacing={0.5}>
+                                {recipe.prepTime && (
+                                  <Chip
+                                    icon={<AccessTimeIcon />}
+                                    label={`${recipe.prepTime}min`}
+                                    size="small"
+                                    sx={{
+                                      backgroundColor: alpha(
+                                        theme.palette.background.paper,
+                                        0.95
+                                      ),
+                                      backdropFilter: "blur(8px)",
+                                      fontSize: "0.7rem",
+                                      height: 24,
+                                    }}
+                                  />
+                                )}
+                                {recipe.servings && (
+                                  <Chip
+                                    icon={<GroupIcon />}
+                                    label={recipe.servings}
+                                    size="small"
+                                    sx={{
+                                      backgroundColor: alpha(
+                                        theme.palette.background.paper,
+                                        0.95
+                                      ),
+                                      backdropFilter: "blur(8px)",
+                                      fontSize: "0.7rem",
+                                      height: 24,
+                                    }}
+                                  />
+                                )}
+                              </Stack>
                             </Box>
                           </Box>
 
                           <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                            <Typography
-                              variant="h6"
-                              component="div"
-                              sx={{
-                                fontWeight: 600,
-                                mb: 1,
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                                whiteSpace: "nowrap",
-                              }}
-                            >
-                              {recipe.name}
-                            </Typography>
+                            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", mb: 1 }}>
+                              <Typography
+                                variant="h6"
+                                component="div"
+                                sx={{
+                                  fontWeight: 600,
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                  flex: 1,
+                                  mr: 1,
+                                }}
+                              >
+                                {recipe.name}
+                              </Typography>
+                              <IconButton
+                                size="small"
+                                onClick={() => handleLike(recipe.id, recipe.likes)}
+                                disabled={!currentUser || selectionMode}
+                                sx={{ 
+                                  ml: 1,
+                                  transition: "all 0.2s ease",
+                                  "&:hover": {
+                                    transform: "scale(1.1)",
+                                  },
+                                }}
+                              >
+                                {recipe.likes.includes(currentUser?.uid) ? (
+                                  <FavoriteIcon sx={{ color: theme.palette.error.main, fontSize: "1.2rem" }} />
+                                ) : (
+                                  <FavoriteBorderIcon sx={{ fontSize: "1.2rem" }} />
+                                )}
+                              </IconButton>
+                            </Box>
+                            
                             <Typography
                               variant="body2"
                               color="text.secondary"
@@ -695,17 +919,19 @@ export default function RecipesListPage() {
                                 WebkitLineClamp: 2,
                                 WebkitBoxOrient: "vertical",
                                 minHeight: "2.5em",
+                                lineHeight: 1.25,
                               }}
                             >
                               {recipe.description ||
                                 recipe.tags?.join(", ") ||
                                 "Aucune description disponible"}
                             </Typography>
+                            
                             {recipe.tags && recipe.tags.length > 0 && (
                               <Stack
                                 direction="row"
                                 spacing={0.5}
-                                sx={{ flexWrap: "wrap", gap: 0.5 }}
+                                sx={{ flexWrap: "wrap", gap: 0.5, mb: 2 }}
                               >
                                 {recipe.tags.slice(0, 3).map((tag, tagIndex) => (
                                   <Chip
@@ -720,6 +946,7 @@ export default function RecipesListPage() {
                                       color: theme.palette.secondary.main,
                                       fontSize: "0.7rem",
                                       height: "20px",
+                                      border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
                                     }}
                                   />
                                 ))}
@@ -740,25 +967,17 @@ export default function RecipesListPage() {
                                 )}
                               </Stack>
                             )}
-                            <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1 }}>
-                              <IconButton
-                                size="small"
-                                onClick={() => handleLike(recipe.id, recipe.likes)}
-                                disabled={!currentUser}
-                              >
-                                {recipe.likes.includes(currentUser?.uid) ? (
-                                  <FavoriteIcon color="error" fontSize="small" />
-                                ) : (
-                                  <FavoriteBorderIcon fontSize="small" />
-                                )}
-                              </IconButton>
+                            
+                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                               <Typography variant="body2" color="text.secondary">
                                 {recipe.likes.length} {recipe.likes.length === 1 ? "like" : "likes"}
                               </Typography>
                             </Box>
                           </CardContent>
 
-                          <CardActions sx={{ p: 3, pt: 0 }}>
+                          <Divider sx={{ mx: 2 }} />
+
+                          <CardActions sx={{ p: 3, pt: 2 }}>
                             <Button
                               size="small"
                               component={RouterLink}
@@ -768,9 +987,16 @@ export default function RecipesListPage() {
                                 borderRadius: 3,
                                 textTransform: "none",
                                 fontWeight: 500,
+                                flex: 1,
+                                background: alpha(theme.palette.primary.main, 0.1),
+                                color: theme.palette.primary.main,
+                                "&:hover": {
+                                  background: alpha(theme.palette.primary.main, 0.2),
+                                },
                               }}
+                              disabled={selectionMode}
                             >
-                              Voir Détails
+                              Voir
                             </Button>
                             {canModify && recipe.familyId === familyId && (
                               <Button
@@ -782,7 +1008,15 @@ export default function RecipesListPage() {
                                   borderRadius: 3,
                                   textTransform: "none",
                                   fontWeight: 500,
+                                  flex: 1,
+                                  ml: 1,
+                                  background: alpha(theme.palette.secondary.main, 0.1),
+                                  color: theme.palette.secondary.main,
+                                  "&:hover": {
+                                    background: alpha(theme.palette.secondary.main, 0.2),
+                                  },
                                 }}
+                                disabled={selectionMode}
                               >
                                 Modifier
                               </Button>
@@ -795,22 +1029,60 @@ export default function RecipesListPage() {
                 ) : (
                   <Grid item xs={12}>
                     <Fade in>
-                      <Typography
-                        variant="h6"
-                        color="text.secondary"
-                        align="center"
-                        sx={{ mt: 4 }}
+                      <Paper
+                        sx={{
+                          p: 6,
+                          textAlign: "center",
+                          borderRadius: 4,
+                          background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                          border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+                        }}
                       >
-                        {`Aucune recette ${activeTab === "family" ? "familiale" : "publique"} trouvée`}
-                        {searchTerm && ` pour "${searchTerm}"`}.
-                      </Typography>
+                        <RestaurantIcon 
+                          sx={{ 
+                            fontSize: "4rem", 
+                            color: theme.palette.text.secondary, 
+                            mb: 2,
+                            opacity: 0.5,
+                          }} 
+                        />
+                        <Typography
+                          variant="h5"
+                          color="text.secondary"
+                          sx={{ mb: 2, fontWeight: 500 }}
+                        >
+                          {`Aucune recette ${activeTab === "family" ? "familiale" : "publique"} trouvée`}
+                          {searchTerm && ` pour "${searchTerm}"`}
+                        </Typography>
+                        <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+                          {searchTerm 
+                            ? "Essayez de modifier votre recherche ou explorez d'autres catégories."
+                            : `Commencez par ${activeTab === "family" ? "créer votre première recette familiale" : "explorer les recettes publiques"}.`
+                          }
+                        </Typography>
+                        {canModify && activeTab === "family" && !searchTerm && (
+                          <Button
+                            variant="contained"
+                            startIcon={<AddIcon />}
+                            onClick={() => navigate("/recipes/new")}
+                            sx={{
+                              borderRadius: 3,
+                              px: 4,
+                              py: 1.5,
+                              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                            }}
+                          >
+                            Créer ma première recette
+                          </Button>
+                        )}
+                      </Paper>
                     </Fade>
                   </Grid>
                 )}
               </Grid>
             )}
 
-        {canModify && familyId && (
+        {canModify && familyId && !selectionMode && (
           <Zoom in timeout={1200}>
             <Fab
               color="primary"
@@ -820,6 +1092,12 @@ export default function RecipesListPage() {
                 bottom: theme.spacing(4),
                 right: theme.spacing(4),
                 background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.3)}`,
+                "&:hover": {
+                  transform: "scale(1.1)",
+                  boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.4)}`,
+                },
+                transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
               }}
               onClick={() => navigate("/recipes/new")}
             >
