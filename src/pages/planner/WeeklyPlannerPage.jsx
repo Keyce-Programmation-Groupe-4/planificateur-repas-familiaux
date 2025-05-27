@@ -20,34 +20,27 @@ import {
   Chip,
   IconButton,
   alpha,
-  Snackbar,
-  CircularProgress as ButtonCircularProgress, // Renamed to avoid conflict
+  Menu,
+  MenuItem,
+  ListItemIcon,
+  ListItemText,
+  Divider,
 } from "@mui/material"
-import { DragDropContext } from "@hello-pangea/dnd"
-import { isValid } from "date-fns"
 import {
   ShoppingCart as ShoppingCartIcon,
   Today as TodayIcon,
   AutoAwesome as AutoAwesomeIcon,
-  NotificationsActive as NotifyIcon, // Icon for notification button
+  MoreVert,
+  PlaylistAddCheck,
+  DeleteSweep,
+  Print,
+  Share,
+  PictureAsPdf,
 } from "@mui/icons-material"
 
 // --- Firebase Imports ---
-import { db, functions } from "../../firebaseConfig" // Import functions
-import { httpsCallable } from "firebase/functions" // Import httpsCallable
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  query,
-  where,
-  getDocs,
-  serverTimestamp,
-  Timestamp,
-  orderBy, // Added for sorting
-  limit, // Added for potential performance optimization
-} from "firebase/firestore"
+import { db } from "../../firebaseConfig"
+import { doc, getDoc, setDoc, collection, query, where, getDocs, serverTimestamp, Timestamp } from "firebase/firestore"
 
 // --- Context Import ---
 import { useAuth } from "../../contexts/AuthContext"
@@ -59,6 +52,14 @@ import RecipeSelectionModal from "../../components/planner/RecipeSelectionModal"
 
 // Ajouter après les imports existants
 import { useSwipeable } from "react-swipeable"
+import { DragDropContext } from "@hello-pangea/dnd"
+
+// Import pour PDF
+import pdfMake from "pdfmake/build/pdfmake"
+import pdfFonts from "pdfmake/build/vfs_fonts"
+
+// Configuration pdfMake
+pdfMake.vfs = pdfFonts.vfs
 
 // --- Helper Functions ---
 const getStartOfWeek = (date) => {
@@ -98,21 +99,21 @@ function WeeklyPlannerPage() {
   const navigate = useNavigate()
   const { currentUser, userData, loading: authLoading } = useAuth()
   const familyId = userData?.familyId
-  const isFamilyAdmin = userData?.familyRole === "Admin"
 
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()))
   const [weeklyPlanData, setWeeklyPlanData] = useState(null)
-  // State to hold all recipes available for planning (family + public)
-  const [availableRecipesForPlanning, setAvailableRecipesForPlanning] = useState([]) 
+  const [recipes, setRecipes] = useState({})
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState(null)
   const [showSuccess, setShowSuccess] = useState(false)
-  const [isNotifying, setIsNotifying] = useState(false) // State for notification loading
-  const [notificationResult, setNotificationResult] = useState({ open: false, message: "", severity: "info" })
 
   const [modalOpen, setModalOpen] = useState(false)
   const [targetSlotInfo, setTargetSlotInfo] = useState(null)
+
+  // Ajouter les états pour le menu après les états existants :
+  const [anchorEl, setAnchorEl] = useState(null)
+  const menuOpen = Boolean(anchorEl)
 
   // Dans le composant WeeklyPlannerPage, ajouter après les états existants :
   const swipeHandlers = useSwipeable({
@@ -145,67 +146,19 @@ function WeeklyPlannerPage() {
       setIsLoading(true)
       setError(null)
       setWeeklyPlanData(null)
-      setAvailableRecipesForPlanning([]) // Reset recipes on week change
 
       console.log(`Fetching data for family ${familyId}, week: ${weekId}`)
 
       try {
-        // Fetch recipes available for planning
-        const recipesRef = collection(db, "recipes")
-        
-        // Query 1: Get all recipes belonging to the user's family (sorted by creation date)
-        const familyRecipesQuery = query(
-            recipesRef, 
-            where("familyId", "==", familyId), 
-            orderBy("createdAt", "desc")
-        );
-        
-        // Query 2: Get all public recipes NOT belonging to the user's family (sorted by creation date)
-        // Note: Firestore doesn't support != directly in compound queries easily.
-        // We fetch all public recipes and filter client-side, or fetch all and categorize.
-        // Let's fetch all public and categorize.
-        const publicRecipesQuery = query(
-            recipesRef, 
-            where("visibility", "==", "public"), 
-            orderBy("createdAt", "desc")
-            // limit(100) // Consider limiting public recipes for performance
-        );
+        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", familyId))
+        const recipesSnapshot = await getDocs(recipesQuery)
+        const fetchedRecipes = {}
+        recipesSnapshot.forEach((doc) => {
+          fetchedRecipes[doc.id] = { id: doc.id, ...doc.data() }
+        })
+        setRecipes(fetchedRecipes)
+        console.log(`Fetched ${Object.keys(fetchedRecipes).length} recipes.`)
 
-        const [familySnapshot, publicSnapshot] = await Promise.all([
-            getDocs(familyRecipesQuery),
-            getDocs(publicRecipesQuery)
-        ]);
-
-        const familyRecipes = familySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isFamilyRecipe: true }));
-        const publicRecipes = publicSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), isFamilyRecipe: doc.data().familyId === familyId }));
-
-        // Combine and prioritize: Family recipes first, then external public recipes
-        // Remove duplicates (public recipes from the family might appear in both lists)
-        const combinedRecipesMap = new Map();
-        familyRecipes.forEach(recipe => combinedRecipesMap.set(recipe.id, recipe));
-        // Add public recipes only if they are not already in the map (i.e., not from the family)
-        publicRecipes.forEach(recipe => {
-            if (!combinedRecipesMap.has(recipe.id)) {
-                combinedRecipesMap.set(recipe.id, recipe); // isFamilyRecipe will be false here
-            }
-        });
-
-        const combinedRecipes = Array.from(combinedRecipesMap.values());
-        
-        // Sort: Family recipes first, then external public, both sorted by creation date (desc)
-        combinedRecipes.sort((a, b) => {
-            if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1; // a (family) comes before b (public)
-            if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1;  // b (family) comes before a (public)
-            // If both are family or both are public, sort by creation date (newest first)
-            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
-            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
-            return dateB - dateA; 
-        });
-
-        setAvailableRecipesForPlanning(combinedRecipes);
-        console.log(`Fetched and combined ${combinedRecipes.length} recipes for planning.`);
-
-        // Fetch the weekly plan
         const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId)
         const planDocSnap = await getDoc(planDocRef)
 
@@ -227,7 +180,7 @@ function WeeklyPlannerPage() {
     if (!authLoading) {
       fetchData()
     }
-  }, [weekId, familyId, authLoading]) // Rerun when week or family changes
+  }, [weekId, familyId, authLoading])
 
   // --- Function to create default plan structure ---
   const createDefaultPlan = (currentFamilyId, weekStartDate, useServerTimestamps = true) => {
@@ -273,6 +226,8 @@ function WeeklyPlannerPage() {
       const dataForFirestore = JSON.parse(JSON.stringify(planDataToSave))
 
       try {
+        const isValid = (date) => date instanceof Date && !isNaN(date)
+
         if (
           dataForFirestore.startDate &&
           !isTimestampLike(dataForFirestore.startDate) &&
@@ -357,14 +312,152 @@ function WeeklyPlannerPage() {
     [familyId, weekId, currentWeekStart],
   )
 
+  // Ajouter les handlers de menu après les handlers existants :
+  const handleMenuClick = (event) => setAnchorEl(event.currentTarget)
+  const handleMenuClose = () => setAnchorEl(null)
+  const handleRefresh = () => {
+    handleMenuClose()
+    window.location.reload()
+  }
+
+  const handleUncheckAll = () => {
+    handleMenuClose()
+    // Logique pour décocher tous les repas planifiés
+    alert("Décocher tout - Fonctionnalité à implémenter")
+  }
+
+  const handleClearChecked = () => {
+    handleMenuClose()
+    // Logique pour supprimer les repas cochés
+    alert("Supprimer les cochés - Fonctionnalité à implémenter")
+  }
+
+  const handleExportPdf = () => {
+    handleMenuClose()
+    console.log("Exporting planning PDF with data:", weeklyPlanData)
+
+    if (!weeklyPlanData || !weeklyPlanData.days) {
+      alert("Le planning est vide, impossible d'exporter.")
+      return
+    }
+
+    const content = []
+
+    // Titre et date
+    content.push({ text: "Planning de Repas Familial", style: "header", alignment: "center" })
+    content.push({
+      text: `Semaine du ${currentWeekStart.toLocaleDateString("fr-FR")}`,
+      style: "subheader",
+      alignment: "center",
+      margin: [0, 0, 0, 20],
+    })
+
+    // Planning par jour
+    orderedDays.forEach((dayKey) => {
+      const dayName = dayNames[dayKey]
+      const dayMeals = weeklyPlanData.days[dayKey]
+
+      content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] })
+
+      const dayContent = []
+
+      // Petit-déjeuner
+      const breakfast = dayMeals.breakfast
+        ? recipes[dayMeals.breakfast]?.name || "Recette inconnue"
+        : "Aucun repas planifié"
+      dayContent.push(["Petit-déjeuner", breakfast])
+
+      // Déjeuner
+      const lunch = dayMeals.lunch ? recipes[dayMeals.lunch]?.name || "Recette inconnue" : "Aucun repas planifié"
+      dayContent.push(["Déjeuner", lunch])
+
+      // Dîner
+      const dinner = dayMeals.dinner ? recipes[dayMeals.dinner]?.name || "Recette inconnue" : "Aucun repas planifié"
+      dayContent.push(["Dîner", dinner])
+
+      content.push({
+        layout: "lightHorizontalLines",
+        table: {
+          headerRows: 0,
+          widths: ["30%", "*"],
+          body: dayContent,
+        },
+        margin: [0, 0, 0, 10],
+      })
+    })
+
+    // Résumé des recettes utilisées
+    const usedRecipes = new Set()
+    Object.values(weeklyPlanData.days).forEach((day) => {
+      Object.values(day).forEach((recipeId) => {
+        if (recipeId && recipes[recipeId]) {
+          usedRecipes.add(recipes[recipeId].name)
+        }
+      })
+    })
+
+    if (usedRecipes.size > 0) {
+      content.push({ text: "Recettes utilisées cette semaine", style: "sectionHeader", margin: [0, 20, 0, 10] })
+      content.push({
+        ul: Array.from(usedRecipes).sort(),
+        margin: [0, 0, 0, 10],
+      })
+    }
+
+    const docDefinition = {
+      content: content,
+      styles: {
+        header: {
+          fontSize: 18,
+          bold: true,
+          margin: [0, 0, 0, 5],
+        },
+        subheader: {
+          fontSize: 14,
+          color: "gray",
+          italics: true,
+        },
+        dayHeader: {
+          fontSize: 14,
+          bold: true,
+          color: theme.palette.primary.main,
+          margin: [0, 15, 0, 5],
+        },
+        sectionHeader: {
+          fontSize: 12,
+          bold: true,
+          margin: [0, 10, 0, 5],
+        },
+      },
+    }
+
+    try {
+      const pdfFileName = `planning_repas_${weekId}.pdf`
+      pdfMake.createPdf(docDefinition).download(pdfFileName)
+      console.log(`PDF "${pdfFileName}" generated and download initiated.`)
+    } catch (error) {
+      console.error("Error generating PDF: ", error)
+      alert("Une erreur est survenue lors de la génération du PDF.")
+    }
+  }
+
+  const handlePrint = () => {
+    handleMenuClose()
+    alert("Imprimer - Non implémenté")
+  }
+  const handleShare = () => {
+    handleMenuClose()
+    alert("Partager - Non implémenté")
+  }
+
   // --- Event Handlers ---
   const handleGoToToday = () => {
-    if (isLoading || isSaving || isNotifying) return
+    if (isLoading || isSaving) return
     setCurrentWeekStart(getStartOfWeek(new Date()))
   }
 
   const handleNextWeek = () => {
-    if (isLoading || isSaving || isNotifying) return
+    if (isLoading || isSaving) return
     setCurrentWeekStart((prevDate) => {
       const nextWeek = new Date(prevDate)
       nextWeek.setDate(prevDate.getDate() + 7)
@@ -373,7 +466,7 @@ function WeeklyPlannerPage() {
   }
 
   const handlePreviousWeek = () => {
-    if (isLoading || isSaving || isNotifying) return
+    if (isLoading || isSaving) return
     setCurrentWeekStart((prevDate) => {
       const prevWeek = new Date(prevDate)
       prevWeek.setDate(prevDate.getDate() - 7)
@@ -394,7 +487,7 @@ function WeeklyPlannerPage() {
 
   const handleRecipeSelected = useCallback(
     (recipeId, day, mealType) => {
-      if (!weeklyPlanData || isSaving || isNotifying) return
+      if (!weeklyPlanData || isSaving) return
 
       const currentPlan = weeklyPlanData
       const isNewPlan = !!currentPlan.isLocal
@@ -411,12 +504,12 @@ function WeeklyPlannerPage() {
 
       handleCloseModal()
     },
-    [weeklyPlanData, savePlan, handleCloseModal, isSaving, familyId, currentWeekStart, isNotifying],
+    [weeklyPlanData, savePlan, handleCloseModal, isSaving, familyId, currentWeekStart],
   )
 
   const handleDeleteRecipeFromSlot = useCallback(
     (day, mealType) => {
-      if (!weeklyPlanData || isSaving || isNotifying) return
+      if (!weeklyPlanData || isSaving) return
 
       const isLocalPlan = !!weeklyPlanData.isLocal
       const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
@@ -431,14 +524,14 @@ function WeeklyPlannerPage() {
         console.warn(`No recipe to delete in ${day} - ${mealType}`)
       }
     },
-    [weeklyPlanData, savePlan, isSaving, isNotifying],
+    [weeklyPlanData, savePlan, isSaving],
   )
 
   // --- Drag and Drop Handler ---
   const onDragEnd = useCallback(
     (result) => {
       const { source, destination, draggableId } = result
-      if (!destination || !weeklyPlanData || isSaving || isNotifying || destination.droppableId === source.droppableId) return
+      if (!destination || !weeklyPlanData || isSaving || destination.droppableId === source.droppableId) return
 
       const isLocalPlan = !!weeklyPlanData.isLocal
       const [sourceDay, sourceMealType] = source.droppableId.split("-")
@@ -446,9 +539,6 @@ function WeeklyPlannerPage() {
       const recipeIdBeingDragged = draggableId
       const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
       const recipeAtDestination = updatedPlan.days[destDay]?.[destMealType]
-
-      // Find the full recipe object being dragged from the available recipes
-      const draggedRecipeData = availableRecipesForPlanning.find(r => r.id === recipeIdBeingDragged);
 
       if (updatedPlan.days[destDay]) {
         updatedPlan.days[destDay][destMealType] = recipeIdBeingDragged
@@ -462,7 +552,7 @@ function WeeklyPlannerPage() {
         savePlan(updatedPlan, false)
       }
     },
-    [weeklyPlanData, savePlan, isSaving, isNotifying, availableRecipesForPlanning], // Added availableRecipesForPlanning dependency
+    [weeklyPlanData, savePlan, isSaving],
   )
 
   // --- Navigate to Shopping List ---
@@ -470,177 +560,396 @@ function WeeklyPlannerPage() {
     navigate(`/shopping-list?week=${weekId}`)
   }
 
-  // --- Notify Family Handler ---
-  const handleNotifyFamily = async () => {
-    if (!isFamilyAdmin || !familyId || isNotifying || isLoading || isSaving) {
-      console.warn("Cannot notify family: not admin, no familyId, or already processing.")
-      return
-    }
+  // --- Enhanced Skeleton Rendering ---
+  const renderSkeletons = () => (
+    <Grid container spacing={{ xs: 2, sm: 3, md: 4 }} justifyContent="center">
+      {orderedDays.map((day, index) => (
+        <Grid item xs={12} sm={6} md={4} key={day}>
+          <Fade in timeout={300 + index * 100}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: { xs: 2, md: 3 },
+                borderRadius: 6,
+                border: `1px solid ${theme.palette.divider}`,
+                height: "100%",
+                minHeight: "450px",
+                background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+              }}
+            >
+              <Skeleton
+                variant="text"
+                width="60%"
+                sx={{
+                  mb: 3,
+                  mx: "auto",
+                  height: "2.5rem",
+                  borderRadius: 2,
+                }}
+              />
+              <Stack spacing={2.5}>
+                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
+                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
+                <Skeleton variant="rounded" height={120} sx={{ borderRadius: 4 }} />
+              </Stack>
+            </Paper>
+          </Fade>
+        </Grid>
+      ))}
+    </Grid>
+  )
 
-    setIsNotifying(true)
-    setNotificationResult({ open: false, message: "", severity: "info" })
-    console.log(`Notifying family ${familyId} about plan for week ${weekId}...`)
-
-    try {
-      const notifyFunction = httpsCallable(functions, "notifyFamilyPlanReady")
-      const result = await notifyFunction({ familyId: familyId, weekId: weekId })
-      console.log("Cloud function result:", result.data)
-      setNotificationResult({ open: true, message: result.data.message || "Notifications envoyées !", severity: "success" })
-    } catch (error) {
-      console.error("Error calling notifyFamilyPlanReady function:", error)
-      setNotificationResult({ open: true, message: error.message || "Erreur lors de l'envoi des notifications.", severity: "error" })
-    } finally {
-      setIsNotifying(false)
-    }
-  }
-
-  const handleCloseSnackbar = (event, reason) => {
-    if (reason === 'clickaway') {
-      return;
-    }
-    setNotificationResult({ ...notificationResult, open: false });
-  };
-
-  // --- Render Logic ---
-  if (authLoading) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "calc(100vh - 64px)" }}>
-        <ButtonCircularProgress />
-      </Box>
-    )
-  }
-
-  if (!familyId && !authLoading) {
-    return (
-      <Container maxWidth="sm" sx={{ textAlign: "center", mt: 8 }}>
-        <Alert severity="warning" sx={{ mb: 3, borderRadius: 3 }}>
-          Vous devez rejoindre ou créer une famille pour utiliser le planificateur.
-        </Alert>
-        <Button variant="contained" onClick={() => navigate("/family")}>
-          Gérer ma Famille
-        </Button>
-      </Container>
-    )
-  }
+  const combinedLoading = authLoading || isLoading
+  const totalRecipes = Object.keys(recipes).length
+  const plannedMeals = weeklyPlanData
+    ? Object.values(weeklyPlanData.days || {}).reduce(
+        (count, day) => count + Object.values(day).filter((meal) => meal !== null).length,
+        0,
+      )
+    : 0
 
   return (
-    <Box sx={{ position: "relative", overflowX: "hidden" }} {...swipeHandlers}>
-      {(isLoading || isSaving) && (
-        <LinearProgress
+    <DragDropContext onDragEnd={onDragEnd}>
+      {/* Modifier le Box principal pour inclure les gestes de swipe : */}
+      <Box
+        {...swipeHandlers}
+        sx={{
+          py: { xs: 3, md: 5 },
+          px: { xs: 2, sm: 3, md: 4 },
+          background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
+          minHeight: "calc(100vh - 64px)",
+          position: "relative",
+          // Indicateur visuel pour les gestes
+          "&::before": {
+            content: '""',
+            position: "absolute",
+            top: 10,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "60px",
+            height: "4px",
+            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.3)} 0%, ${alpha(theme.palette.secondary.main, 0.3)} 100%)`,
+            borderRadius: "2px",
+            display: { xs: "block", md: "none" },
+          },
+        }}
+      >
+        {/* Decorative Background Elements */}
+        <Box
           sx={{
             position: "absolute",
             top: 0,
-            left: 0,
-            width: "100%",
-            zIndex: 1201,
+            right: 0,
+            width: "300px",
+            height: "300px",
+            background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.1)} 0%, transparent 70%)`,
+            borderRadius: "50%",
+            zIndex: 0,
+            pointerEvents: "none",
           }}
         />
-      )}
-      <Container maxWidth={false} sx={{ px: { xs: 1, sm: 2, md: 3 }, py: 3 }}>
-        <WeekNavigator
-          currentWeekStart={currentWeekStart}
-          onPreviousWeek={handlePreviousWeek}
-          onNextWeek={handleNextWeek}
-          onGoToToday={handleGoToToday}
-          isLoading={isLoading || isSaving || isNotifying}
-        />
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>
-            {error}
-          </Alert>
-        )}
+        <Container maxWidth="xl" sx={{ position: "relative", zIndex: 1 }}>
+          {/* Enhanced Header */}
+          <Box sx={{ mb: { xs: 3, md: 5 } }}>
+            {/* Title Section */}
+            <Fade in timeout={600}>
+              <Box sx={{ textAlign: "center", mb: 4 }}>
+                <Typography
+                  variant="h3"
+                  component="h1"
+                  sx={{
+                    fontWeight: 700,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    backgroundClip: "text",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    mb: 1,
+                    fontSize: { xs: "2rem", md: "3rem" },
+                  }}
+                >
+                  Planificateur de Repas
+                </Typography>
+                <Typography
+                  variant="h6"
+                  color="text.secondary"
+                  sx={{
+                    fontWeight: 400,
+                    maxWidth: "600px",
+                    mx: "auto",
+                  }}
+                >
+                  Organisez vos repas de la semaine avec élégance
+                </Typography>
+              </Box>
+            </Fade>
 
-        <DragDropContext onDragEnd={onDragEnd}>
-          <Grid container spacing={{ xs: 1, sm: 2 }} columns={{ xs: 1, sm: 2, md: 7 }}>
-            {orderedDays.map((day) => (
-              <Grid item xs={1} key={day}>
-                <DayColumn
-                  day={day}
-                  dayName={dayNames[day]}
-                  meals={weeklyPlanData?.days?.[day]}
-                  recipes={availableRecipesForPlanning.reduce((acc, recipe) => { // Pass all recipes
-                      acc[recipe.id] = recipe;
-                      return acc;
-                  }, {})} 
-                  onOpenModal={handleOpenModal}
-                  onDeleteRecipe={handleDeleteRecipeFromSlot}
-                  isLoading={isLoading}
-                />
-              </Grid>
-            ))}
-          </Grid>
-        </DragDropContext>
-
-        {/* Action Buttons */}
-        <Stack 
-            direction={{ xs: 'column', sm: 'row' }} 
-            spacing={2} 
-            justifyContent="center" 
-            sx={{ mt: 4 }}
-        >
-          <Button
-            variant="contained"
-            startIcon={<ShoppingCartIcon />}
-            onClick={handleGoToShoppingList}
-            disabled={isLoading || isSaving || isNotifying}
-            sx={{ borderRadius: 3, px: 3 }}
-          >
-            Voir la Liste de Courses
-          </Button>
-          {isFamilyAdmin && (
-            <Tooltip title="Envoyer une notification à la famille quand le planning est prêt">
-              <Button
-                variant="outlined"
-                startIcon={isNotifying ? <ButtonCircularProgress size={20} color="inherit" /> : <NotifyIcon />}
-                onClick={handleNotifyFamily}
-                disabled={isLoading || isSaving || isNotifying}
-                sx={{ borderRadius: 3, px: 3 }}
+            {/* Stats and Navigation Row */}
+            <Zoom in timeout={800}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 3,
+                  borderRadius: 6,
+                  background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                  backdropFilter: "blur(10px)",
+                  mb: 3,
+                }}
               >
-                {isNotifying ? "Envoi en cours..." : "Notifier la Famille"}
-              </Button>
-            </Tooltip>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={3}
+                  alignItems="center"
+                  justifyContent="space-between"
+                >
+                  {/* Stats */}
+                  <Stack direction="row" spacing={3}>
+                    <Chip
+                      icon={<AutoAwesomeIcon />}
+                      label={`${totalRecipes} recettes`}
+                      variant="outlined"
+                      sx={{
+                        borderRadius: 3,
+                        "& .MuiChip-icon": { color: theme.palette.primary.main },
+                      }}
+                    />
+                    <Chip label={`${plannedMeals}/21 repas planifiés`} variant="outlined" sx={{ borderRadius: 3 }} />
+                  </Stack>
+
+                  {/* Navigation */}
+                  <WeekNavigator
+                    currentWeekStart={currentWeekStart}
+                    onPreviousWeek={handlePreviousWeek}
+                    onNextWeek={handleNextWeek}
+                    onGoToToday={handleGoToToday}
+                    isLoading={combinedLoading || isSaving}
+                  />
+
+                  {/* Action Buttons */}
+                  <Stack direction="row" spacing={2}>
+                    <Tooltip title="Aller à aujourd'hui">
+                      <IconButton
+                        onClick={handleGoToToday}
+                        disabled={combinedLoading || isSaving}
+                        sx={{
+                          backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                          "&:hover": {
+                            backgroundColor: alpha(theme.palette.primary.main, 0.2),
+                            transform: "scale(1.05)",
+                          },
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <TodayIcon />
+                      </IconButton>
+                    </Tooltip>
+
+                    <Tooltip title="Options">
+                      <IconButton
+                        onClick={handleMenuClick}
+                        disabled={combinedLoading || isSaving}
+                        sx={{
+                          backgroundColor: alpha(theme.palette.secondary.main, 0.1),
+                          "&:hover": {
+                            backgroundColor: alpha(theme.palette.secondary.main, 0.2),
+                            transform: "scale(1.05)",
+                          },
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        <MoreVert />
+                      </IconButton>
+                    </Tooltip>
+
+                    <Button
+                      variant="contained"
+                      startIcon={<ShoppingCartIcon />}
+                      onClick={handleGoToShoppingList}
+                      disabled={combinedLoading || isSaving || !weeklyPlanData || weeklyPlanData.isLocal}
+                      sx={{
+                        borderRadius: 3,
+                        px: 3,
+                        py: 1.5,
+                        background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                        boxShadow: `0 4px 20px ${alpha(theme.palette.primary.main, 0.3)}`,
+                        "&:hover": {
+                          transform: "translateY(-2px)",
+                          boxShadow: `0 6px 25px ${alpha(theme.palette.primary.main, 0.4)}`,
+                        },
+                        transition: "all 0.3s ease",
+                      }}
+                    >
+                      Liste de Courses
+                    </Button>
+                  </Stack>
+                </Stack>
+              </Paper>
+            </Zoom>
+          </Box>
+
+          {/* Loading/Saving Indicator */}
+          {(combinedLoading || isSaving) && (
+            <Fade in>
+              <Box sx={{ mb: 3 }}>
+                <LinearProgress
+                  sx={{
+                    borderRadius: 2,
+                    height: 6,
+                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
+                    "& .MuiLinearProgress-bar": {
+                      background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    },
+                  }}
+                />
+              </Box>
+            </Fade>
           )}
-        </Stack>
+
+          {/* Success Feedback */}
+          {showSuccess && (
+            <Fade in>
+              <Alert
+                severity="success"
+                sx={{
+                  mb: 3,
+                  borderRadius: 3,
+                  "& .MuiAlert-icon": {
+                    fontSize: "1.5rem",
+                  },
+                }}
+              >
+                Planning sauvegardé avec succès !
+              </Alert>
+            </Fade>
+          )}
+
+          {/* Error Display */}
+          {error && (
+            <Fade in>
+              <Alert
+                severity="error"
+                sx={{
+                  mb: 3,
+                  borderRadius: 3,
+                  "& .MuiAlert-icon": {
+                    fontSize: "1.5rem",
+                  },
+                }}
+              >
+                {error}
+              </Alert>
+            </Fade>
+          )}
+
+          {/* Main Planner Grid - Simplifié et Centré */}
+          {combinedLoading ? (
+            renderSkeletons()
+          ) : weeklyPlanData ? (
+            <Fade in timeout={1000}>
+              <Grid container spacing={{ xs: 2, sm: 3, md: 4 }} justifyContent="center">
+                {orderedDays.map((dayKey, index) => {
+                  const dayName = dayNames[dayKey]
+                  return (
+                    <Grid
+                      item
+                      xs={12} // 1 colonne sur mobile
+                      sm={6} // 2 colonnes sur petit tablet
+                      md={4} // 3 colonnes sur tablet et desktop
+                      key={dayKey}
+                    >
+                      <Zoom in timeout={400 + index * 100}>
+                        <Box>
+                          <DayColumn
+                            dayKey={dayKey}
+                            dayName={dayName}
+                            date={
+                              new Date(
+                                currentWeekStart.getFullYear(),
+                                currentWeekStart.getMonth(),
+                                currentWeekStart.getDate() + orderedDays.indexOf(dayKey),
+                              )
+                            }
+                            meals={weeklyPlanData.days[dayKey]}
+                            recipes={recipes}
+                            onOpenModal={handleOpenModal}
+                            onDeleteRecipe={handleDeleteRecipeFromSlot}
+                            currentDate={new Date()}
+                            weekStartDate={currentWeekStart}
+                          />
+                        </Box>
+                      </Zoom>
+                    </Grid>
+                  )
+                })}
+              </Grid>
+            </Fade>
+          ) : (
+            !error && (
+              <Fade in>
+                <Box sx={{ textAlign: "center", mt: 8 }}>
+                  <Typography variant="h5" color="text.secondary" sx={{ mb: 2 }}>
+                    Aucun planning trouvé pour cette semaine
+                  </Typography>
+                  <Typography variant="body1" color="text.secondary">
+                    Commencez à planifier vos repas en ajoutant des recettes
+                  </Typography>
+                </Box>
+              </Fade>
+            )
+          )}
+        </Container>
+
+        {/* Options Menu */}
+        <Menu id="options-menu" anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
+          {/* --- Option Export PDF --- */}
+          <MenuItem onClick={handleExportPdf} disabled={combinedLoading || !weeklyPlanData}>
+            <ListItemIcon>
+              <PictureAsPdf fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Exporter en PDF</ListItemText>
+          </MenuItem>
+          <Divider />
+          {/* --- Options existantes --- */}
+          <MenuItem onClick={handleUncheckAll} disabled={combinedLoading || !weeklyPlanData}>
+            <ListItemIcon>
+              <PlaylistAddCheck fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Décocher tout</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleClearChecked} disabled={combinedLoading || !weeklyPlanData}>
+            <ListItemIcon>
+              <DeleteSweep fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Supprimer les cochés</ListItemText>
+          </MenuItem>
+          <Divider />
+          {/* --- Placeholders conservés --- */}
+          <MenuItem onClick={handlePrint} disabled>
+            <ListItemIcon>
+              <Print fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Imprimer</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleShare} disabled>
+            <ListItemIcon>
+              <Share fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Partager</ListItemText>
+          </MenuItem>
+        </Menu>
 
         {/* Recipe Selection Modal */}
         <RecipeSelectionModal
           open={modalOpen}
           onClose={handleCloseModal}
           onRecipeSelect={handleRecipeSelected}
+          availableRecipes={Object.values(recipes)}
           targetSlotInfo={targetSlotInfo}
-          // Pass the combined & sorted list to the modal
-          availableRecipes={availableRecipesForPlanning} 
         />
-
-        {/* Success Snackbar */}
-        <Snackbar
-          open={showSuccess}
-          autoHideDuration={2000}
-          onClose={() => setShowSuccess(false)}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert onClose={() => setShowSuccess(false)} severity="success" sx={{ width: "100%", borderRadius: 3 }}>
-            Planning sauvegardé !
-          </Alert>
-        </Snackbar>
-        
-        {/* Notification Result Snackbar */}
-        <Snackbar
-          open={notificationResult.open}
-          autoHideDuration={6000}
-          onClose={handleCloseSnackbar}
-          anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-        >
-          <Alert onClose={handleCloseSnackbar} severity={notificationResult.severity} sx={{ width: "100%", borderRadius: 3 }}>
-            {notificationResult.message}
-          </Alert>
-        </Snackbar>
-
-      </Container>
-    </Box>
+      </Box>
+    </DragDropContext>
   )
 }
 
 export default WeeklyPlannerPage
-
