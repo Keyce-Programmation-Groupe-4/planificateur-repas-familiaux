@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
-import { useNavigate } from "react-router-dom"
+import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Container,
   Box,
@@ -31,7 +31,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-} from "@mui/material"
+} from "@mui/material";
 import {
   ShoppingCart as ShoppingCartIcon,
   Today as TodayIcon,
@@ -43,16 +43,16 @@ import {
   Share,
   PictureAsPdf,
   NotificationsActive as NotifyIcon,
-} from "@mui/icons-material"
-import { DragDropContext } from "@hello-pangea/dnd"
-import { useSwipeable } from "react-swipeable"
-import { isValid } from "date-fns"
-import pdfMake from "pdfmake/build/pdfmake"
-import pdfFonts from "pdfmake/build/vfs_fonts"
+} from "@mui/icons-material";
+import { DragDropContext } from "@hello-pangea/dnd";
+import { useSwipeable } from "react-swipeable";
+import { isValid } from "date-fns";
+import pdfMake from "pdfmake/build/pdfmake";
+import pdfFonts from "pdfmake/build/vfs_fonts";
 
 // --- Firebase Imports ---
-import { db, functions } from "../../firebaseConfig"
-import { httpsCallable } from "firebase/functions"
+import { db, functions } from "../../firebaseConfig";
+import { httpsCallable } from "firebase/functions";
 import {
   doc,
   getDoc,
@@ -64,38 +64,38 @@ import {
   serverTimestamp,
   Timestamp,
   orderBy,
-} from "firebase/firestore"
+} from "firebase/firestore";
 
 // --- Context Import ---
-import { useAuth } from "../../contexts/AuthContext"
+import { useAuth } from "../../contexts/AuthContext";
 
 // --- Components ---
-import WeekNavigator from "../../components/planner/WeekNavigator"
-import DayColumn from "../../components/planner/DayColumn"
-import RecipeSelectionModal from "../../components/planner/RecipeSelectionModal"
+import WeekNavigator from "../../components/planner/WeekNavigator";
+import DayColumn from "../../components/planner/DayColumn";
+import RecipeSelectionModal from "../../components/planner/RecipeSelectionModal";
 
 // --- pdfMake Configuration ---
-pdfMake.vfs = pdfFonts.vfs
+pdfMake.vfs = pdfFonts.vfs;
 
 // --- Helper Functions ---
 const getStartOfWeek = (date) => {
-  const dateCopy = new Date(date)
-  const day = dateCopy.getDay()
-  const diff = dateCopy.getDate() - day + (day === 0 ? -6 : 1)
-  dateCopy.setHours(0, 0, 0, 0)
-  return new Date(dateCopy.setDate(diff))
-}
+  const dateCopy = new Date(date);
+  const day = dateCopy.getDay();
+  const diff = dateCopy.getDate() - day + (day === 0 ? -6 : 1);
+  dateCopy.setHours(0, 0, 0, 0);
+  return new Date(dateCopy.setDate(diff));
+};
 
 const getWeekId = (date) => {
-  const startDate = getStartOfWeek(date)
-  const year = startDate.getFullYear()
-  const thursday = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 3)
-  const firstThursday = new Date(thursday.getFullYear(), 0, 4)
-  const weekNumber = Math.ceil(1 + (thursday - firstThursday) / (7 * 24 * 60 * 60 * 1000))
-  return `${year}-W${String(weekNumber).padStart(2, "0")}`
-}
+  const startDate = getStartOfWeek(date);
+  const year = startDate.getFullYear();
+  const thursday = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 3);
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+  const weekNumber = Math.ceil(1 + (thursday - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+  return `${year}-W${String(weekNumber).padStart(2, "0")}`;
+};
 
-const orderedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+const orderedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 const dayNames = {
   monday: "Lundi",
   tuesday: "Mardi",
@@ -104,134 +104,138 @@ const dayNames = {
   friday: "Vendredi",
   saturday: "Samedi",
   sunday: "Dimanche",
-}
+};
 
 const isTimestampLike = (value) => {
-  return value && typeof value === "object" && value.hasOwnProperty("seconds") && value.hasOwnProperty("nanoseconds")
-}
+  return value && typeof value === "object" && value.hasOwnProperty("seconds") && value.hasOwnProperty("nanoseconds");
+};
 
 function WeeklyPlannerPage() {
-  const theme = useTheme()
-  const navigate = useNavigate()
-  const { currentUser, userData, loading: authLoading } = useAuth()
-  const familyId = userData?.familyId
-  const isFamilyAdmin = userData?.familyRole === "Admin"
+  const theme = useTheme();
+  const navigate = useNavigate();
+  const { currentUser, userData, loading: authLoading } = useAuth();
+  const familyId = userData?.familyId;
+  const isFamilyAdmin = userData?.familyRole === "Admin";
 
-  const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()))
-  const [weeklyPlanData, setWeeklyPlanData] = useState(null)
-  const [availableRecipesForPlanning, setAvailableRecipesForPlanning] = useState([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isNotifying, setIsNotifying] = useState(false)
-  const [error, setError] = useState(null)
-  const [showSuccess, setShowSuccess] = useState(false)
-  const [notificationResult, setNotificationResult] = useState({ open: false, message: "", severity: "info" })
-  const [modalOpen, setModalOpen] = useState(false)
-  const [targetSlotInfo, setTargetSlotInfo] = useState(null)
-  const [anchorEl, setAnchorEl] = useState(null)
-  const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false)
-  const [clearPlanningDialogOpen, setClearPlanningDialogOpen] = useState(false)
-  const menuOpen = Boolean(anchorEl)
+  const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
+  const [weeklyPlanData, setWeeklyPlanData] = useState(null);
+  const [availableRecipesForPlanning, setAvailableRecipesForPlanning] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isNotifying, setIsNotifying] = useState(false);
+  const [error, setError] = useState(null);
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [notificationResult, setNotificationResult] = useState({ open: false, message: "", severity: "info" });
+  const [modalOpen, setModalOpen] = useState(false);
+  const [targetSlotInfo, setTargetSlotInfo] = useState(null);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false);
+  const [clearPlanningDialogOpen, setClearPlanningDialogOpen] = useState(false);
+  const menuOpen = Boolean(anchorEl);
 
   const swipeHandlers = useSwipeable({
     onSwipedLeft: () => {
       if (!isLoading && !isSaving && !isNotifying) {
-        handleNextWeek()
+        handleNextWeek();
       }
     },
     onSwipedRight: () => {
       if (!isLoading && !isSaving && !isNotifying) {
-        handlePreviousWeek()
+        handlePreviousWeek();
       }
     },
     trackMouse: true,
     preventScrollOnSwipe: true,
-    delta: 10, // Sensibilité du swipe
-  })
+    delta: 10,
+  });
 
-  const weekId = getWeekId(currentWeekStart)
+  const weekId = getWeekId(currentWeekStart);
 
   // --- Data Fetching ---
   useEffect(() => {
     const fetchData = async () => {
       if (!familyId) {
         if (!authLoading) {
-          setIsLoading(false)
+          setIsLoading(false);
         }
-        console.warn("Waiting for familyId...")
-        return
+        console.warn("Waiting for familyId...");
+        return;
       }
-      setIsLoading(true)
-      setError(null)
-      setWeeklyPlanData(null)
-      setAvailableRecipesForPlanning([])
+      setIsLoading(true);
+      setError(null);
+      setWeeklyPlanData(null);
+      setAvailableRecipesForPlanning([]);
 
-      console.log(`Fetching data for family ${familyId}, week: ${weekId}`)
+      console.log(`Fetching data for family ${familyId}, week: ${weekId}`);
 
       try {
-        const recipesRef = collection(db, "recipes")
-        const familyRecipesQuery = query(recipesRef, where("familyId", "==", familyId), orderBy("createdAt", "desc"))
-        const publicRecipesQuery = query(recipesRef, where("visibility", "==", "public"), orderBy("createdAt", "desc"))
+        const recipesRef = collection(db, "recipes");
+        const familyRecipesQuery = query(recipesRef, where("familyId", "==", familyId), orderBy("createdAt", "desc"));
+        const publicRecipesQuery = query(recipesRef, where("visibility", "==", "public"), orderBy("createdAt", "desc"));
 
         const [familySnapshot, publicSnapshot] = await Promise.all([
           getDocs(familyRecipesQuery),
           getDocs(publicRecipesQuery),
-        ])
+        ]);
 
-        const familyRecipes = familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data(), isFamilyRecipe: true }))
+        const familyRecipes = familySnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          isFamilyRecipe: true,
+        }));
         const publicRecipes = publicSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
-          isFamilyRecipe: doc.data().familyId === familyId,
-        }))
+          isFamilyRecipe: false,
+        }));
 
-        const combinedRecipesMap = new Map()
-        familyRecipes.forEach((recipe) => combinedRecipesMap.set(recipe.id, recipe))
+        const combinedRecipesMap = new Map();
+        familyRecipes.forEach((recipe) => combinedRecipesMap.set(recipe.id, recipe));
         publicRecipes.forEach((recipe) => {
           if (!combinedRecipesMap.has(recipe.id)) {
-            combinedRecipesMap.set(recipe.id, recipe)
+            combinedRecipesMap.set(recipe.id, recipe);
           }
-        })
+        });
 
         const combinedRecipes = Array.from(combinedRecipesMap.values()).sort((a, b) => {
-          if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1
-          if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1
-          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0)
-          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0)
-          return dateB - dateA
-        })
+          if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1;
+          if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1;
+          const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+          const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+          return dateB - dateA;
+        });
 
-        setAvailableRecipesForPlanning(combinedRecipes)
-        console.log(`Fetched and combined ${combinedRecipes.length} recipes for planning.`)
+        setAvailableRecipesForPlanning(combinedRecipes);
+        console.log(`Fetched and combined ${combinedRecipes.length} recipes for planning.`);
 
-        const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId)
-        const planDocSnap = await getDoc(planDocRef)
+        const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId);
+        const planDocSnap = await getDoc(planDocRef);
 
         if (planDocSnap.exists()) {
-          console.log(`Plan found for ${weekId}.`)
-          setWeeklyPlanData(planDocSnap.data())
+          console.log(`Plan found for ${weekId}.`);
+          setWeeklyPlanData(planDocSnap.data());
         } else {
-          console.log(`No plan found for ${weekId}, using local default.`)
-          setWeeklyPlanData(createDefaultPlan(familyId, currentWeekStart, false))
+          console.log(`No plan found for ${weekId}, using local default.`);
+          setWeeklyPlanData(createDefaultPlan(familyId, currentWeekStart, false));
         }
       } catch (err) {
-        console.error("Error fetching data: ", err)
-        setError("Erreur lors du chargement des données. Veuillez rafraîchir la page.")
+        console.error("Error fetching data: ", err);
+        setError("Erreur lors du chargement des données. Veuillez rafraîchir la page.");
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
-    }
+    };
 
     if (!authLoading) {
-      fetchData()
+      fetchData();
     }
-  }, [weekId, familyId, authLoading])
+  }, [weekId, familyId, authLoading]);
 
   // --- Function to create default plan structure ---
   const createDefaultPlan = (currentFamilyId, weekStartDate, useServerTimestamps = true) => {
-    const startDate = getStartOfWeek(weekStartDate)
-    const endDate = new Date(startDate)
-    endDate.setDate(startDate.getDate() + 6)
+    const startDate = getStartOfWeek(weekStartDate);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 6);
 
     const plan = {
       familyId: currentFamilyId,
@@ -246,29 +250,29 @@ function WeeklyPlannerPage() {
         saturday: { breakfast: null, lunch: null, dinner: null },
         sunday: { breakfast: null, lunch: null, dinner: null },
       },
-    }
+    };
 
     if (useServerTimestamps) {
-      plan.createdAt = serverTimestamp()
-      plan.lastUpdatedAt = serverTimestamp()
+      plan.createdAt = serverTimestamp();
+      plan.lastUpdatedAt = serverTimestamp();
     } else {
-      plan.isLocal = true
+      plan.isLocal = true;
     }
 
-    return plan
-  }
+    return plan;
+  };
 
   // --- Plan Saving Logic ---
   const savePlan = useCallback(
     async (planDataToSave, isCreating = false) => {
-      if (!familyId || !planDataToSave) return
+      if (!familyId || !planDataToSave) return;
 
-      setIsSaving(true)
-      setError(null)
-      console.log(`Saving plan for week: ${weekId}. Creating: ${isCreating}`)
+      setIsSaving(true);
+      setError(null);
+      console.log(`Saving plan for week: ${weekId}. Creating: ${isCreating}`);
 
-      const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId)
-      const dataForFirestore = JSON.parse(JSON.stringify(planDataToSave))
+      const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId);
+      const dataForFirestore = JSON.parse(JSON.stringify(planDataToSave));
 
       try {
         if (
@@ -276,21 +280,21 @@ function WeeklyPlannerPage() {
           !isTimestampLike(dataForFirestore.startDate) &&
           !(dataForFirestore.startDate instanceof Timestamp)
         ) {
-          const jsStartDate = new Date(dataForFirestore.startDate)
-          if (!isValid(jsStartDate)) throw new Error(`Invalid startDate value: ${dataForFirestore.startDate}`)
-          dataForFirestore.startDate = Timestamp.fromDate(jsStartDate)
-          console.log("Converted startDate to Timestamp")
+          const jsStartDate = new Date(dataForFirestore.startDate);
+          if (!isValid(jsStartDate)) throw new Error(`Invalid startDate value: ${dataForFirestore.startDate}`);
+          dataForFirestore.startDate = Timestamp.fromDate(jsStartDate);
+          console.log("Converted startDate to Timestamp");
         } else if (!dataForFirestore.startDate && isCreating) {
-          const calculatedStartDate = getStartOfWeek(currentWeekStart)
-          if (!isValid(calculatedStartDate)) throw new Error(`Could not calculate valid start date for week: ${weekId}`)
-          dataForFirestore.startDate = Timestamp.fromDate(calculatedStartDate)
-          console.log("Calculated and set startDate for creation")
+          const calculatedStartDate = getStartOfWeek(currentWeekStart);
+          if (!isValid(calculatedStartDate)) throw new Error(`Could not calculate valid start date for week: ${weekId}`);
+          dataForFirestore.startDate = Timestamp.fromDate(calculatedStartDate);
+          console.log("Calculated and set startDate for creation");
         } else if (isTimestampLike(dataForFirestore.startDate)) {
           dataForFirestore.startDate = new Timestamp(
             dataForFirestore.startDate.seconds,
             dataForFirestore.startDate.nanoseconds,
-          )
-          console.log("Ensured startDate is Timestamp instance")
+          );
+          console.log("Ensured startDate is Timestamp instance");
         }
 
         if (
@@ -298,136 +302,136 @@ function WeeklyPlannerPage() {
           !isTimestampLike(dataForFirestore.endDate) &&
           !(dataForFirestore.endDate instanceof Timestamp)
         ) {
-          const jsEndDate = new Date(dataForFirestore.endDate)
-          if (!isValid(jsEndDate)) throw new Error(`Invalid endDate value: ${dataForFirestore.endDate}`)
-          dataForFirestore.endDate = Timestamp.fromDate(jsEndDate)
-          console.log("Converted endDate to Timestamp")
+          const jsEndDate = new Date(dataForFirestore.endDate);
+          if (!isValid(jsEndDate)) throw new Error(`Invalid endDate value: ${dataForFirestore.endDate}`);
+          dataForFirestore.endDate = Timestamp.fromDate(jsEndDate);
+          console.log("Converted endDate to Timestamp");
         } else if (!dataForFirestore.endDate && isCreating) {
-          let baseStartDateForCalc
+          let baseStartDateForCalc;
           if (dataForFirestore.startDate instanceof Timestamp) {
-            baseStartDateForCalc = dataForFirestore.startDate.toDate()
+            baseStartDateForCalc = dataForFirestore.startDate.toDate();
           } else {
-            throw new Error("Cannot calculate endDate without a valid startDate.")
+            throw new Error("Cannot calculate endDate without a valid startDate.");
           }
-          if (!isValid(baseStartDateForCalc)) throw new Error("Cannot calculate endDate because startDate is invalid.")
-          const calculatedEndDate = new Date(baseStartDateForCalc)
-          calculatedEndDate.setDate(baseStartDateForCalc.getDate() + 6)
-          if (!isValid(calculatedEndDate)) throw new Error(`Could not calculate valid end date for week: ${weekId}`)
-          dataForFirestore.endDate = Timestamp.fromDate(calculatedEndDate)
-          console.log("Calculated and set endDate for creation")
+          if (!isValid(baseStartDateForCalc)) throw new Error("Cannot calculate endDate because startDate is invalid.");
+          const calculatedEndDate = new Date(baseStartDateForCalc);
+          calculatedEndDate.setDate(baseStartDateForCalc.getDate() + 6);
+          if (!isValid(calculatedEndDate)) throw new Error(`Could not calculate valid end date for week: ${weekId}`);
+          dataForFirestore.endDate = Timestamp.fromDate(calculatedEndDate);
+          console.log("Calculated and set endDate for creation");
         } else if (isTimestampLike(dataForFirestore.endDate)) {
           dataForFirestore.endDate = new Timestamp(
             dataForFirestore.endDate.seconds,
             dataForFirestore.endDate.nanoseconds,
-          )
-          console.log("Ensured endDate is Timestamp instance")
+          );
+          console.log("Ensured endDate is Timestamp instance");
         }
       } catch (dateError) {
-        console.error("Error processing dates before saving:", dateError)
-        setError(`Erreur interne lors de la préparation des dates : ${dateError.message}`)
-        setIsSaving(false)
-        return
+        console.error("Error processing dates before saving:", dateError);
+        setError(`Erreur interne lors de la préparation des dates : ${dateError.message}`);
+        setIsSaving(false);
+        return;
       }
 
-      dataForFirestore.lastUpdatedAt = serverTimestamp()
+      dataForFirestore.lastUpdatedAt = serverTimestamp();
       if (isCreating) {
-        dataForFirestore.createdAt = serverTimestamp()
-        dataForFirestore.familyId = familyId
+        dataForFirestore.createdAt = serverTimestamp();
+        dataForFirestore.familyId = familyId;
       }
-      delete dataForFirestore.isLocal
+      delete dataForFirestore.isLocal;
 
       try {
-        console.log("Attempting to save data:", dataForFirestore)
-        await setDoc(planDocRef, dataForFirestore, { merge: !isCreating })
-        console.log("Plan saved successfully to Firestore.")
-        setWeeklyPlanData(planDataToSave)
+        console.log("Attempting to save data:", dataForFirestore);
+        await setDoc(planDocRef, dataForFirestore, { merge: !isCreating });
+        console.log("Plan saved successfully to Firestore.");
+        setWeeklyPlanData(planDataToSave);
 
-        setShowSuccess(true)
-        setTimeout(() => setShowSuccess(false), 2000)
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
       } catch (err) {
-        console.error("Error saving plan to Firestore: ", err)
-        setError("La sauvegarde a échoué. Veuillez réessayer.")
+        console.error("Error saving plan to Firestore: ", err);
+        setError("La sauvegarde a échoué. Veuillez réessayer.");
       } finally {
-        setIsSaving(false)
+        setIsSaving(false);
       }
     },
     [familyId, weekId, currentWeekStart],
-  )
+  );
 
   // --- Menu Handlers ---
-  const handleMenuClick = (event) => setAnchorEl(event.currentTarget)
-  const handleMenuClose = () => setAnchorEl(null)
+  const handleMenuClick = (event) => setAnchorEl(event.currentTarget);
+  const handleMenuClose = () => setAnchorEl(null);
 
   const handleRefresh = () => {
-    handleMenuClose()
-    window.location.reload()
-  }
+    handleMenuClose();
+    window.location.reload();
+  };
 
   const handleUncheckAll = () => {
-    handleMenuClose()
-    setRandomPlanningDialogOpen(true)
-  }
+    handleMenuClose();
+    setRandomPlanningDialogOpen(true);
+  };
 
   const handleClearChecked = () => {
-    handleMenuClose()
-    setClearPlanningDialogOpen(true)
-  }
+    handleMenuClose();
+    setClearPlanningDialogOpen(true);
+  };
 
   const handleExportPdf = () => {
-    handleMenuClose()
-    console.log("Exporting planning PDF with data:", weeklyPlanData)
+    handleMenuClose();
+    console.log("Exporting planning PDF with data:", weeklyPlanData);
 
     if (!weeklyPlanData || !weeklyPlanData.days) {
-      alert("Le planning est vide, impossible d'exporter.")
-      return
+      alert("Le planning est vide, impossible d'exporter.");
+      return;
     }
 
-    const content = []
-    content.push({ text: "Planning de Repas Familial", style: "header", alignment: "center" })
+    const content = [];
+    content.push({ text: "Planning de Repas Familial", style: "header", alignment: "center" });
     content.push({
       text: `Semaine du ${currentWeekStart.toLocaleDateString("fr-FR")}`,
       style: "subheader",
       alignment: "center",
       margin: [0, 0, 0, 20],
-    })
+    });
 
     orderedDays.forEach((dayKey) => {
-      const dayName = dayNames[dayKey]
-      const dayMeals = weeklyPlanData.days[dayKey]
-      content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] })
-      const dayContent = []
+      const dayName = dayNames[dayKey];
+      const dayMeals = weeklyPlanData.days[dayKey];
+      content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] });
+      const dayContent = [];
       const breakfast = dayMeals.breakfast
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.breakfast)?.name || "Recette inconnue"
-        : "Aucun repas planifié"
-      dayContent.push(["Petit-déjeuner", breakfast])
+        : "Aucun repas planifié";
+      dayContent.push(["Petit-déjeuner", breakfast]);
       const lunch = dayMeals.lunch
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.lunch)?.name || "Recette inconnue"
-        : "Aucun repas planifié"
-      dayContent.push(["Déjeuner", lunch])
+        : "Aucun repas planifié";
+      dayContent.push(["Déjeuner", lunch]);
       const dinner = dayMeals.dinner
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.dinner)?.name || "Recette inconnue"
-        : "Aucun repas planifié"
-      dayContent.push(["Dîner", dinner])
+        : "Aucun repas planifié";
+      dayContent.push(["Dîner", dinner]);
       content.push({
         layout: "lightHorizontalLines",
         table: { headerRows: 0, widths: ["30%", "*"], body: dayContent },
         margin: [0, 0, 0, 10],
-      })
-    })
+      });
+    });
 
-    const usedRecipes = new Set()
+    const usedRecipes = new Set();
     Object.values(weeklyPlanData.days).forEach((day) => {
       Object.values(day).forEach((recipeId) => {
         if (recipeId) {
-          const recipe = availableRecipesForPlanning.find((r) => r.id === recipeId)
-          if (recipe) usedRecipes.add(recipe.name)
+          const recipe = availableRecipesForPlanning.find((r) => r.id === recipeId);
+          if (recipe) usedRecipes.add(recipe.name);
         }
-      })
-    })
+      });
+    });
 
     if (usedRecipes.size > 0) {
-      content.push({ text: "Recettes utilisées cette semaine", style: "sectionHeader", margin: [0, 20, 0, 10] })
-      content.push({ ul: Array.from(usedRecipes).sort(), margin: [0, 0, 0, 10] })
+      content.push({ text: "Recettes utilisées cette semaine", style: "sectionHeader", margin: [0, 20, 0, 10] });
+      content.push({ ul: Array.from(usedRecipes).sort(), margin: [0, 0, 0, 10] });
     }
 
     const docDefinition = {
@@ -438,203 +442,203 @@ function WeeklyPlannerPage() {
         dayHeader: { fontSize: 14, bold: true, color: theme.palette.primary.main, margin: [0, 15, 0, 5] },
         sectionHeader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] },
       },
-    }
+    };
 
     try {
-      const pdfFileName = `planning_repas_${weekId}.pdf`
-      pdfMake.createPdf(docDefinition).download(pdfFileName)
-      console.log(`PDF "${pdfFileName}" generated and download initiated.`)
+      const pdfFileName = `planning_repas_${weekId}.pdf`;
+      pdfMake.createPdf(docDefinition).download(pdfFileName);
+      console.log(`PDF "${pdfFileName}" generated and download initiated.`);
     } catch (error) {
-      console.error("Error generating PDF: ", error)
-      alert("Une erreur est survenue lors de la génération du PDF.")
+      console.error("Error generating PDF: ", error);
+      alert("Une erreur est survenue lors de la génération du PDF.");
     }
-  }
+  };
 
   const handleNotifyFamily = async () => {
-    handleMenuClose()
+    handleMenuClose();
     if (!isFamilyAdmin || !familyId || isNotifying || isLoading || isSaving) {
-      console.warn("Cannot notify family: not admin, no familyId, or already processing.")
-      return
+      console.warn("Cannot notify family: not admin, no familyId, or already processing.");
+      return;
     }
 
-    setIsNotifying(true)
-    setNotificationResult({ open: false, message: "", severity: "info" })
-    console.log(`Notifying family ${familyId} about plan for week ${weekId}...`)
+    setIsNotifying(true);
+    setNotificationResult({ open: false, message: "", severity: "info" });
+    console.log(`Notifying family ${familyId} about plan for week ${weekId}...`);
 
     try {
-      const notifyFunction = httpsCallable(functions, "notifyFamilyPlanReady")
-      const result = await notifyFunction({ familyId: familyId, weekId: weekId })
-      console.log("Cloud function result:", result.data)
-      setNotificationResult({ open: true, message: result.data.message || "Notifications envoyées !", severity: "success" })
+      const notifyFunction = httpsCallable(functions, "notifyFamilyPlanReady");
+      const result = await notifyFunction({ familyId: familyId, weekId: weekId });
+      console.log("Cloud function result:", result.data);
+      setNotificationResult({ open: true, message: result.data.message || "Notifications envoyées !", severity: "success" });
     } catch (error) {
-      console.error("Error calling notifyFamilyPlanReady function:", error)
-      setNotificationResult({ open: true, message: error.message || "Erreur lors de l'envoi des notifications.", severity: "error" })
+      console.error("Error calling notifyFamilyPlanReady function:", error);
+      setNotificationResult({ open: true, message: error.message || "Erreur lors de l'envoi des notifications.", severity: "error" });
     } finally {
-      setIsNotifying(false)
+      setIsNotifying(false);
     }
-  }
+  };
 
   const handlePrint = () => {
-    handleMenuClose()
-    alert("Imprimer - Non implémenté")
-  }
+    handleMenuClose();
+    alert("Imprimer - Non implémenté");
+  };
 
   const handleShare = () => {
-    handleMenuClose()
-    alert("Partager - Non implémenté")
-  }
+    handleMenuClose();
+    alert("Partager - Non implémenté");
+  };
 
   // --- Event Handlers ---
   const handleGoToToday = () => {
-    if (isLoading || isSaving || isNotifying) return
-    setCurrentWeekStart(getStartOfWeek(new Date()))
-  }
+    if (isLoading || isSaving || isNotifying) return;
+    setCurrentWeekStart(getStartOfWeek(new Date()));
+  };
 
   const handleNextWeek = () => {
-    if (isLoading || isSaving || isNotifying) return
+    if (isLoading || isSaving || isNotifying) return;
     setCurrentWeekStart((prevDate) => {
-      const nextWeek = new Date(prevDate)
-      nextWeek.setDate(prevDate.getDate() + 7)
-      return nextWeek
-    })
-  }
+      const nextWeek = new Date(prevDate);
+      nextWeek.setDate(prevDate.getDate() + 7);
+      return nextWeek;
+    });
+  };
 
   const handlePreviousWeek = () => {
-    if (isLoading || isSaving || isNotifying) return
+    if (isLoading || isSaving || isNotifying) return;
     setCurrentWeekStart((prevDate) => {
-      const prevWeek = new Date(prevDate)
-      prevWeek.setDate(prevDate.getDate() - 7)
-      return prevWeek
-    })
-  }
+      const prevWeek = new Date(prevDate);
+      prevWeek.setDate(prevDate.getDate() - 7);
+      return prevWeek;
+    });
+  };
 
   const handleOpenModal = useCallback((day, mealType) => {
-    console.log(`Opening modal for: ${day} - ${mealType}`)
-    setTargetSlotInfo({ day, mealType })
-    setModalOpen(true)
-  }, [])
+    console.log(`Opening modal for: ${day} - ${mealType}`);
+    setTargetSlotInfo({ day, mealType });
+    setModalOpen(true);
+  }, []);
 
   const handleCloseModal = useCallback(() => {
-    setModalOpen(false)
-    setTargetSlotInfo(null)
-  }, [])
+    setModalOpen(false);
+    setTargetSlotInfo(null);
+  }, []);
 
   const handleRecipeSelected = useCallback(
     (recipeId, day, mealType) => {
-      if (!weeklyPlanData || isSaving || isNotifying) return
+      if (!weeklyPlanData || isSaving || isNotifying) return;
 
-      const currentPlan = weeklyPlanData
-      const isNewPlan = !!currentPlan.isLocal
-      const updatedPlan = JSON.parse(JSON.stringify(currentPlan))
+      const currentPlan = weeklyPlanData;
+      const isNewPlan = !!currentPlan.isLocal;
+      const updatedPlan = JSON.parse(JSON.stringify(currentPlan));
 
       if (updatedPlan.days[day]) {
-        updatedPlan.days[day][mealType] = recipeId
-        delete updatedPlan.isLocal
-        setWeeklyPlanData(updatedPlan)
-        savePlan(updatedPlan, isNewPlan)
+        updatedPlan.days[day][mealType] = recipeId;
+        delete updatedPlan.isLocal;
+        setWeeklyPlanData(updatedPlan);
+        savePlan(updatedPlan, isNewPlan);
       } else {
-        console.error(`Day ${day} not found in plan data!`)
+        console.error(`Day ${day} not found in plan data!`);
       }
 
-      handleCloseModal()
+      handleCloseModal();
     },
-    [weeklyPlanData, savePlan, handleCloseModal, isSaving, isNotifying, familyId, currentWeekStart],
-  )
+    [weeklyPlanData, savePlan, handleCloseModal, isSaving, isNotifying],
+  );
 
   const handleDeleteRecipeFromSlot = useCallback(
     (day, mealType) => {
-      if (!weeklyPlanData || isSaving || isNotifying) return
+      if (!weeklyPlanData || isSaving || isNotifying) return;
 
-      const isLocalPlan = !!weeklyPlanData.isLocal
-      const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
+      const isLocalPlan = !!weeklyPlanData.isLocal;
+      const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
 
       if (updatedPlan.days[day] && updatedPlan.days[day][mealType] !== null) {
-        updatedPlan.days[day][mealType] = null
-        setWeeklyPlanData(updatedPlan)
+        updatedPlan.days[day][mealType] = null;
+        setWeeklyPlanData(updatedPlan);
         if (!isLocalPlan) {
-          savePlan(updatedPlan, false)
+          savePlan(updatedPlan, false);
         }
       } else {
-        console.warn(`No recipe to delete in ${day} - ${mealType}`)
+        console.warn(`No recipe to delete in ${day} - ${mealType}`);
       }
     },
     [weeklyPlanData, savePlan, isSaving, isNotifying],
-  )
+  );
 
   // --- Drag and Drop Handler ---
   const onDragEnd = useCallback(
     (result) => {
-      const { source, destination, draggableId } = result
-      if (!destination || !weeklyPlanData || isSaving || isNotifying || destination.droppableId === source.droppableId) return
+      const { source, destination, draggableId } = result;
+      if (!destination || !weeklyPlanData || isSaving || isNotifying || destination.droppableId === source.droppableId) return;
 
-      const isLocalPlan = !!weeklyPlanData.isLocal
-      const [sourceDay, sourceMealType] = source.droppableId.split("-")
-      const [destDay, destMealType] = destination.droppableId.split("-")
-      const recipeIdBeingDragged = draggableId
-      const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
-      const recipeAtDestination = updatedPlan.days[destDay]?.[destMealType]
+      const isLocalPlan = !!weeklyPlanData.isLocal;
+      const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
+      const [sourceDay, sourceMealType] = source.droppableId.split("-");
+      const [destDay, destMealType] = destination.droppableId.split("-");
+      const recipeIdBeingDragged = draggableId;
+      const recipeAtDestination = updatedPlan.days[destDay]?.[destMealType];
 
       if (updatedPlan.days[destDay]) {
-        updatedPlan.days[destDay][destMealType] = recipeIdBeingDragged
+        updatedPlan.days[destDay][destMealType] = recipeIdBeingDragged;
       }
       if (updatedPlan.days[sourceDay]) {
-        updatedPlan.days[sourceDay][sourceMealType] = recipeAtDestination !== undefined ? recipeAtDestination : null
+        updatedPlan.days[sourceDay][sourceMealType] = recipeAtDestination !== undefined ? recipeAtDestination : null;
       }
 
-      setWeeklyPlanData(updatedPlan)
+      setWeeklyPlanData(updatedPlan);
       if (!isLocalPlan) {
-        savePlan(updatedPlan, false)
+        savePlan(updatedPlan, false);
       }
     },
     [weeklyPlanData, savePlan, isSaving, isNotifying],
-  )
+  );
 
   // --- Navigate to Shopping List ---
   const handleGoToShoppingList = () => {
-    navigate(`/shopping-list?week=${weekId}`)
-  }
+    navigate(`/shopping-list?week=${weekId}`);
+  };
 
   // --- Random Planning Functionality ---
   const handleRandomPlanning = (type) => {
-    setRandomPlanningDialogOpen(false)
-    if (!weeklyPlanData || isSaving || isNotifying) return
+    setRandomPlanningDialogOpen(false);
+    if (!weeklyPlanData || isSaving || isNotifying) return;
 
     const filteredRecipes = type === "family"
       ? availableRecipesForPlanning.filter((r) => r.isFamilyRecipe)
-      : availableRecipesForPlanning.filter((r) => !r.isFamilyRecipe)
+      : availableRecipesForPlanning.filter((r) => r.visibility === "public");
 
     if (filteredRecipes.length === 0) {
-      setError(`Aucune recette ${type === "family" ? "familiale" : "publique"} disponible.`)
-      return
+      setError(`Aucune recette ${type === "family" ? "familiale" : "publique"} disponible.`);
+      return;
     }
 
-    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
+    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
     orderedDays.forEach((day) => {
       ["breakfast", "lunch", "dinner"].forEach((mealType) => {
-        const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)]
-        updatedPlan.days[day][mealType] = randomRecipe.id
-      })
-    })
+        const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)];
+        updatedPlan.days[day][mealType] = randomRecipe.id;
+      });
+    });
 
-    setWeeklyPlanData(updatedPlan)
-    savePlan(updatedPlan, false)
-  }
+    setWeeklyPlanData(updatedPlan);
+    savePlan(updatedPlan, false);
+  };
 
   // --- Clear Planning Functionality ---
   const handleClearPlanning = () => {
-    setClearPlanningDialogOpen(false)
-    if (!weeklyPlanData || isSaving || isNotifying) return
+    setClearPlanningDialogOpen(false);
+    if (!weeklyPlanData || isSaving || isNotifying) return;
 
-    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData))
+    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
     orderedDays.forEach((day) => {
       ["breakfast", "lunch", "dinner"].forEach((mealType) => {
-        updatedPlan.days[day][mealType] = null
-      })
-    })
+        updatedPlan.days[day][mealType] = null;
+      });
+    });
 
-    setWeeklyPlanData(updatedPlan)
-    savePlan(updatedPlan, false)
-  }
+    setWeeklyPlanData(updatedPlan);
+    savePlan(updatedPlan, false);
+  };
 
   // --- Enhanced Skeleton Rendering ---
   const renderSkeletons = () => (
@@ -673,23 +677,23 @@ function WeeklyPlannerPage() {
         </Grid>
       ))}
     </Grid>
-  )
+  );
 
-  const combinedLoading = authLoading || isLoading
-  const totalRecipes = availableRecipesForPlanning.length
+  const combinedLoading = authLoading || isLoading;
+  const totalRecipes = availableRecipesForPlanning.length;
   const plannedMeals = weeklyPlanData
     ? Object.values(weeklyPlanData.days || {}).reduce(
         (count, day) => count + Object.values(day).filter((meal) => meal !== null).length,
         0,
       )
-    : 0
+    : 0;
 
   if (authLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
         <ButtonCircularProgress />
       </Box>
-    )
+    );
   }
 
   if (!familyId && !authLoading) {
@@ -711,7 +715,7 @@ function WeeklyPlannerPage() {
           Gérer ma Famille
         </Button>
       </Container>
-    )
+    );
   }
 
   return (
@@ -973,8 +977,8 @@ function WeeklyPlannerPage() {
                           }
                           meals={weeklyPlanData.days[dayKey]}
                           recipes={availableRecipesForPlanning.reduce((acc, recipe) => {
-                            acc[recipe.id] = recipe
-                            return acc
+                            acc[recipe.id] = recipe;
+                            return acc;
                           }, {})}
                           onOpenModal={handleOpenModal}
                           onDeleteRecipe={handleDeleteRecipeFromSlot}
@@ -1074,8 +1078,8 @@ function WeeklyPlannerPage() {
             open={notificationResult.open}
             autoHideDuration={6000}
             onClose={(event, reason) => {
-              if (reason === "clickaway") return
-              setNotificationResult({ ...notificationResult, open: false })
+              if (reason === "clickaway") return;
+              setNotificationResult({ ...notificationResult, open: false });
             }}
             anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
           >
@@ -1113,7 +1117,7 @@ function WeeklyPlannerPage() {
         </Container>
       </Box>
     </DragDropContext>
-  )
+  );
 }
 
-export default WeeklyPlannerPage
+export default WeeklyPlannerPage;
