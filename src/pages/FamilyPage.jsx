@@ -32,6 +32,7 @@ import {
   CardContent,
   InputAdornment,
   LinearProgress,
+  useMediaQuery,
 } from "@mui/material"
 import {
   Group as GroupIcon,
@@ -41,6 +42,9 @@ import {
   Check as CheckIcon,
   Clear as ClearIcon,
   Send as SendIcon,
+  ArrowUpward as PromoteIcon,
+  ArrowDownward as DemoteIcon,
+  RemoveCircle as RemoveIcon,
 } from "@mui/icons-material"
 import { default as FamilyIcon } from '@mui/icons-material/Groups'
 import { useAuth } from "../contexts/AuthContext"
@@ -56,11 +60,13 @@ import {
   addDoc,
   serverTimestamp,
   updateDoc,
-  arrayUnion, // Importer arrayUnion
+  arrayUnion,
+  arrayRemove,
 } from "firebase/firestore"
 
 export default function FamilyPage() {
   const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
   const { currentUser, userData, loading: authLoading } = useAuth()
   const [familyData, setFamilyData] = useState(null)
   const [membersData, setMembersData] = useState([])
@@ -75,11 +81,11 @@ export default function FamilyPage() {
   const [inviteEmail, setInviteEmail] = useState("")
   const [isSendingInvite, setIsSendingInvite] = useState(false)
   const [isProcessingInvite, setIsProcessingInvite] = useState(null)
+  const [isProcessingAction, setIsProcessingAction] = useState(null)
 
   const hasFamily = userData?.familyId
   const isFamilyAdmin = hasFamily && userData?.uid === familyData?.adminUid
 
-  // Fetch Family Data
   useEffect(() => {
     let isMounted = true
     const fetchFamilyData = async () => {
@@ -126,7 +132,6 @@ export default function FamilyPage() {
     }
   }, [userData, hasFamily, authLoading])
 
-  // Fetch Invitations
   useEffect(() => {
     let isMounted = true
     const fetchInvitations = async () => {
@@ -165,7 +170,6 @@ export default function FamilyPage() {
     }
   }, [currentUser, authLoading])
 
-  // Create Family Logic
   const handleOpenCreateFamilyDialog = () => {
     setNewFamilyName("")
     setError("")
@@ -214,7 +218,6 @@ export default function FamilyPage() {
     }
   }
 
-  // Send Invitation Logic
   const handleSendInvitation = async (e) => {
     e.preventDefault()
     if (!inviteEmail.trim()) {
@@ -248,10 +251,7 @@ export default function FamilyPage() {
       if (!existingInviteSnap.empty) {
         throw new Error("Une invitation est déjà en attente pour cet email.")
       }
-      // Créer l'invitation ET l'email dans un batch pour l'atomicité
       const batch = writeBatch(db)
-
-      // 1. Créer le document d'invitation
       const newInvitationRef = doc(collection(db, "invitations"))
       batch.set(newInvitationRef, {
         familyId: familyData.id,
@@ -262,28 +262,15 @@ export default function FamilyPage() {
         status: "pending",
         createdAt: serverTimestamp(),
       })
-
-      // 2. Créer le document pour déclencher l'email via l'extension Trigger Email
-      const mailRef = doc(collection(db, "mail")) // Assurez-vous que "mail" est le nom de collection configuré pour l'extension
+      const mailRef = doc(collection(db, "mail"))
       batch.set(mailRef, {
         to: [inviteEmail.trim()],
         message: {
           subject: `Invitation à rejoindre la famille ${familyData.familyName} !`,
           html: `Bonjour,<br><br>${userData.displayName} vous invite à rejoindre la famille <strong>${familyData.familyName}</strong> sur notre application de planification de repas.<br><br>Connectez-vous à l'application pour accepter l'invitation.<br><br>À bientôt !`,
-          // Alternativement, utiliser un template SendGrid si configuré:
-          // template: {
-          //   name: 'invitationTemplate',
-          //   data: {
-          //     inviterName: userData.displayName,
-          //     familyName: familyData.familyName,
-          //   }
-          // }
         },
       })
-
-      // 3. Exécuter le batch
       await batch.commit()
-
       setSuccessMessage(`Invitation envoyée à ${inviteEmail} ! Un email de notification a également été envoyé.`)
       setInviteEmail("")
     } catch (err) {
@@ -294,7 +281,6 @@ export default function FamilyPage() {
     }
   }
 
-  // Accept Invitation Logic
   const handleAcceptInvitation = async (invitation) => {
     if (!currentUser || userData?.familyId) {
       setError("Vous ne pouvez pas accepter d'invitation si vous êtes déjà dans une famille ou non connecté.")
@@ -303,34 +289,24 @@ export default function FamilyPage() {
     setIsProcessingInvite(invitation.id)
     setError("")
     setSuccessMessage("")
-
     try {
       const batch = writeBatch(db)
-
       const invitationRef = doc(db, "invitations", invitation.id)
       batch.update(invitationRef, {
         status: "accepted",
         updatedAt: serverTimestamp(),
       })
-
       const userDocRef = doc(db, "users", currentUser.uid)
       batch.update(userDocRef, {
         familyId: invitation.familyId,
         familyRole: "Member",
         updatedAt: serverTimestamp(),
       })
-
-      // --- Ajout de la mise à jour du tableau memberUids de la famille ---
       const familyDocRef = doc(db, "families", invitation.familyId)
       batch.update(familyDocRef, {
         memberUids: arrayUnion(currentUser.uid),
-        // Optionnel: mettre à jour aussi un champ updatedAt pour la famille
-        // updatedAt: serverTimestamp(),
       })
-      // --- Fin de l'ajout ---
-
       await batch.commit()
-
       setSuccessMessage(`Vous avez rejoint la famille ${invitation.familyName} !`)
       setInvitations((prev) => prev.filter((inv) => inv.id !== invitation.id))
     } catch (err) {
@@ -341,7 +317,6 @@ export default function FamilyPage() {
     }
   }
 
-  // Decline Invitation Logic
   const handleDeclineInvitation = async (invitationId) => {
     setIsProcessingInvite(invitationId)
     setError("")
@@ -362,6 +337,81 @@ export default function FamilyPage() {
     }
   }
 
+  const promoteToSecondaryAdmin = async (memberUid) => {
+    setIsProcessingAction(memberUid)
+    setError("")
+    setSuccessMessage("")
+    try {
+      const userDocRef = doc(db, "users", memberUid)
+      await updateDoc(userDocRef, {
+        familyRole: "SecondaryAdmin",
+        updatedAt: serverTimestamp(),
+      })
+      setMembersData((prev) =>
+        prev.map((m) => (m.uid === memberUid ? { ...m, familyRole: "SecondaryAdmin" } : m))
+      )
+      setSuccessMessage("Membre promu au rôle d'admin secondaire.")
+    } catch (err) {
+      console.error("Error promoting member:", err)
+      setError("Erreur lors de la promotion du membre.")
+    } finally {
+      setIsProcessingAction(null)
+    }
+  }
+
+  const demoteToMember = async (memberUid) => {
+    setIsProcessingAction(memberUid)
+    setError("")
+    setSuccessMessage("")
+    try {
+      const userDocRef = doc(db, "users", memberUid)
+      await updateDoc(userDocRef, {
+        familyRole: "Member",
+        updatedAt: serverTimestamp(),
+      })
+      setMembersData((prev) =>
+        prev.map((m) => (m.uid === memberUid ? { ...m, familyRole: "Member" } : m))
+      )
+      setSuccessMessage("Rôle d'admin secondaire retiré.")
+    } catch (err) {
+      console.error("Error demoting member:", err)
+      setError("Erreur lors du retrait du rôle d'admin secondaire.")
+    } finally {
+      setIsProcessingAction(null)
+    }
+  }
+
+  const removeMember = async (memberUid) => {
+    if (memberUid === currentUser.uid) {
+      setError("Vous ne pouvez pas vous retirer vous-même de la famille.")
+      return
+    }
+    setIsProcessingAction(memberUid)
+    setError("")
+    setSuccessMessage("")
+    try {
+      const batch = writeBatch(db)
+      const familyDocRef = doc(db, "families", familyData.id)
+      batch.update(familyDocRef, {
+        memberUids: arrayRemove(memberUid),
+      })
+      const userDocRef = doc(db, "users", memberUid)
+      batch.update(userDocRef, {
+        familyId: null,
+        familyRole: null,
+        updatedAt: serverTimestamp(),
+      })
+      await batch.commit()
+      setMembersData((prev) => prev.filter((member) => member.uid !== memberUid))
+      setSuccessMessage("Membre retiré de la famille.")
+    } catch (err) {
+      console.error("Error removing member:", err)
+      setError("Erreur lors du retrait du membre.")
+    } finally {
+      setIsProcessingAction(null)
+    }
+  }
+
   const isLoading = authLoading || loadingFamily || loadingInvitations
 
   const handleCloseSnackbar = () => {
@@ -378,7 +428,6 @@ export default function FamilyPage() {
       }}
     >
       <Container maxWidth="lg">
-        {/* Header */}
         <Fade in timeout={600}>
           <Box sx={{ mb: 4, textAlign: "center" }}>
             <Typography
@@ -401,7 +450,6 @@ export default function FamilyPage() {
           </Box>
         </Fade>
 
-        {/* Loading */}
         {isLoading && (
           <Box sx={{ mb: 3 }}>
             <LinearProgress
@@ -417,7 +465,6 @@ export default function FamilyPage() {
           </Box>
         )}
 
-        {/* Error Alert */}
         {error && !createFamilyDialogOpen && (
           <Fade in>
             <Alert
@@ -436,7 +483,6 @@ export default function FamilyPage() {
 
         {!isLoading && (
           <Stack spacing={4}>
-            {/* Invitations Section */}
             {invitations.length > 0 && (
               <Zoom in timeout={800}>
                 <Card
@@ -509,7 +555,6 @@ export default function FamilyPage() {
               </Zoom>
             )}
 
-            {/* Family Info or Create Section */}
             {hasFamily && familyData ? (
               <Zoom in timeout={1000}>
                 <Card
@@ -521,20 +566,19 @@ export default function FamilyPage() {
                   }}
                 >
                   <CardContent sx={{ p: 4 }}>
-                    {/* Family Header */}
                     <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 4 }}>
                       <Avatar
                         sx={{
-                          width: 64,
-                          height: 64,
+                          width: isMobile ? 48 : 64,
+                          height: isMobile ? 48 : 64,
                           background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                          fontSize: "1.5rem",
+                          fontSize: isMobile ? "1rem" : "1.5rem",
                         }}
                       >
-                        <FamilyIcon sx={{ fontSize: "2rem" }} />
+                        <FamilyIcon sx={{ fontSize: isMobile ? "1.5rem" : "2rem" }} />
                       </Avatar>
                       <Box>
-                        <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
+                        <Typography variant={isMobile ? "h5" : "h4"} sx={{ fontWeight: 700, mb: 0.5 }}>
                           {familyData.familyName}
                         </Typography>
                         <Chip
@@ -548,7 +592,6 @@ export default function FamilyPage() {
                       </Box>
                     </Stack>
 
-                    {/* Members List */}
                     <Typography variant="h6" sx={{ mb: 3, fontWeight: 600 }}>
                       Membres de la famille
                     </Typography>
@@ -562,12 +605,17 @@ export default function FamilyPage() {
                                 mb: 1,
                                 background: alpha(theme.palette.primary.main, 0.02),
                                 border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                                alignItems: "center",
+                                flexDirection: isMobile ? "column" : "row",
+                                gap: 2,
                               }}
                             >
                               <ListItemAvatar>
                                 <Avatar
                                   src={member.photoURL}
                                   sx={{
+                                    width: isMobile ? 40 : 56,
+                                    height: isMobile ? 40 : 56,
                                     background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.primary.main} 100%)`,
                                   }}
                                 >
@@ -575,24 +623,56 @@ export default function FamilyPage() {
                                 </Avatar>
                               </ListItemAvatar>
                               <ListItemText
-                                primary={
-                                  <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                                    {member.displayName || "Utilisateur"}
-                                  </Typography>
-                                }
+                                primary={member.displayName || "Utilisateur"}
                                 secondary={member.email}
+                                primaryTypographyProps={{ fontWeight: 600 }}
                               />
-                              {member.uid === familyData.adminUid && (
-                                <Chip
-                                  icon={<AdminIcon />}
-                                  label="Admin"
-                                  size="small"
-                                  sx={{
-                                    backgroundColor: alpha(theme.palette.error.main, 0.1),
-                                    color: theme.palette.error.main,
-                                    fontWeight: 600,
-                                  }}
-                                />
+                              <Chip
+                                label={member.familyRole || "Membre"}
+                                size="small"
+                                color={
+                                  member.familyRole === "Admin"
+                                    ? "error"
+                                    : member.familyRole === "SecondaryAdmin"
+                                    ? "warning"
+                                    : "default"
+                                }
+                              />
+                              {isFamilyAdmin && member.uid !== currentUser.uid && (
+                                <Stack direction={isMobile ? "column" : "row"} spacing={1} sx={{ mt: isMobile ? 2 : 0 }}>
+                                  {member.familyRole === "Member" && (
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => promoteToSecondaryAdmin(member.uid)}
+                                      disabled={isProcessingAction === member.uid}
+                                      startIcon={<PromoteIcon />}
+                                    >
+                                      Promouvoir
+                                    </Button>
+                                  )}
+                                  {member.familyRole === "SecondaryAdmin" && (
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => demoteToMember(member.uid)}
+                                      disabled={isProcessingAction === member.uid}
+                                      startIcon={<DemoteIcon />}
+                                    >
+                                      Rétrograder
+                                    </Button>
+                                  )}
+                                  <Button
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={() => removeMember(member.uid)}
+                                    disabled={isProcessingAction === member.uid}
+                                    startIcon={<RemoveIcon />}
+                                  >
+                                    Retirer
+                                  </Button>
+                                </Stack>
                               )}
                             </ListItem>
                           </Fade>
@@ -604,7 +684,6 @@ export default function FamilyPage() {
                       </Typography>
                     )}
 
-                    {/* Send Invitation Form (Admin only) */}
                     {isFamilyAdmin && (
                       <Box sx={{ mt: 4 }}>
                         <Divider sx={{ mb: 3 }} />
@@ -668,7 +747,6 @@ export default function FamilyPage() {
                 </Card>
               </Zoom>
             ) : (
-              // Create Family Section
               <Zoom in timeout={1000}>
                 <Card
                   elevation={0}
@@ -682,15 +760,15 @@ export default function FamilyPage() {
                   <CardContent sx={{ p: 6 }}>
                     <Avatar
                       sx={{
-                        width: 120,
-                        height: 120,
+                        width: isMobile ? 80 : 120,
+                        height: isMobile ? 80 : 120,
                         mx: "auto",
                         mb: 3,
                         background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                        fontSize: "3rem",
+                        fontSize: isMobile ? "2rem" : "3rem",
                       }}
                     >
-                      <GroupIcon sx={{ fontSize: "4rem" }} />
+                      <GroupIcon sx={{ fontSize: isMobile ? "2.5rem" : "4rem" }} />
                     </Avatar>
                     {!userData?.familyId && invitations.length === 0 && (
                       <>
@@ -745,12 +823,12 @@ export default function FamilyPage() {
           </Stack>
         )}
 
-        {/* Create Family Dialog */}
         <Dialog
           open={createFamilyDialogOpen}
           onClose={handleCloseCreateFamilyDialog}
           maxWidth="sm"
           fullWidth
+          fullScreen={isMobile}
           PaperProps={{
             sx: {
               borderRadius: 6,
@@ -777,15 +855,15 @@ export default function FamilyPage() {
             <Stack direction="row" alignItems="center" spacing={2}>
               <Avatar
                 sx={{
-                  width: 56,
-                  height: 56,
+                  width: isMobile ? 40 : 56,
+                  height: isMobile ? 40 : 56,
                   background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
                 }}
               >
-                <FamilyIcon sx={{ fontSize: "1.5rem" }} />
+                <FamilyIcon sx={{ fontSize: isMobile ? "1.2rem" : "1.5rem" }} />
               </Avatar>
               <Box>
-                <Typography variant="h5" sx={{ fontWeight: 700 }}>
+                <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 700 }}>
                   Créer une nouvelle famille
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -891,7 +969,6 @@ export default function FamilyPage() {
           </DialogActions>
         </Dialog>
 
-        {/* Snackbar for Success/Error Messages */}
         <Snackbar
           open={!!successMessage || (!!error && !createFamilyDialogOpen)}
           autoHideDuration={6000}

@@ -32,6 +32,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  useMediaQuery,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -104,6 +105,7 @@ export default function RecipesListPage() {
   const { currentUser, userData } = useAuth();
   const navigate = useNavigate();
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [allFamilyRecipes, setAllFamilyRecipes] = useState([]);
   const [allPublicRecipes, setAllPublicRecipes] = useState([]);
@@ -116,7 +118,7 @@ export default function RecipesListPage() {
   const [importFile, setImportFile] = useState(null);
   const [importError, setImportError] = useState("");
 
-  const canModify = userData?.familyRole === "Admin";
+  const canModify = userData?.familyRole === "Admin" || userData?.familyRole === "SecondaryAdmin";
   const familyId = userData?.familyId;
 
   useEffect(() => {
@@ -151,12 +153,12 @@ export default function RecipesListPage() {
         const fetchedFamilyRecipes = familySnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
-          likes: doc.data().likes || [], // Ensure likes is always an array
+          likes: doc.data().likes || [],
         }));
         const fetchedPublicRecipes = publicSnapshot.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
-          likes: doc.data().likes || [], // Ensure likes is always an array
+          likes: doc.data().likes || [],
         }));
 
         setAllFamilyRecipes(fetchedFamilyRecipes);
@@ -195,7 +197,6 @@ export default function RecipesListPage() {
     setSearchTerm("");
   };
 
-  // Export recipes to CSV
   const handleExport = () => {
     try {
       const recipesToExport = activeTab === "family" ? allFamilyRecipes : allPublicRecipes;
@@ -208,7 +209,6 @@ export default function RecipesListPage() {
     }
   };
 
-  // Handle import dialog
   const handleOpenImportDialog = () => {
     setImportDialogOpen(true);
     setImportError("");
@@ -258,7 +258,7 @@ export default function RecipesListPage() {
           createdAt: new Date().toISOString(),
           createdBy: currentUser.uid,
           visibility: recipe.visibility || "family",
-          likes: [], // Initialize likes as empty array
+          likes: [],
         };
         const docRef = doc(recipesRef);
         batch.set(docRef, newRecipe);
@@ -269,7 +269,6 @@ export default function RecipesListPage() {
       setTimeout(() => setSuccess(""), 3000);
       handleCloseImportDialog();
 
-      // Refresh recipes
       const familyQuery = query(
         recipesRef,
         where("familyId", "==", familyId),
@@ -285,7 +284,6 @@ export default function RecipesListPage() {
     }
   };
 
-  // Handle like/unlike action
   const handleLike = async (recipeId, currentLikes) => {
     if (!currentUser) {
       setError("Vous devez être connecté pour liker une recette.");
@@ -302,7 +300,6 @@ export default function RecipesListPage() {
 
       await updateDoc(recipeRef, { likes: updatedLikes });
 
-      // Update local state to reflect change
       const updateRecipes = (recipes) =>
         recipes.map((recipe) =>
           recipe.id === recipeId ? { ...recipe, likes: updatedLikes } : recipe
@@ -328,7 +325,6 @@ export default function RecipesListPage() {
       }}
     >
       <Container maxWidth="xl">
-        {/* Header */}
         <Fade in timeout={600}>
           <Box sx={{ mb: 4, textAlign: "center" }}>
             <Typography
@@ -345,6 +341,7 @@ export default function RecipesListPage() {
                 alignItems: "center",
                 justifyContent: "center",
                 gap: 2,
+                flexDirection: isMobile ? "column" : "row",
               }}
             >
               <RestaurantIcon
@@ -363,7 +360,6 @@ export default function RecipesListPage() {
           </Box>
         </Fade>
 
-        {/* Success Alert */}
         {success && (
           <Fade in>
             <Alert severity="success" sx={{ mb: 3, borderRadius: 3 }}>
@@ -372,7 +368,6 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {/* No Family Alert */}
         {!loading && !familyId && (
           <Fade in>
             <Alert
@@ -392,7 +387,6 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {/* Tabs, Search Bar, and Import/Export Buttons */}
         {familyId && (
           <Paper
             elevation={0}
@@ -428,7 +422,7 @@ export default function RecipesListPage() {
                 sx={{ textTransform: "none", fontWeight: 600 }}
               />
             </Tabs>
-            <Box sx={{ p: 2, display: "flex", gap: 2, alignItems: "center" }}>
+            <Box sx={{ p: 2, display: "flex", flexDirection: isMobile ? "column" : "row", gap: 2, alignItems: "center" }}>
               <TextField
                 fullWidth
                 placeholder={`Rechercher dans les recettes ${activeTab === "family" ? "familiales" : "publiques"}...`}
@@ -453,12 +447,12 @@ export default function RecipesListPage() {
                 }}
               />
               {canModify && (
-                <>
+                <Stack direction={isMobile ? "column" : "row"} spacing={2} sx={{ width: isMobile ? "100%" : "auto" }}>
                   <Button
                     variant="outlined"
                     startIcon={<ExportIcon />}
                     onClick={handleExport}
-                    sx={{ textTransform: "none", borderRadius: 3 }}
+                    sx={{ textTransform: "none", borderRadius: 3, width: isMobile ? "100%" : "auto" }}
                   >
                     Exporter
                   </Button>
@@ -466,18 +460,17 @@ export default function RecipesListPage() {
                     variant="outlined"
                     startIcon={<ImportIcon />}
                     onClick={handleOpenImportDialog}
-                    sx={{ textTransform: "none", borderRadius: 3 }}
+                    sx={{ textTransform: "none", borderRadius: 3, width: isMobile ? "100%" : "auto" }}
                   >
                     Importer
                   </Button>
-                </>
+                </Stack>
               )}
             </Box>
           </Paper>
         )}
 
-        {/* Import Dialog */}
-        <Dialog open={importDialogOpen} onClose={handleCloseImportDialog}>
+        <Dialog open={importDialogOpen} onClose={handleCloseImportDialog} fullScreen={isMobile}>
           <DialogTitle>Importer des Recettes</DialogTitle>
           <DialogContent>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
@@ -507,7 +500,6 @@ export default function RecipesListPage() {
           </DialogActions>
         </Dialog>
 
-        {/* Error Alert */}
         {error && (
           <Fade in>
             <Alert severity="error" sx={{ mb: 3, borderRadius: 3 }}>
@@ -516,7 +508,6 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {/* Stats Bar */}
         {!loading && familyId && (
           <Fade in timeout={1000}>
             <Box sx={{ mb: 4, textAlign: "center" }}>
@@ -554,14 +545,13 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {/* Recipes Grid */}
         {loading
           ? renderSkeletons(theme)
           : familyId && (
               <Grid container spacing={3}>
                 {filteredRecipes.length > 0 ? (
                   filteredRecipes.map((recipe, index) => (
-                    <Grid item xs={12} sm={6} md={4} key={recipe.id}>
+                    <Grid item xs={12} sm={6} md={4} lg={3} key={recipe.id}>
                       <Zoom in timeout={400 + index * 100}>
                         <Card
                           elevation={0}
@@ -600,6 +590,7 @@ export default function RecipesListPage() {
                               alt={recipe.name}
                               sx={{
                                 objectFit: "cover",
+                                width: "100%",
                                 transition: "transform 0.3s ease",
                                 "&:hover": {
                                   transform: "scale(1.05)",
@@ -819,7 +810,6 @@ export default function RecipesListPage() {
               </Grid>
             )}
 
-        {/* FAB to Add Recipe */}
         {canModify && familyId && (
           <Zoom in timeout={1200}>
             <Fab
