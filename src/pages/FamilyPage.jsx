@@ -45,6 +45,7 @@ import {
   ArrowUpward as PromoteIcon,
   ArrowDownward as DemoteIcon,
   RemoveCircle as RemoveIcon,
+  ExitToApp as ExitIcon,
 } from "@mui/icons-material"
 import { default as FamilyIcon } from '@mui/icons-material/Groups'
 import { useAuth } from "../contexts/AuthContext"
@@ -82,9 +83,11 @@ export default function FamilyPage() {
   const [isSendingInvite, setIsSendingInvite] = useState(false)
   const [isProcessingInvite, setIsProcessingInvite] = useState(null)
   const [isProcessingAction, setIsProcessingAction] = useState(null)
+  const [leaveFamilyDialogOpen, setLeaveFamilyDialogOpen] = useState(false)
 
   const hasFamily = userData?.familyId
   const isFamilyAdmin = hasFamily && userData?.uid === familyData?.adminUid
+  
 
   useEffect(() => {
     let isMounted = true
@@ -412,6 +415,39 @@ export default function FamilyPage() {
     }
   }
 
+  const handleLeaveFamily = async () => {
+    if (!hasFamily || isFamilyAdmin) {
+      setError("Seul un membre non-admin peut quitter la famille.")
+      return
+    }
+    setIsProcessingAction(currentUser.uid)
+    setError("")
+    setSuccessMessage("")
+    try {
+      const batch = writeBatch(db)
+      const familyDocRef = doc(db, "families", userData.familyId)
+      batch.update(familyDocRef, {
+        memberUids: arrayRemove(currentUser.uid),
+      })
+      const userDocRef = doc(db, "users", currentUser.uid)
+      batch.update(userDocRef, {
+        familyId: null,
+        familyRole: null,
+        updatedAt: serverTimestamp(),
+      })
+      await batch.commit()
+      setSuccessMessage("Vous avez quitté la famille avec succès.")
+      setFamilyData(null)
+      setMembersData([])
+    } catch (err) {
+      console.error("Error leaving family:", err)
+      setError("Erreur lors de la tentative de quitter la famille.")
+    } finally {
+      setIsProcessingAction(null)
+      setLeaveFamilyDialogOpen(false)
+    }
+  }
+
   const isLoading = authLoading || loadingFamily || loadingInvitations
 
   const handleCloseSnackbar = () => {
@@ -638,42 +674,56 @@ export default function FamilyPage() {
                                     : "default"
                                 }
                               />
-                              {isFamilyAdmin && member.uid !== currentUser.uid && (
-                                <Stack direction={isMobile ? "column" : "row"} spacing={1} sx={{ mt: isMobile ? 2 : 0 }}>
-                                  {member.familyRole === "Member" && (
+                              <Stack direction={isMobile ? "column" : "row"} spacing={1} sx={{ mt: isMobile ? 2 : 0 }}>
+                                {isFamilyAdmin && member.uid !== currentUser.uid && (
+                                  <>
+                                    {member.familyRole === "Member" && (
+                                      <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={() => promoteToSecondaryAdmin(member.uid)}
+                                        disabled={isProcessingAction === member.uid}
+                                        startIcon={<PromoteIcon />}
+                                      >
+                                        Promouvoir
+                                      </Button>
+                                    )}
+                                    {member.familyRole === "SecondaryAdmin" && (
+                                      <Button
+                                        variant="outlined"
+                                        size="small"
+                                        onClick={() => demoteToMember(member.uid)}
+                                        disabled={isProcessingAction === member.uid}
+                                        startIcon={<DemoteIcon />}
+                                      >
+                                        Rétrograder
+                                      </Button>
+                                    )}
                                     <Button
                                       variant="outlined"
+                                      color="error"
                                       size="small"
-                                      onClick={() => promoteToSecondaryAdmin(member.uid)}
+                                      onClick={() => removeMember(member.uid)}
                                       disabled={isProcessingAction === member.uid}
-                                      startIcon={<PromoteIcon />}
+                                      startIcon={<RemoveIcon />}
                                     >
-                                      Promouvoir
+                                      Retirer
                                     </Button>
-                                  )}
-                                  {member.familyRole === "SecondaryAdmin" && (
-                                    <Button
-                                      variant="outlined"
-                                      size="small"
-                                      onClick={() => demoteToMember(member.uid)}
-                                      disabled={isProcessingAction === member.uid}
-                                      startIcon={<DemoteIcon />}
-                                    >
-                                      Rétrograder
-                                    </Button>
-                                  )}
+                                  </>
+                                )}
+                                {!isFamilyAdmin && member.uid === currentUser.uid && (
                                   <Button
                                     variant="outlined"
                                     color="error"
                                     size="small"
-                                    onClick={() => removeMember(member.uid)}
+                                    onClick={() => setLeaveFamilyDialogOpen(true)}
                                     disabled={isProcessingAction === member.uid}
-                                    startIcon={<RemoveIcon />}
+                                    startIcon={<ExitIcon />}
                                   >
-                                    Retirer
+                                    Quitter
                                   </Button>
-                                </Stack>
-                              )}
+                                )}
+                              </Stack>
                             </ListItem>
                           </Fade>
                         ))}
@@ -969,8 +1019,104 @@ export default function FamilyPage() {
           </DialogActions>
         </Dialog>
 
+        <Dialog
+          open={leaveFamilyDialogOpen}
+          onClose={() => setLeaveFamilyDialogOpen(false)}
+          maxWidth="sm"
+          fullWidth
+          fullScreen={isMobile}
+          PaperProps={{
+            sx: {
+              borderRadius: 6,
+              background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+              backdropFilter: "blur(20px)",
+              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+              boxShadow: `0 20px 60px ${alpha(theme.palette.primary.main, 0.2)}`,
+            },
+          }}
+          BackdropProps={{
+            sx: {
+              backgroundColor: alpha(theme.palette.common.black, 0.7),
+              backdropFilter: "blur(8px)",
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            }}
+          >
+            Quitter la famille
+          </DialogTitle>
+          <DialogContent sx={{ p: 4 }}>
+            <DialogContentText sx={{ mb: 3 }}>
+              Êtes-vous sûr de vouloir quitter la famille <strong>{familyData?.familyName}</strong> ? 
+              Cette action est irréversible et vous devrez être invité à nouveau pour rejoindre.
+            </DialogContentText>
+            {error && (
+              <Alert
+                severity="error"
+                sx={{
+                  mb: 3,
+                  borderRadius: 3,
+                  background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
+                  border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
+                }}
+              >
+                {error}
+              </Alert>
+            )}
+          </DialogContent>
+          <DialogActions
+            sx={{
+              p: 3,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+              borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              gap: 2,
+            }}
+          >
+            <Button
+              onClick={() => setLeaveFamilyDialogOpen(false)}
+              disabled={isProcessingAction}
+              variant="outlined"
+              sx={{
+                borderRadius: 3,
+                px: 3,
+                borderColor: alpha(theme.palette.primary.main, 0.3),
+                "&:hover": {
+                  borderColor: theme.palette.primary.main,
+                  backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                },
+              }}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleLeaveFamily}
+              variant="contained"
+              color="error"
+              disabled={isProcessingAction}
+              startIcon={isProcessingAction ? <CircularProgress size={20} color="inherit" /> : <ExitIcon />}
+              sx={{
+                borderRadius: 3,
+                px: 3,
+                boxShadow: `0 4px 20px ${alpha(theme.palette.error.main, 0.3)}`,
+                "&:hover": {
+                  transform: "translateY(-2px)",
+                  boxShadow: `0 6px 25px ${alpha(theme.palette.error.main, 0.4)}`,
+                },
+                transition: "all 0.3s ease",
+              }}
+            >
+              Quitter
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         <Snackbar
-          open={!!successMessage || (!!error && !createFamilyDialogOpen)}
+          open={!!successMessage || (!!error && !createFamilyDialogOpen && !leaveFamilyDialogOpen)}
           autoHideDuration={6000}
           onClose={handleCloseSnackbar}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}

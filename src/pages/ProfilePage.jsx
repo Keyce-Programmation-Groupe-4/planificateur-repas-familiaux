@@ -35,26 +35,24 @@ import {
   Drawer,
   useMediaQuery,
 } from "@mui/material"
-import EditIcon from "@mui/icons-material/Edit";
-import SaveIcon from "@mui/icons-material/Save";
-import CancelIcon from "@mui/icons-material/Cancel";
-import PhotoCameraIcon from "@mui/icons-material/PhotoCamera";
-import PersonIcon from "@mui/icons-material/Person";
-import GroupIcon from "@mui/icons-material/Group";
-import RestaurantIcon from "@mui/icons-material/Restaurant";
-import WarningIcon from "@mui/icons-material/Warning";
-import ThumbDownIcon from "@mui/icons-material/ThumbDown"; // Renommé pour cohérence
-import NotificationsIcon from "@mui/icons-material/Notifications";
-import FavoriteIcon from "@mui/icons-material/Favorite";
-import FamilyRestroomIcon from "@mui/icons-material/FamilyRestroom";
-import MenuIcon from "@mui/icons-material/Menu";
-import CloseIcon from "@mui/icons-material/Close";
-import CalendarIcon from "@mui/icons-material/CalendarMonth";
-import CalendarTodayIcon from "@mui/icons-material/CalendarToday"
-import FamilyRelationshipIcon from "@mui/icons-material/FamilyRestroom";
-import CakeIcon from '@mui/icons-material/Cake';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import EditIcon from "@mui/icons-material/Edit"
+import SaveIcon from "@mui/icons-material/Save"
+import CancelIcon from "@mui/icons-material/Cancel"
+import PhotoCameraIcon from "@mui/icons-material/PhotoCamera"
+import PersonIcon from "@mui/icons-material/Person"
+import GroupIcon from "@mui/icons-material/Group"
+import RestaurantIcon from "@mui/icons-material/Restaurant"
+import WarningIcon from "@mui/icons-material/Warning"
+import ThumbDownIcon from "@mui/icons-material/ThumbDown"
+import NotificationsIcon from "@mui/icons-material/Notifications"
+import FavoriteIcon from "@mui/icons-material/Favorite"
+import FamilyRestroomIcon from "@mui/icons-material/FamilyRestroom"
+import MenuIcon from "@mui/icons-material/Menu"
+import CloseIcon from "@mui/icons-material/Close"
+import CalendarIcon from "@mui/icons-material/CalendarMonth"
+import CakeIcon from '@mui/icons-material/Cake'
+import BarChartIcon from '@mui/icons-material/BarChart'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
 import { DatePicker } from "@mui/x-date-pickers/DatePicker"
@@ -178,7 +176,9 @@ function a11yProps(index) {
 export default function ProfilePage() {
   const { currentUser, userData, loading: authLoading } = useAuth()
   const theme = useTheme()
-  const isMobile = useMediaQuery(theme.breakpoints.down("lg"))
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
+  const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"))
+  const isDesktop = useMediaQuery(theme.breakpoints.up("md"))
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   // Tab state
@@ -186,18 +186,15 @@ export default function ProfilePage() {
 
   // Form states
   const [displayName, setDisplayName] = useState("")
-  // Personal Info
   const [firstName, setFirstName] = useState("")
   const [lastName, setLastName] = useState("")
   const [birthDate, setBirthDate] = useState(null)
   const [gender, setGender] = useState("")
   const [familyRelationship, setFamilyRelationship] = useState("")
-  // Dietary Preferences
   const [selectedDiet, setSelectedDiet] = useState("")
   const [allergies, setAllergies] = useState([])
   const [dislikes, setDislikes] = useState([])
   const [favorites, setFavorites] = useState([])
-  // Notification Settings
   const [notificationSettings, setNotificationSettings] = useState({
     invitations: true,
     planningReady: true,
@@ -214,23 +211,18 @@ export default function ProfilePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoUploadProgress, setPhotoUploadProgress] = useState(0)
 
-  // Initialize form data when userData is loaded
   useEffect(() => {
     if (userData) {
       setDisplayName(userData.displayName || "")
-      // Personal Info
       setFirstName(userData.personalInfo?.firstName || "")
       setLastName(userData.personalInfo?.lastName || "")
-      // Convert Firestore Timestamp to Date object for DatePicker
       setBirthDate(userData.personalInfo?.birthDate?.toDate ? userData.personalInfo.birthDate.toDate() : null)
       setGender(userData.personalInfo?.gender || "")
       setFamilyRelationship(userData.personalInfo?.familyRelationship || "")
-      // Dietary Preferences
       setSelectedDiet(userData.dietaryPreferences?.diet || "")
       setAllergies(userData.dietaryPreferences?.allergies || [])
       setDislikes(userData.dietaryPreferences?.dislikes || [])
       setFavorites(userData.dietaryPreferences?.favorites || [])
-      // Notification Settings
       setNotificationSettings({
         invitations: userData.notificationSettings?.invitations ?? true,
         planningReady: userData.notificationSettings?.planningReady ?? true,
@@ -261,18 +253,15 @@ export default function ProfilePage() {
     setLoading(true)
 
     try {
-      // Update Firebase Auth profile (only displayName)
       if (currentUser.displayName !== displayName) {
         await updateProfile(currentUser, { displayName: displayName })
       }
 
-      // Prepare data for Firestore update
       const updatedData = {
         displayName: displayName,
         personalInfo: {
           firstName: firstName,
           lastName: lastName,
-          // Convert Date object back to Firestore Timestamp
           birthDate: birthDate ? Timestamp.fromDate(birthDate) : null,
           gender: gender,
           familyRelationship: familyRelationship,
@@ -287,7 +276,6 @@ export default function ProfilePage() {
         updatedAt: serverTimestamp(),
       }
 
-      // Update Firestore document
       const userDocRef = doc(db, "users", currentUser.uid)
       await updateDoc(userDocRef, updatedData)
 
@@ -303,21 +291,17 @@ export default function ProfilePage() {
   }
 
   const handleCancel = () => {
-    // Reset form to original values from userData
     if (userData) {
       setDisplayName(userData.displayName || "")
-      // Personal Info
       setFirstName(userData.personalInfo?.firstName || "")
       setLastName(userData.personalInfo?.lastName || "")
       setBirthDate(userData.personalInfo?.birthDate?.toDate ? userData.personalInfo.birthDate.toDate() : null)
       setGender(userData.personalInfo?.gender || "")
       setFamilyRelationship(userData.personalInfo?.familyRelationship || "")
-      // Dietary Preferences
       setSelectedDiet(userData.dietaryPreferences?.diet || "")
       setAllergies(userData.dietaryPreferences?.allergies || [])
       setDislikes(userData.dietaryPreferences?.dislikes || [])
       setFavorites(userData.dietaryPreferences?.favorites || [])
-      // Notification Settings
       setNotificationSettings({
         invitations: userData.notificationSettings?.invitations ?? true,
         planningReady: userData.notificationSettings?.planningReady ?? true,
@@ -332,15 +316,13 @@ export default function ProfilePage() {
 
   const handlePhotoUpload = (event) => {
     const file = event.target.files[0]
-    if (!file) return
-    if (!currentUser) {
-      setError("Utilisateur non connecté.")
+    if (!file || !currentUser) {
+      setError("Utilisateur non connecté ou fichier non sélectionné.")
       return
     }
 
-    // Basic validation
     if (file.size > 5 * 1024 * 1024) {
-      setError("Le fichier est trop volumineux (max 5MB).")
+      setError("Le fichier est trop volumineux (max 5MB").toUpperCase()
       return
     }
     if (!file.type.startsWith("image/")) {
@@ -371,9 +353,7 @@ export default function ProfilePage() {
       async () => {
         try {
           const downloadURL = await getDownloadURL(uploadTask.snapshot.ref)
-          // Update Firebase Auth profile photo
           await updateProfile(currentUser, { photoURL: downloadURL })
-          // Update Firestore document
           const userDocRef = doc(db, "users", currentUser.uid)
           await updateDoc(userDocRef, {
             photoURL: downloadURL,
@@ -388,7 +368,7 @@ export default function ProfilePage() {
           setUploadingPhoto(false)
           setPhotoUploadProgress(0)
         }
-      },
+      }
     )
   }
 
@@ -457,14 +437,13 @@ export default function ProfilePage() {
     )
   }
 
-  // Profile Sidebar Component
   const ProfileSidebar = () => (
     <Box
       sx={{
-        width: { xs: "100%", lg: 380 },
-        height: { lg: "calc(100vh - 200px)" },
-        position: { lg: "sticky" },
-        top: { lg: 24 },
+        width: { xs: "100%", sm: "100%", md: 300, lg: 380 },
+        height: { md: "calc(100vh - 200px)" },
+        position: { md: "sticky" },
+        top: { md: 24 },
         overflowY: "auto",
       }}
     >
@@ -479,16 +458,15 @@ export default function ProfilePage() {
           boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.1)}`,
         }}
       >
-        <CardContent sx={{ p: 4, textAlign: "center" }}>
-          {/* Avatar Section */}
+        <CardContent sx={{ p: { xs: 2, sm: 3, md: 4 }, textAlign: "center" }}>
           <Box sx={{ position: "relative", display: "inline-block", mb: 3 }}>
             <Avatar
               src={userData.photoURL}
               sx={{
-                width: 140,
-                height: 140,
+                width: { xs: 80, sm: 100, md: 120, lg: 140 },
+                height: { xs: 80, sm: 100, md: 120, lg: 140 },
                 background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                fontSize: "3.5rem",
+                fontSize: { xs: "2rem", sm: "2.5rem", md: "3rem", lg: "3.5rem" },
                 fontWeight: 700,
                 boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.3)}`,
                 border: `4px solid ${alpha(theme.palette.background.paper, 0.8)}`,
@@ -506,12 +484,12 @@ export default function ProfilePage() {
                 component="label"
                 sx={{
                   position: "absolute",
-                  bottom: 8,
-                  right: 8,
+                  bottom: { xs: 2, sm: 4, md: 6, lg: 8 },
+                  right: { xs: 2, sm: 4, md: 6, lg: 8 },
                   backgroundColor: theme.palette.primary.main,
                   color: "white",
-                  width: 48,
-                  height: 48,
+                  width: { xs: 32, sm: 40, md: 44, lg: 48 },
+                  height: { xs: 32, sm: 40, md: 44, lg: 48 },
                   boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.4)}`,
                   "&:hover": {
                     backgroundColor: theme.palette.primary.dark,
@@ -525,7 +503,7 @@ export default function ProfilePage() {
                 {uploadingPhoto ? (
                   <CircularProgress size={24} color="inherit" variant="determinate" value={photoUploadProgress} />
                 ) : (
-                  <PhotoCameraIcon />
+                  <PhotoCameraIcon fontSize={isMobile ? "small" : "medium"} />
                 )}
                 <input type="file" hidden accept="image/*" onChange={handlePhotoUpload} />
               </IconButton>
@@ -533,7 +511,7 @@ export default function ProfilePage() {
           </Box>
 
           {uploadingPhoto && (
-            <Box sx={{ mb: 3 }}>
+            <Box sx={{ mb: 2 }}>
               <LinearProgress
                 variant="determinate"
                 value={photoUploadProgress}
@@ -552,15 +530,25 @@ export default function ProfilePage() {
             </Box>
           )}
 
-          {/* User Info */}
-          <Typography variant="h4" sx={{ fontWeight: 700, mb: 1, color: theme.palette.text.primary }}>
+          <Typography
+            variant="h4"
+            sx={{
+              fontWeight: 700,
+              mb: 1,
+              color: theme.palette.text.primary,
+              fontSize: { xs: "1.5rem", sm: "1.75rem", md: "2rem" },
+            }}
+          >
             {userData.displayName || "Utilisateur"}
           </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 3, fontSize: "1.1rem" }}>
+          <Typography
+            variant="body1"
+            color="text.secondary"
+            sx={{ mb: 3, fontSize: { xs: "0.9rem", sm: "1rem", md: "1.1rem" } }}
+          >
             {userData.email}
           </Typography>
 
-          {/* Role Chip */}
           <Chip
             icon={getRoleIcon(userData.familyRole)}
             label={userData.familyRole || "Membre"}
@@ -570,21 +558,20 @@ export default function ProfilePage() {
               fontWeight: 600,
               borderRadius: 4,
               mb: 4,
-              fontSize: "1rem",
-              height: 40,
+              fontSize: { xs: "0.85rem", sm: "0.9rem", md: "1rem" },
+              height: { xs: 36, sm: 38, md: 40 },
               "& .MuiChip-icon": {
-                fontSize: "1.2rem",
+                fontSize: { xs: "1rem", sm: "1.1rem", md: "1.2rem" },
               },
             }}
           />
 
-          {/* Account Info */}
           <Divider sx={{ my: 3, borderColor: alpha(theme.palette.primary.main, 0.1) }} />
-          <Stack spacing={3} alignItems="flex-start" sx={{ textAlign: "left" }}>
+          <Stack spacing={2} alignItems="flex-start" sx={{ textAlign: "left" }}>
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, width: "100%" }}>
               <Box
                 sx={{
-                  p: 1.5,
+                  p: 1,
                   borderRadius: 3,
                   backgroundColor: alpha(theme.palette.info.main, 0.1),
                   color: theme.palette.info.main,
@@ -593,10 +580,10 @@ export default function ProfilePage() {
                 <GroupIcon fontSize="small" />
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.85rem" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", md: "0.85rem" } }}>
                   Famille
                 </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: "0.9rem", md: "1rem" } }}>
                   {userData.familyId ? userData.familyId.substring(0, 8) + "..." : "N/A"}
                 </Typography>
               </Box>
@@ -605,7 +592,7 @@ export default function ProfilePage() {
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, width: "100%" }}>
               <Box
                 sx={{
-                  p: 1.5,
+                  p: 1,
                   borderRadius: 3,
                   backgroundColor: alpha(theme.palette.success.main, 0.1),
                   color: theme.palette.success.main,
@@ -614,10 +601,10 @@ export default function ProfilePage() {
                 <CalendarIcon fontSize="small" />
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.85rem" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", md: "0.85rem" } }}>
                   Membre depuis
                 </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: "0.9rem", md: "1rem" } }}>
                   {formatDate(userData.createdAt)}
                 </Typography>
               </Box>
@@ -626,7 +613,7 @@ export default function ProfilePage() {
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, width: "100%" }}>
               <Box
                 sx={{
-                  p: 1.5,
+                  p: 1,
                   borderRadius: 3,
                   backgroundColor: alpha(theme.palette.warning.main, 0.1),
                   color: theme.palette.warning.main,
@@ -635,10 +622,10 @@ export default function ProfilePage() {
                 <CakeIcon fontSize="small" />
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.85rem" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", md: "0.85rem" } }}>
                   Naissance
                 </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: "0.9rem", md: "1rem" } }}>
                   {formatBirthDate(birthDate)}
                 </Typography>
               </Box>
@@ -647,21 +634,20 @@ export default function ProfilePage() {
             <Box sx={{ display: "flex", alignItems: "center", gap: 2, width: "100%" }}>
               <Box
                 sx={{
-                  p: 1.5,
+                  p: 1,
                   borderRadius: 3,
                   backgroundColor: alpha(theme.palette.secondary.main, 0.1),
                   color: theme.palette.secondary.main,
                 }}
               >
-                <FamilyRelationshipIcon fontSize="small" />
+                <FamilyRestroomIcon fontSize="small" />
               </Box>
               <Box sx={{ flex: 1 }}>
-                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.85rem" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", md: "0.85rem" } }}>
                   Rôle familial
                 </Typography>
-                <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                  {FAMILY_RELATIONSHIP_OPTIONS.find((opt) => opt.value === userData.personalInfo?.familyRelationship)
-                    ?.label || "Non défini"}
+                <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: "0.9rem", md: "1rem" } }}>
+                  {FAMILY_RELATIONSHIP_OPTIONS.find((opt) => opt.value === userData.personalInfo?.familyRelationship)?.label || "Non défini"}
                 </Typography>
               </Box>
             </Box>
@@ -677,13 +663,12 @@ export default function ProfilePage() {
         sx={{
           minHeight: "100vh",
           background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-          py: 4,
+          py: { xs: 2, sm: 3, md: 4 },
         }}
       >
         <Container maxWidth="xl">
           <Fade in timeout={600}>
             <Box>
-              {/* Header */}
               <Box sx={{ mb: 4, textAlign: "center" }}>
                 <Typography
                   variant="h2"
@@ -695,18 +680,21 @@ export default function ProfilePage() {
                     WebkitBackgroundClip: "text",
                     WebkitTextFillColor: "transparent",
                     mb: 2,
-                    fontSize: { xs: "2.5rem", md: "3.5rem" },
+                    fontSize: { xs: "2rem", sm: "2.5rem", md: "3.5rem" },
                     letterSpacing: "-0.02em",
                   }}
                 >
                   Mon Profil
                 </Typography>
-                <Typography variant="h5" color="text.secondary" sx={{ fontWeight: 400 }}>
+                <Typography
+                  variant="h5"
+                  color="text.secondary"
+                  sx={{ fontWeight: 400, fontSize: { xs: "1rem", sm: "1.25rem", md: "1.5rem" } }}
+                >
                   Gérez vos informations personnelles et préférences
                 </Typography>
               </Box>
 
-              {/* Mobile Menu Button */}
               {isMobile && (
                 <Box sx={{ mb: 3, display: "flex", justifyContent: "center" }}>
                   <Button
@@ -716,7 +704,7 @@ export default function ProfilePage() {
                     sx={{
                       borderRadius: 4,
                       px: 3,
-                      py: 1.5,
+                      py: 1,
                       borderColor: alpha(theme.palette.primary.main, 0.3),
                       "&:hover": {
                         borderColor: theme.palette.primary.main,
@@ -729,7 +717,6 @@ export default function ProfilePage() {
                 </Box>
               )}
 
-              {/* Alerts */}
               {error && (
                 <Fade in>
                   <Alert
@@ -761,7 +748,6 @@ export default function ProfilePage() {
                 </Fade>
               )}
 
-              {/* Loading Progress */}
               {loading && (
                 <Box sx={{ mb: 3 }}>
                   <LinearProgress
@@ -777,33 +763,30 @@ export default function ProfilePage() {
                 </Box>
               )}
 
-              {/* Main Layout */}
               <Box
                 sx={{
                   display: "flex",
-                  gap: 4,
+                  gap: { xs: 2, md: 4 },
                   alignItems: "flex-start",
-                  flexDirection: { xs: "column", lg: "row" },
+                  flexDirection: { xs: "column", md: "row" },
                 }}
               >
-                {/* Desktop Sidebar */}
                 {!isMobile && (
                   <Zoom in timeout={800}>
-                    <Box sx={{ flexShrink: 0 }}>
+                    <Box sx={{ flexShrinkZu: 0 }}>
                       <ProfileSidebar />
                     </Box>
                   </Zoom>
                 )}
 
-                {/* Mobile Drawer */}
                 <Drawer
                   anchor="left"
                   open={sidebarOpen}
                   onClose={() => setSidebarOpen(false)}
                   PaperProps={{
                     sx: {
-                      width: "90vw",
-                      maxWidth: 400,
+                      width: "85vw",
+                      maxWidth: { xs: 300, sm: 350 },
                       background: "transparent",
                       boxShadow: "none",
                     },
@@ -825,7 +808,6 @@ export default function ProfilePage() {
                   </Box>
                 </Drawer>
 
-                {/* Main Content */}
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Zoom in timeout={1000}>
                     <Card
@@ -840,7 +822,7 @@ export default function ProfilePage() {
                       }}
                     >
                       <CardContent sx={{ p: 0 }}>
-                        <Box sx={{ borderBottom: 1, borderColor: "divider", px: 4, pt: 3 }}>
+                        <Box sx={{ borderBottom: 1, borderColor: "divider", px: { xs: 2, sm: 3, md: 4 }, pt: 3 }}>
                           <Tabs
                             value={currentTab}
                             onChange={handleTabChange}
@@ -849,8 +831,8 @@ export default function ProfilePage() {
                             scrollButtons="auto"
                             sx={{
                               "& .MuiTab-root": {
-                                minHeight: 64,
-                                fontSize: "1rem",
+                                minHeight: { xs: 48, sm: 56, md: 64 },
+                                fontSize: { xs: "0.85rem", sm: "0.9rem", md: "1rem" },
                                 fontWeight: 500,
                                 textTransform: "none",
                                 borderRadius: 3,
@@ -883,10 +865,8 @@ export default function ProfilePage() {
                           </Tabs>
                         </Box>
 
-                        {/* Tab Content Area */}
-                        <Box sx={{ p: 4 }}>
-                          {/* Edit/Save/Cancel Buttons */}
-                          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 4 }}>
+                        <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+                          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 3 }}>
                             {!isEditing ? (
                               <Button
                                 variant="outlined"
@@ -895,10 +875,10 @@ export default function ProfilePage() {
                                 size="large"
                                 sx={{
                                   borderRadius: 4,
-                                  px: 3,
-                                  py: 1.5,
+                                  px: { xs: 2, md: 3 },
+                                  py: 1,
                                   borderColor: alpha(theme.palette.primary.main, 0.3),
-                                  fontSize: "1rem",
+                                  fontSize: { xs: "0.85rem", md: "1rem" },
                                   fontWeight: 500,
                                   "&:hover": {
                                     borderColor: theme.palette.primary.main,
@@ -921,9 +901,9 @@ export default function ProfilePage() {
                                   size="large"
                                   sx={{
                                     borderRadius: 4,
-                                    px: 3,
-                                    py: 1.5,
-                                    fontSize: "1rem",
+                                    px: { xs: 2, md: 3 },
+                                    py: 1,
+                                    fontSize: { xs: "0.85rem", md: "1rem" },
                                     fontWeight: 500,
                                   }}
                                 >
@@ -937,9 +917,9 @@ export default function ProfilePage() {
                                   size="large"
                                   sx={{
                                     borderRadius: 4,
-                                    px: 3,
-                                    py: 1.5,
-                                    fontSize: "1rem",
+                                    px: { xs: 2, md: 3 },
+                                    py: 1,
+                                    fontSize: { xs: "0.85rem", md: "1rem" },
                                     fontWeight: 600,
                                     background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
                                     boxShadow: `0 4px 16px ${alpha(theme.palette.primary.main, 0.3)}`,
@@ -956,15 +936,21 @@ export default function ProfilePage() {
                             )}
                           </Box>
 
-                          {/* Tab Panels */}
                           <TabPanel value={currentTab} index={0}>
                             <Typography
                               variant="h5"
-                              sx={{ mb: 4, display: "flex", alignItems: "center", gap: 2, fontWeight: 600 }}
+                              sx={{
+                                mb: 3,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 2,
+                                fontWeight: 600,
+                                fontSize: { xs: "1.25rem", md: "1.5rem" },
+                              }}
                             >
                               <Box
                                 sx={{
-                                  p: 1.5,
+                                  p: 1,
                                   borderRadius: 3,
                                   backgroundColor: alpha(theme.palette.primary.main, 0.1),
                                   color: theme.palette.primary.main,
@@ -974,7 +960,7 @@ export default function ProfilePage() {
                               </Box>
                               Informations de base
                             </Typography>
-                            <Grid container spacing={3}>
+                            <Grid container spacing={2}>
                               <Grid item xs={12} sm={6}>
                                 <TextField
                                   fullWidth
@@ -985,10 +971,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 />
@@ -1003,10 +989,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 />
@@ -1021,10 +1007,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 />
@@ -1041,10 +1027,10 @@ export default function ProfilePage() {
                                       sx: {
                                         "& .MuiOutlinedInput-root": {
                                           borderRadius: 4,
-                                          fontSize: "1.1rem",
+                                          fontSize: { xs: "0.9rem", md: "1rem" },
                                         },
                                         "& .MuiInputLabel-root": {
-                                          fontSize: "1rem",
+                                          fontSize: { xs: "0.85rem", md: "0.9rem" },
                                         },
                                       },
                                     },
@@ -1059,10 +1045,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 >
@@ -1088,10 +1074,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 >
@@ -1116,11 +1102,18 @@ export default function ProfilePage() {
                           <TabPanel value={currentTab} index={1}>
                             <Typography
                               variant="h5"
-                              sx={{ mb: 4, display: "flex", alignItems: "center", gap: 2, fontWeight: 600 }}
+                              sx={{
+                                mb: 3,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 2,
+                                fontWeight: 600,
+                                fontSize: { xs: "1.25rem", md: "1.5rem" },
+                              }}
                             >
                               <Box
                                 sx={{
-                                  p: 1.5,
+                                  p: 1,
                                   borderRadius: 3,
                                   backgroundColor: alpha(theme.palette.primary.main, 0.1),
                                   color: theme.palette.primary.main,
@@ -1130,7 +1123,7 @@ export default function ProfilePage() {
                               </Box>
                               Préférences et restrictions
                             </Typography>
-                            <Grid container spacing={4}>
+                            <Grid container spacing={3}>
                               <Grid item xs={12} sm={6}>
                                 <FormControl
                                   fullWidth
@@ -1138,10 +1131,10 @@ export default function ProfilePage() {
                                   sx={{
                                     "& .MuiOutlinedInput-root": {
                                       borderRadius: 4,
-                                      fontSize: "1.1rem",
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
                                     },
                                     "& .MuiInputLabel-root": {
-                                      fontSize: "1rem",
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
                                     },
                                   }}
                                 >
@@ -1166,9 +1159,7 @@ export default function ProfilePage() {
                                   freeSolo
                                   options={COMMON_ALLERGIES}
                                   value={allergies}
-                                  onChange={(event, newValue) => {
-                                    setAllergies(newValue)
-                                  }}
+                                  onChange={(event, newValue) => setAllergies(newValue)}
                                   disabled={!isEditing || loading}
                                   renderTags={(value, getTagProps) =>
                                     value.map((option, index) => (
@@ -1179,7 +1170,7 @@ export default function ProfilePage() {
                                         color="error"
                                         icon={<WarningIcon fontSize="small" />}
                                         {...getTagProps({ index })}
-                                        sx={{ borderRadius: 3, fontSize: "0.9rem" }}
+                                        sx={{ borderRadius: 3, fontSize: { xs: "0.75rem", md: "0.85rem" } }}
                                       />
                                     ))
                                   }
@@ -1192,10 +1183,10 @@ export default function ProfilePage() {
                                       sx={{
                                         "& .MuiOutlinedInput-root": {
                                           borderRadius: 4,
-                                          fontSize: "1.1rem",
+                                          fontSize: { xs: "0.9rem", md: "1rem" },
                                         },
                                         "& .MuiInputLabel-root": {
-                                          fontSize: "1rem",
+                                          fontSize: { xs: "0.85rem", md: "0.9rem" },
                                         },
                                       }}
                                     />
@@ -1208,9 +1199,7 @@ export default function ProfilePage() {
                                   freeSolo
                                   options={COMMON_DISLIKES}
                                   value={dislikes}
-                                  onChange={(event, newValue) => {
-                                    setDislikes(newValue)
-                                  }}
+                                  onChange={(event, newValue) => setDislikes(newValue)}
                                   disabled={!isEditing || loading}
                                   renderTags={(value, getTagProps) =>
                                     value.map((option, index) => (
@@ -1219,9 +1208,9 @@ export default function ProfilePage() {
                                         variant="outlined"
                                         label={option}
                                         color="warning"
-                                        icon={<DislikeIcon fontSize="small" />}
+                                        icon={<ThumbDownIcon fontSize="small" />}
                                         {...getTagProps({ index })}
-                                        sx={{ borderRadius: 3, fontSize: "0.9rem" }}
+                                        sx={{ borderRadius: 3, fontSize: { xs: "0.75rem", md: "0.85rem" } }}
                                       />
                                     ))
                                   }
@@ -1234,10 +1223,10 @@ export default function ProfilePage() {
                                       sx={{
                                         "& .MuiOutlinedInput-root": {
                                           borderRadius: 4,
-                                          fontSize: "1.1rem",
+                                          fontSize: { xs: "0.9rem", md: "1rem" },
                                         },
                                         "& .MuiInputLabel-root": {
-                                          fontSize: "1rem",
+                                          fontSize: { xs: "0.85rem", md: "0.9rem" },
                                         },
                                       }}
                                     />
@@ -1250,9 +1239,7 @@ export default function ProfilePage() {
                                   freeSolo
                                   options={COMMON_FAVORITES}
                                   value={favorites}
-                                  onChange={(event, newValue) => {
-                                    setFavorites(newValue)
-                                  }}
+                                  onChange={(event, newValue) => setFavorites(newValue)}
                                   disabled={!isEditing || loading}
                                   renderTags={(value, getTagProps) =>
                                     value.map((option, index) => (
@@ -1263,7 +1250,7 @@ export default function ProfilePage() {
                                         color="success"
                                         icon={<FavoriteIcon fontSize="small" />}
                                         {...getTagProps({ index })}
-                                        sx={{ borderRadius: 3, fontSize: "0.9rem" }}
+                                        sx={{ borderRadius: 3, fontSize: { xs: "0.75rem", md: "0.85rem" } }}
                                       />
                                     ))
                                   }
@@ -1276,10 +1263,10 @@ export default function ProfilePage() {
                                       sx={{
                                         "& .MuiOutlinedInput-root": {
                                           borderRadius: 4,
-                                          fontSize: "1.1rem",
+                                          fontSize: { xs: "0.9rem", md: "1rem" },
                                         },
                                         "& .MuiInputLabel-root": {
-                                          fontSize: "1rem",
+                                          fontSize: { xs: "0.85rem", md: "0.9rem" },
                                         },
                                       }}
                                     />
@@ -1292,11 +1279,18 @@ export default function ProfilePage() {
                           <TabPanel value={currentTab} index={2}>
                             <Typography
                               variant="h5"
-                              sx={{ mb: 4, display: "flex", alignItems: "center", gap: 2, fontWeight: 600 }}
+                              sx={{
+                                mb: 3,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 2,
+                                fontWeight: 600,
+                                fontSize: { xs: "1.25rem", md: "1.5rem" },
+                              }}
                             >
                               <Box
                                 sx={{
-                                  p: 1.5,
+                                  p: 1,
                                   borderRadius: 3,
                                   backgroundColor: alpha(theme.palette.primary.main, 0.1),
                                   color: theme.palette.primary.main,
@@ -1306,7 +1300,7 @@ export default function ProfilePage() {
                               </Box>
                               Paramètres de notification
                             </Typography>
-                            <Stack spacing={3}>
+                            <Stack spacing={2}>
                               <FormControlLabel
                                 control={
                                   <Switch
@@ -1322,15 +1316,11 @@ export default function ProfilePage() {
                                   />
                                 }
                                 label={
-                                  <Typography variant="body1" sx={{ fontSize: "1.1rem" }}>
+                                  <Typography variant="body1" sx={{ fontSize: { xs: "0.9rem", md: "1rem" } }}>
                                     Recevoir les invitations à rejoindre une famille
                                   </Typography>
                                 }
-                                sx={{
-                                  "& .MuiFormControlLabel-label": {
-                                    ml: 1,
-                                  },
-                                }}
+                                sx={{ "& .MuiFormControlLabel-label": { ml: 1 } }}
                               />
                               <FormControlLabel
                                 control={
@@ -1347,37 +1337,32 @@ export default function ProfilePage() {
                                   />
                                 }
                                 label={
-                                  <Typography variant="body1" sx={{ fontSize: "1.1rem" }}>
+                                  <Typography variant="body1" sx={{ fontSize: { xs: "0.9rem", md: "1rem" } }}>
                                     Être notifié quand le planning de la semaine est prêt
                                   </Typography>
                                 }
-                                sx={{
-                                  "& .MuiFormControlLabel-label": {
-                                    ml: 1,
-                                  },
-                                }}
+                                sx={{ "& .MuiFormControlLabel-label": { ml: 1 } }}
                               />
                               <FormControlLabel
                                 control={
                                   <Switch
                                     checked={notificationSettings.newRecipes}
                                     onChange={(e) =>
-                                      setNotificationSettings({ ...notificationSettings, newRecipes: e.target.checked })
+                                      setNotificationSettings({
+                                        ...notificationSettings,
+                                        newRecipes: e.target.checked,
+                                      })
                                     }
                                     disabled={!isEditing || loading}
                                     size="medium"
                                   />
                                 }
                                 label={
-                                  <Typography variant="body1" sx={{ fontSize: "1.1rem" }}>
+                                  <Typography variant="body1" sx={{ fontSize: { xs: "0.9rem", md: "1rem" } }}>
                                     Recevoir des notifications pour les nouvelles recettes ajoutées
                                   </Typography>
                                 }
-                                sx={{
-                                  "& .MuiFormControlLabel-label": {
-                                    ml: 1,
-                                  },
-                                }}
+                                sx={{ "& .MuiFormControlLabel-label": { ml: 1 } }}
                               />
                               <FormControlLabel
                                 control={
@@ -1394,15 +1379,11 @@ export default function ProfilePage() {
                                   />
                                 }
                                 label={
-                                  <Typography variant="body1" sx={{ fontSize: "1.1rem" }}>
+                                  <Typography variant="body1" sx={{ fontSize: { xs: "0.9rem", md: "1rem" } }}>
                                     Être notifié des mises à jour importantes de la liste de courses
                                   </Typography>
                                 }
-                                sx={{
-                                  "& .MuiFormControlLabel-label": {
-                                    ml: 1,
-                                  },
-                                }}
+                                sx={{ "& .MuiFormControlLabel-label": { ml: 1 } }}
                               />
                               <FormControl
                                 fullWidth
@@ -1410,12 +1391,12 @@ export default function ProfilePage() {
                                 sx={{
                                   "& .MuiOutlinedInput-root": {
                                     borderRadius: 4,
-                                    fontSize: "1.1rem",
+                                    fontSize: { xs: "0.9rem", md: "1rem" },
                                   },
                                   "& .MuiInputLabel-root": {
-                                    fontSize: "1rem",
+                                    fontSize: { xs: "0.85rem", md: "0.9rem" },
                                   },
-                                  mt: 3,
+                                  mt: 2,
                                 }}
                               >
                                 <InputLabel id="frequency-select-label">Fréquence des résumés</InputLabel>
@@ -1440,11 +1421,18 @@ export default function ProfilePage() {
                           <TabPanel value={currentTab} index={3}>
                             <Typography
                               variant="h5"
-                              sx={{ mb: 4, display: "flex", alignItems: "center", gap: 2, fontWeight: 600 }}
+                              sx={{
+                                mb: 3,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 2,
+                                fontWeight: 600,
+                                fontSize: { xs: "1.25rem", md: "1.5rem" },
+                              }}
                             >
                               <Box
                                 sx={{
-                                  p: 1.5,
+                                  p: 1,
                                   borderRadius: 3,
                                   backgroundColor: alpha(theme.palette.primary.main, 0.1),
                                   color: theme.palette.primary.main,
@@ -1454,14 +1442,14 @@ export default function ProfilePage() {
                               </Box>
                               Statistiques d'utilisation
                             </Typography>
-                            <Grid container spacing={4}>
+                            <Grid container spacing={2}>
                               <Grid item xs={12} sm={6} md={3}>
                                 <Card
                                   elevation={2}
                                   sx={{
                                     borderRadius: 4,
                                     textAlign: "center",
-                                    p: 3,
+                                    p: 2,
                                     background: `linear-gradient(135deg, ${alpha(theme.palette.info.light, 0.1)} 0%, ${alpha(theme.palette.info.main, 0.05)} 100%)`,
                                     border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
                                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1471,10 +1459,18 @@ export default function ProfilePage() {
                                     },
                                   }}
                                 >
-                                  <Typography variant="h3" color="info.main" sx={{ fontWeight: 700, mb: 1 }}>
+                                  <Typography
+                                    variant="h3"
+                                    color="info.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
                                     {getStatValue(userData.usageStats?.recipesCreated)}
                                   </Typography>
-                                  <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
                                     Recettes créées
                                   </Typography>
                                 </Card>
@@ -1485,7 +1481,7 @@ export default function ProfilePage() {
                                   sx={{
                                     borderRadius: 4,
                                     textAlign: "center",
-                                    p: 3,
+                                    p: 2,
                                     background: `linear-gradient(135deg, ${alpha(theme.palette.success.light, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
                                     border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
                                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1495,10 +1491,18 @@ export default function ProfilePage() {
                                     },
                                   }}
                                 >
-                                  <Typography variant="h3" color="success.main" sx={{ fontWeight: 700, mb: 1 }}>
+                                  <Typography
+                                    variant="h3"
+                                    color="success.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
                                     {getStatValue(userData.usageStats?.mealsPlanned)}
                                   </Typography>
-                                  <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
                                     Repas planifiés
                                   </Typography>
                                 </Card>
@@ -1509,7 +1513,7 @@ export default function ProfilePage() {
                                   sx={{
                                     borderRadius: 4,
                                     textAlign: "center",
-                                    p: 3,
+                                    p: 2,
                                     background: `linear-gradient(135deg, ${alpha(theme.palette.warning.light, 0.1)} 0%, ${alpha(theme.palette.warning.main, 0.05)} 100%)`,
                                     border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
                                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1519,10 +1523,18 @@ export default function ProfilePage() {
                                     },
                                   }}
                                 >
-                                  <Typography variant="h3" color="warning.main" sx={{ fontWeight: 700, mb: 1 }}>
+                                  <Typography
+                                    variant="h3"
+                                    color="warning.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
                                     {getStatValue(userData.usageStats?.shoppingListsGenerated)}
                                   </Typography>
-                                  <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
                                     Listes générées
                                   </Typography>
                                 </Card>
@@ -1533,7 +1545,7 @@ export default function ProfilePage() {
                                   sx={{
                                     borderRadius: 4,
                                     textAlign: "center",
-                                    p: 3,
+                                    p: 2,
                                     background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.light, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
                                     border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
                                     transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
@@ -1543,15 +1555,25 @@ export default function ProfilePage() {
                                     },
                                   }}
                                 >
-                                  <Typography variant="h3" color="secondary.main" sx={{ fontWeight: 700, mb: 1 }}>
-                                    {getStatValue(userData.usageStats?.estimatedSavings?.amount).toLocaleString(
-                                      "fr-FR",
-                                    )}
+                                  <Typography
+                                    variant="h3"
+                                    color="secondary.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
+                                    {getStatValue(userData.usageStats?.estimatedSavings?.amount).toLocaleString("fr-FR")}
                                   </Typography>
-                                  <Typography variant="body2" color="secondary.main" sx={{ fontWeight: 600, mb: 0.5 }}>
+                                  <Typography
+                                    variant="body2"
+                                    color="secondary.main"
+                                    sx={{ fontWeight: 600, mb: 0.5, fontSize: { xs: "0.75rem", md: "0.9rem" } }}
+                                  >
                                     {userData.usageStats?.estimatedSavings?.currency || "FCFA"}
                                   </Typography>
-                                  <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 500 }}>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
                                     Économies estimées
                                   </Typography>
                                 </Card>
@@ -1560,10 +1582,9 @@ export default function ProfilePage() {
                             <Typography
                               variant="body2"
                               color="text.secondary"
-                              sx={{ display: "block", mt: 3, fontStyle: "italic" }}
+                              sx={{ display: "block", mt: 2, fontStyle: "italic", fontSize: { xs: "0.75rem", md: "0.85rem" } }}
                             >
-                              💡 Note : Les économies sont une estimation basée sur les prix renseignés et peuvent
-                              varier selon les fluctuations du marché.
+                              💡 Note : Les économies sont une estimation basée sur les prix renseignés et peuvent varier selon les fluctuations du marché.
                             </Typography>
                           </TabPanel>
                         </Box>
