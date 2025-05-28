@@ -1,682 +1,539 @@
+
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Component } from "react"
 import {
   Typography,
   Container,
   Box,
-  Button,
   Grid,
   Card,
   CardContent,
-  Avatar,
-  Chip,
-  Stack,
+  Button,
+  CircularProgress,
+  Alert,
   useTheme,
   alpha,
   Fade,
-  Zoom,
-  LinearProgress,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  useMediaQuery,
+  Stack,
 } from "@mui/material"
-import {
-  Restaurant as RestaurantIcon,
-  CalendarMonth as CalendarIcon,
-  Group as GroupIcon,
-  Add as AddIcon,
-  ShoppingCart as ShoppingCartIcon,
-  ArrowForward as ArrowForwardIcon,
-  PlayArrow as PlayArrowIcon,
-  CheckCircle as CheckCircleIcon,
-  Dashboard as DashboardIcon,
-  AdminPanelSettings as AdminIcon,
-} from "@mui/icons-material"
-import StarsIcon from '@mui/icons-material/Stars';
-import { Link as RouterLink, useNavigate } from "react-router-dom"
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
+import { DatePicker } from "@mui/x-date-pickers/DatePicker"
+import AddIcon from "@mui/icons-material/Add"
+import CalendarIcon from "@mui/icons-material/CalendarMonth"
+import RestaurantIcon from "@mui/icons-material/Restaurant"
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf"
+import SaveIcon from "@mui/icons-material/Save"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
-import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore"
-import { format, isToday, isTomorrow } from "date-fns"
+import { collection, query, where, getDocs, addDoc, Timestamp } from "firebase/firestore"
+import { format, differenceInDays, eachDayOfInterval } from "date-fns"
 import { fr } from "date-fns/locale"
 
-// Landing Page pour utilisateurs non connectés
-function LandingPage() {
-  const theme = useTheme()
-  const navigate = useNavigate()
+// Meal categories
+const MEAL_CATEGORIES = [
+  { value: "breakfast", label: "Petit-déjeuner" },
+  { value: "lunch", label: "Déjeuner" },
+  { value: "dinner", label: "Dîner" },
+]
 
-  const features = [
-    {
-      icon: <CalendarIcon />,
-      title: "Planification Intelligente",
-      description: "Organisez vos repas de la semaine avec une interface intuitive et moderne",
-      color: theme.palette.primary.main,
-    },
-    {
-      icon: <RestaurantIcon />,
-      title: "Gestion des Recettes",
-      description: "Stockez, organisez et partagez vos recettes favorites avec votre famille",
-      color: theme.palette.secondary.main,
-    },
-    {
-      icon: <ShoppingCartIcon />,
-      title: "Liste de Courses Automatique",
-      description: "Générez automatiquement votre liste de courses basée sur vos repas planifiés",
-      color: theme.palette.success.main,
-    },
-    {
-      icon: <GroupIcon />,
-      title: "Collaboration Familiale",
-      description: "Partagez la planification avec tous les membres de votre famille",
-      color: theme.palette.warning.main,
-    },
-  ]
+// Error Boundary Component
+class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
 
-  const benefits = [
-    "Économisez du temps et de l'argent",
-    "Réduisez le gaspillage alimentaire",
-    "Mangez plus sainement",
-    "Simplifiez vos courses",
-    "Partagez en famille",
-  ]
-
-  return (
-    <Box
-      sx={{
-        background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-        minHeight: "calc(100vh - 64px)",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {/* Decorative Elements */}
-      <Box
-        sx={{
-          position: "absolute",
-          top: -100,
-          right: -100,
-          width: 400,
-          height: 400,
-          background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-      <Box
-        sx={{
-          position: "absolute",
-          bottom: -150,
-          left: -150,
-          width: 500,
-          height: 500,
-          background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.08)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-
-      <Container maxWidth="lg" sx={{ position: "relative", zIndex: 1, py: 8 }}>
-        {/* Hero Section */}
-        <Fade in timeout={800}>
-          <Box sx={{ textAlign: "center", mb: 10 }}>
-            <Typography
-              variant="h1"
-              sx={{
-                fontWeight: 800,
-                fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 2,
-                letterSpacing: "-2px",
-              }}
-            >
-              L'Avenir de la
-              <br />
-              Planification Culinaire
-            </Typography>
-            <Typography
-              variant="h5"
-              color="text.secondary"
-              sx={{
-                mb: 4,
-                maxWidth: "600px",
-                mx: "auto",
-                fontWeight: 400,
-                lineHeight: 1.6,
-              }}
-            >
-              Révolutionnez votre façon de planifier, cuisiner et partager vos repas avec une technologie de pointe
-            </Typography>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={3} justifyContent="center" sx={{ mb: 6 }}>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<PlayArrowIcon />}
-                onClick={() => navigate("/signup")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                  boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.4)}`,
-                  "&:hover": {
-                    transform: "translateY(-3px)",
-                    boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.5)}`,
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Commencer Gratuitement
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<ArrowForwardIcon />}
-                onClick={() => navigate("/login")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  borderWidth: 2,
-                  borderColor: alpha(theme.palette.primary.main, 0.3),
-                  "&:hover": {
-                    borderWidth: 2,
-                    borderColor: theme.palette.primary.main,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    transform: "translateY(-2px)",
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Se Connecter
-              </Button>
-            </Stack>
-
-            {/* Benefits Pills */}
-            <Stack direction="row" spacing={2} justifyContent="center" sx={{ flexWrap: "wrap", gap: 2 }}>
-              {benefits.map((benefit, index) => (
-                <Zoom in timeout={1000 + index * 100} key={benefit}>
-                  <Chip
-                    icon={<CheckCircleIcon />}
-                    label={benefit}
-                    sx={{
-                      backgroundColor: alpha(theme.palette.success.main, 0.1),
-                      color: theme.palette.success.main,
-                      fontWeight: 500,
-                      borderRadius: 3,
-                      "& .MuiChip-icon": {
-                        color: theme.palette.success.main,
-                      },
-                    }}
-                  />
-                </Zoom>
-              ))}
-            </Stack>
-          </Box>
-        </Fade>
-
-        {/* Features Section */}
-        <Box sx={{ mb: 10 }}>
-          <Typography
-            variant="h3"
-            align="center"
-            sx={{
-              fontWeight: 700,
-              mb: 2,
-              color: theme.palette.text.primary,
-            }}
-          >
-            Fonctionnalités Révolutionnaires
-          </Typography>
-          <Typography variant="h6" align="center" color="text.secondary" sx={{ mb: 6, maxWidth: "600px", mx: "auto" }}>
-            Découvrez comment Meal Planner 2025 transforme votre expérience culinaire
-          </Typography>
-
-          <Grid container spacing={4}>
-            {features.map((feature, index) => (
-              <Grid item xs={12} sm={6} md={3} key={feature.title}>
-                <Zoom in timeout={1200 + index * 150}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      height: "100%",
-                      borderRadius: 6,
-                      background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(feature.color, 0.02)} 100%)`,
-                      border: `1px solid ${alpha(feature.color, 0.1)}`,
-                      transition: "all 0.3s ease",
-                      "&:hover": {
-                        transform: "translateY(-8px)",
-                        boxShadow: `0 20px 60px ${alpha(feature.color, 0.2)}`,
-                        border: `1px solid ${alpha(feature.color, 0.3)}`,
-                      },
-                    }}
-                  >
-                    <CardContent sx={{ p: 4, textAlign: "center" }}>
-                      <Avatar
-                        sx={{
-                          width: 80,
-                          height: 80,
-                          background: `linear-gradient(135deg, ${feature.color} 0%, ${alpha(feature.color, 0.8)} 100%)`,
-                          mb: 3,
-                          mx: "auto",
-                          fontSize: "2rem",
-                        }}
-                      >
-                        {feature.icon}
-                      </Avatar>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                        {feature.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                        {feature.description}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Zoom>
-              </Grid>
-            ))}
-          </Grid>
-        </Box>
-
-        {/* CTA Section */}
-        <Fade in timeout={2000}>
-          <Card
-            elevation={0}
-            sx={{
-              borderRadius: 6,
-              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-              color: "white",
-              textAlign: "center",
-              p: 6,
-              position: "relative",
-              overflow: "hidden",
-            }}
-          >
-            <Box
-              sx={{
-                position: "absolute",
-                top: -50,
-                right: -50,
-                width: 200,
-                height: 200,
-                background: alpha(theme.palette.common.white, 0.1),
-                borderRadius: "50%",
-              }}
-            />
-            <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
-              Prêt à Révolutionner Vos Repas ?
-            </Typography>
-            <Typography variant="h6" sx={{ mb: 4, opacity: 0.9 }}>
-              Rejoignez des milliers de familles qui ont déjà transformé leur cuisine
-            </Typography>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<StarsIcon />}
-              onClick={() => navigate("/signup")}
-              sx={{
-                py: 2,
-                px: 4,
-                borderRadius: 4,
-                fontSize: "1.1rem",
-                fontWeight: 600,
-                backgroundColor: theme.palette.common.white,
-                color: theme.palette.primary.main,
-                "&:hover": {
-                  backgroundColor: alpha(theme.palette.common.white, 0.9),
-                  transform: "scale(1.05)",
-                },
-                transition: "all 0.3s ease",
-              }}
-            >
-              Commencer Maintenant
-            </Button>
-          </Card>
-        </Fade>
-      </Container>
-    </Box>
-  )
-}
-
-// Dashboard pour utilisateurs connectés
-function UserDashboard() {
-  const { userData } = useAuth()
-  const theme = useTheme()
-  const navigate = useNavigate()
-  const [stats, setStats] = useState({
-    totalRecipes: 0,
-    plannedMeals: 0,
-    familyMembers: 0,
-    loading: true,
-  })
-  const [recentRecipes, setRecentRecipes] = useState([])
-  const [upcomingMeals, setUpcomingMeals] = useState([])
-
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!userData?.familyId) return
-
-      try {
-        // Fetch recipes count
-        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", userData.familyId))
-        const recipesSnapshot = await getDocs(recipesQuery)
-
-        // Fetch recent recipes
-        const recentRecipesQuery = query(
-          collection(db, "recipes"),
-          where("familyId", "==", userData.familyId),
-          orderBy("createdAt", "desc"),
-          limit(3),
-        )
-        const recentRecipesSnapshot = await getDocs(recentRecipesQuery)
-        const recentRecipesData = recentRecipesSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }))
-
-        // Fetch family members count
-        const familyMembersQuery = query(collection(db, "users"), where("familyId", "==", userData.familyId))
-        const familyMembersSnapshot = await getDocs(familyMembersQuery)
-
-        setStats({
-          totalRecipes: recipesSnapshot.size,
-          plannedMeals: 0, // TODO: Calculate from weekly plans
-          familyMembers: familyMembersSnapshot.size,
-          loading: false,
-        })
-        setRecentRecipes(recentRecipesData)
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-        setStats((prev) => ({ ...prev, loading: false }))
-      }
-    }
-
-    fetchDashboardData()
-  }, [userData?.familyId])
-
-  const quickActions = [
-    {
-      title: "Planifier la Semaine",
-      description: "Organisez vos repas",
-      icon: <CalendarIcon />,
-      color: theme.palette.primary.main,
-      path: "/planner",
-    },
-    {
-      title: "Ajouter une Recette",
-      description: "Nouvelle création",
-      icon: <AddIcon />,
-      color: theme.palette.secondary.main,
-      path: "/recipes",
-    },
-    {
-      title: "Liste de Courses",
-      description: "Préparez vos achats",
-      icon: <ShoppingCartIcon />,
-      color: theme.palette.success.main,
-      path: "/shopping-list",
-    },
-    {
-      title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
-      description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
-      icon: userData?.familyRole === "Admin" ? <AdminIcon /> : <GroupIcon />,
-      color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
-      path: "/family",
-    },
-  ]
-
-  const formatDate = (timestamp) => {
-    if (!timestamp) return ""
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp._seconds * 1000)
-    if (isToday(date)) return "Aujourd'hui"
-    if (isTomorrow(date)) return "Demain"
-    return format(date, "d MMM", { locale: fr })
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
   }
 
-  return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Fade in timeout={600}>
-        <Box>
-          {/* Welcome Header */}
-          <Box sx={{ mb: 4 }}>
-            <Typography
-              variant="h3"
-              sx={{
-                fontWeight: 700,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 1,
-              }}
-            >
-              Bonjour, {userData?.displayName || "Chef"} ! 👋
-            </Typography>
-            <Typography variant="h6" color="text.secondary">
-              Prêt à planifier de délicieux repas aujourd'hui ?
-            </Typography>
-          </Box>
+  componentDidCatch(error, errorInfo) {
+    console.error("Error caught in ErrorBoundary:", error, errorInfo)
+  }
 
-          <Grid container spacing={4}>
-            {/* Stats Cards */}
-            <Grid item xs={12}>
-              <Grid container spacing={3}>
-                {[
-                  {
-                    label: "Recettes",
-                    value: stats.totalRecipes,
-                    icon: <RestaurantIcon />,
-                    color: theme.palette.primary.main,
-                  },
-                  {
-                    label: "Repas Planifiés",
-                    value: stats.plannedMeals,
-                    icon: <CalendarIcon />,
-                    color: theme.palette.secondary.main,
-                  },
-                  {
-                    label: "Membres Famille",
-                    value: stats.familyMembers,
-                    icon: <GroupIcon />,
-                    color: theme.palette.success.main,
-                  },
-                  {
-                    label: "Rôle",
-                    value: userData?.familyRole || "Membre",
-                    icon: <DashboardIcon />,
-                    color: theme.palette.warning.main,
-                  },
-                ].map((stat, index) => (
-                  <Grid item xs={6} sm={3} key={stat.label}>
-                    <Zoom in timeout={800 + index * 100}>
-                      <Card
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(stat.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(stat.color, 0.1)}`,
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(stat.color, 0.15)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3, textAlign: "center" }}>
-                          <Avatar
-                            sx={{
-                              width: 48,
-                              height: 48,
-                              background: `linear-gradient(135deg, ${stat.color} 0%, ${alpha(stat.color, 0.8)} 100%)`,
-                              mb: 2,
-                              mx: "auto",
-                            }}
-                          >
-                            {stat.icon}
-                          </Avatar>
-                          <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
-                            {stats.loading ? <LinearProgress sx={{ width: 40, mx: "auto" }} /> : stat.value}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {stat.label}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Quick Actions */}
-            <Grid item xs={12} md={8}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Actions Rapides
-              </Typography>
-              <Grid container spacing={3}>
-                {quickActions.map((action, index) => (
-                  <Grid item xs={12} sm={6} key={action.title}>
-                    <Zoom in timeout={1000 + index * 100}>
-                      <Card
-                        component={RouterLink}
-                        to={action.path}
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(action.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(action.color, 0.1)}`,
-                          textDecoration: "none",
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(action.color, 0.2)}`,
-                            border: `1px solid ${alpha(action.color, 0.3)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3 }}>
-                          <Stack direction="row" spacing={2} alignItems="center">
-                            <Avatar
-                              sx={{
-                                width: 56,
-                                height: 56,
-                                background: `linear-gradient(135deg, ${action.color} 0%, ${alpha(action.color, 0.8)} 100%)`,
-                              }}
-                            >
-                              {action.icon}
-                            </Avatar>
-                            <Box>
-                              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                {action.title}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {action.description}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Recent Activity */}
-            <Grid item xs={12} md={4}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Activité Récente
-              </Typography>
-              <Card
-                elevation={0}
-                sx={{
-                  borderRadius: 4,
-                  background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                  height: "fit-content",
-                }}
-              >
-                <CardContent sx={{ p: 3 }}>
-                  {recentRecipes.length > 0 ? (
-                    <Stack spacing={2}>
-                      {recentRecipes.map((recipe, index) => (
-                        <Fade in timeout={1200 + index * 100} key={recipe.id}>
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderRadius: 3,
-                              backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                            }}
-                          >
-                            <Stack direction="row" spacing={2} alignItems="center">
-                              <Avatar
-                                src={recipe.photoURL}
-                                sx={{
-                                  width: 40,
-                                  height: 40,
-                                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                                }}
-                              >
-                                <RestaurantIcon />
-                              </Avatar>
-                              <Box sx={{ flexGrow: 1 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                  {recipe.name}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {formatDate(recipe.createdAt)}
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Box>
-                        </Fade>
-                      ))}
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="outlined"
-                        fullWidth
-                        sx={{ borderRadius: 3, mt: 2 }}
-                      >
-                        Voir Toutes les Recettes
-                      </Button>
-                    </Stack>
-                  ) : (
-                    <Box sx={{ textAlign: "center", py: 4 }}>
-                      <RestaurantIcon sx={{ fontSize: "3rem", color: theme.palette.text.disabled, mb: 2 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Aucune recette récente
-                      </Typography>
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        Ajouter une Recette
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Box>
-      </Fade>
-    </Container>
-  )
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Alert severity="error" sx={{ m: 2 }}>
+          Une erreur est survenue. Veuillez réessayer. ({this.state.error?.message})
+        </Alert>
+      )
+    }
+    return this.props.children
+  }
 }
 
-// Composant principal
 export default function HomePage() {
-  const { currentUser } = useAuth()
+  const { currentUser, userData, loading: authLoading } = useAuth()
+  const theme = useTheme()
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
+  const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"))
 
-  return currentUser ? <UserDashboard /> : <LandingPage />
+  // Form states for meal planner
+  const [startDate, setStartDate] = useState(null)
+  const [endDate, setEndDate] = useState(null)
+  const [selectedCategories, setSelectedCategories] = useState(["breakfast", "lunch", "dinner"])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [generatedPlan, setGeneratedPlan] = useState([])
+
+  // Fetch recipes for planning
+  const fetchRecipes = async () => {
+    try {
+      let recipes = []
+      // Fetch family recipes
+      if (userData?.familyId) {
+        const familyRecipesQuery = query(
+          collection(db, "recipes"),
+          where("familyId", "==", userData.familyId)
+        )
+        const familyRecipesSnapshot = await getDocs(familyRecipesQuery)
+        recipes = familyRecipesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      }
+
+      // Fetch public recipes if no family recipes
+      if (recipes.length === 0) {
+        const publicRecipesQuery = query(
+          collection(db, "recipes"),
+          where("isPublic", "==", true)
+        )
+        const publicRecipesSnapshot = await getDocs(publicRecipesQuery)
+        recipes = publicRecipesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
+      }
+
+      return recipes
+    } catch (err) {
+      console.error("Error fetching recipes:", err)
+      setError("Erreur lors de la récupération des recettes.")
+      return []
+    }
+  }
+
+  // Generate random meal plan
+  const generateMealPlan = async () => {
+    if (!startDate || !endDate || selectedCategories.length === 0) {
+      setError("Veuillez sélectionner une période et au moins une catégorie de repas.")
+      return
+    }
+
+    if (endDate < startDate) {
+      setError("La date de fin doit être postérieure à la date de début.")
+      return
+    }
+
+    setLoading(true)
+    setError("")
+    setSuccess("")
+
+    try {
+      const recipes = await fetchRecipes()
+      if (recipes.length === 0) {
+        setError("Aucune recette disponible pour générer un planning.")
+        setLoading(false)
+        return
+      }
+
+      const days = eachDayOfInterval({ start: startDate, end: endDate })
+      const plan = []
+
+      days.forEach((day) => {
+        selectedCategories.forEach((category) => {
+          const categoryRecipes = recipes.filter((recipe) => recipe.category === category)
+          if (categoryRecipes.length > 0) {
+            const randomRecipe = categoryRecipes[Math.floor(Math.random() * categoryRecipes.length)]
+            plan.push({
+              date: day,
+              category,
+              recipeId: randomRecipe.id,
+              recipeName: randomRecipe.name || "Recette sans nom",
+            })
+          }
+        })
+      })
+
+      setGeneratedPlan(plan)
+      setDialogOpen(true)
+      setSuccess("Planning généré avec succès !")
+    } catch (err) {
+      console.error("Error generating meal plan:", err)
+      setError("Erreur lors de la génération du planning.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Export to PDF (LaTeX)
+  const exportToPDF = async () => {
+    setLoading(true)
+    try {
+      const latexContent = `
+\\documentclass[a4paper,12pt]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage[french]{babel}
+\\usepackage{geometry}
+\\geometry{margin=1in}
+\\usepackage{longtable}
+\\usepackage{booktabs}
+\\usepackage{noto}
+
+\\title{Planning de Repas}
+\\author{}
+\\date{}
+
+\\begin{document}
+
+\\maketitle
+
+\\section*{Planning de Repas du ${startDate ? format(startDate, "d MMMM yyyy", { locale: fr }) : ""} au ${
+        endDate ? format(endDate, "d MMMM yyyy", { locale: fr }) : ""
+      }}
+
+\\begin{longtable}{p{3cm}p{4cm}p{8cm}}
+\\toprule
+\\textbf{Date} & \\textbf{Catégorie} & \\textbf{Recette} \\\\
+\\midrule
+${generatedPlan
+  .map(
+    (item) =>
+      `${format(item.date, "d MMMM yyyy", { locale: fr })} & ${
+        MEAL_CATEGORIES.find((cat) => cat.value === item.category)?.label || item.category
+      } & ${item.recipeName.replace(/[&%#]/g, "\\$&")} \\\\`
+  )
+  .join("\n")}
+\\bottomrule
+\\end{longtable}
+
+\\end{document}
+      `
+
+      // Simulate PDF generation (requires backend)
+      console.log("LaTeX content for PDF:", latexContent)
+      setSuccess("PDF généré avec succès ! (Simulation)")
+      setDialogOpen(false)
+    } catch (err) {
+      console.error("Error exporting to PDF:", err)
+      setError("Erreur lors de l'exportation en PDF.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Add to WeeklyPlannerPage
+  const addToWeeklyPlanner = async () => {
+    setLoading(true)
+    try {
+      for (const item of generatedPlan) {
+        await addDoc(collection(db, "weeklyPlans"), {
+          familyId: userData?.familyId || null,
+          userId: currentUser?.uid,
+          date: Timestamp.fromDate(item.date),
+          category: item.category,
+          recipeId: item.recipeId,
+          recipeName: item.recipeName,
+          createdAt: Timestamp.now(),
+        })
+      }
+      setSuccess("Planning ajouté au WeeklyPlanner avec succès !")
+      setDialogOpen(false)
+    } catch (err) {
+      console.error("Error adding to weekly planner:", err)
+      setError("Erreur lors de l'ajout au planning.")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (authLoading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "80vh" }}>
+        <CircularProgress size={60} />
+      </Box>
+    )
+  }
+
+  const QuickActions = () => (
+    <Card
+      elevation={0}
+      sx={{
+        borderRadius: 4,
+        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+        height: "100%",
+      }}
+    >
+      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+        <Typography
+          variant="h6"
+          sx={{
+            mb: 2,
+            fontWeight: 600,
+            fontSize: { xs: "1rem", sm: "1.25rem" },
+          }}
+        >
+          Actions Rapides
+        </Typography>
+        <Stack spacing={2}>
+          <Button
+            variant="outlined"
+            startIcon={<AddIcon />}
+            fullWidth
+            sx={{
+              borderRadius: 3,
+              py: 1.5,
+              fontSize: { xs: "0.85rem", sm: "0.9rem" },
+            }}
+          >
+            Ajouter une Recette
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<CalendarIcon />}
+            fullWidth
+            sx={{
+              borderRadius: 3,
+              py: 1.5,
+              fontSize: { xs: "0.85rem", sm: "0.9rem" },
+            }}
+          >
+            Voir le Planning
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<RestaurantIcon />}
+            fullWidth
+            sx={{
+              borderRadius: 3,
+              py: 1.5,
+              fontSize: { xs: "0.85rem", sm: "0.9rem" },
+            }}
+          >
+            Explorer les Recettes
+          </Button>
+        </Stack>
+      </CardContent>
+    </Card>
+  )
+
+  return (
+    <ErrorBoundary>
+      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+        <Box
+          sx={{
+            minHeight: "100vh",
+            background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            py: { xs: 2, sm: 4 },
+          }}
+        >
+          <Container maxWidth="xl">
+            <Fade in timeout={600} mountOnEnter unmountOnExit>
+              <Box>
+                <Typography
+                  variant="h2"
+                  sx={{
+                    fontWeight: 800,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    backgroundClip: "text",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    mb: 4,
+                    textAlign: "center",
+                    fontSize: { xs: "2rem", sm: "3rem" },
+                  }}
+                >
+                  Bienvenue, {userData?.displayName || "Utilisateur"}
+                </Typography>
+
+                {error && (
+                  <Alert
+                    severity="error"
+                    sx={{ mb: 3, borderRadius: 4 }}
+                    onClose={() => setError("")}
+                  >
+                    {error}
+                  </Alert>
+                )}
+                {success && (
+                  <Alert
+                    severity="success"
+                    sx={{ mb: 3, borderRadius: 4 }}
+                    onClose={() => setSuccess("")}
+                  >
+                    {success}
+                  </Alert>
+                )}
+
+                <Grid container spacing={3} alignItems="stretch">
+                  <Grid item xs={12} md={8}>
+                    <Card
+                      elevation={0}
+                      sx={{
+                        borderRadius: 4,
+                        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                        border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                        height: "100%",
+                      }}
+                    >
+                      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                        <Typography
+                          variant="h5"
+                          sx={{
+                            mb: 3,
+                            fontWeight: 600,
+                            fontSize: { xs: "1.25rem", sm: "1.5rem" },
+                          }}
+                        >
+                          Générer un Planning de Repas
+                        </Typography>
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6}>
+                            <DatePicker
+                              label="Date de début"
+                              value={startDate}
+                              onChange={(newValue) => setStartDate(newValue)}
+                              slotProps={{
+                                textField: {
+                                  fullWidth: true,
+                                  sx: { "& .MuiOutlinedInput-root": { borderRadius: 3 } },
+                                },
+                              }}
+                              minDate={new Date()}
+                            />
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            <DatePicker
+                              label="Date de fin"
+                              value={endDate}
+                              onChange={(newValue) => setEndDate(newValue)}
+                              slotProps={{
+                                textField: {
+                                  fullWidth: true,
+                                  sx: { "& .MuiOutlinedInput-root": { borderRadius: 3 } },
+                                },
+                              }}
+                              minDate={startDate || new Date()}
+                            />
+                          </Grid>
+                          <Grid item xs={12}>
+                            <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}>
+                              <InputLabel id="meal-categories-label">Catégories de repas</InputLabel>
+                              <Select
+                                labelId="meal-categories-label"
+                                multiple
+                                value={selectedCategories}
+                                onChange={(e) => setSelectedCategories(e.target.value)}
+                                label="Catégories de repas"
+                                renderValue={(selected) =>
+                                  selected
+                                    .map(
+                                      (value) =>
+                                        MEAL_CATEGORIES.find((cat) => cat.value === value)?.label || value
+                                    )
+                                    .join(", ")
+                                }
+                              >
+                                {MEAL_CATEGORIES.map((category) => (
+                                  <MenuItem key={category.value} value={category.value}>
+                                    {category.label}
+                                  </MenuItem>
+                                ))}
+                              </Select>
+                            </FormControl>
+                          </Grid>
+                          <Grid item xs={12}>
+                            <Button
+                              variant="contained"
+                              startIcon={<CalendarIcon />}
+                              onClick={generateMealPlan}
+                              disabled={loading}
+                              fullWidth
+                              sx={{
+                                borderRadius: 3,
+                                py: 1.5,
+                                fontSize: { xs: "0.9rem", sm: "1rem" },
+                                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                              }}
+                            >
+                              {loading ? <CircularProgress size={20} color="inherit" /> : "Générer le Planning"}
+                            </Button>
+                          </Grid>
+                        </Grid>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+
+                  <Grid item xs={12} md={4}>
+                    <QuickActions />
+                  </Grid>
+                </Grid>
+
+                <Dialog
+                  open={dialogOpen}
+                  onClose={() => setDialogOpen(false)}
+                  maxWidth="sm"
+                  fullWidth
+                  TransitionProps={{
+                    onEnter: (node) => {
+                      if (node && typeof node.scrollTop !== "undefined") {
+                        node.scrollTop = 0
+                      }
+                    },
+                  }}
+                >
+                  <DialogTitle>Que voulez-vous faire avec votre planning ?</DialogTitle>
+                  <DialogContent>
+                    <Typography variant="body1" sx={{ mb: 2 }}>
+                      Votre planning a été généré avec succès. Choisissez une option ci-dessous :
+                    </Typography>
+                    <Stack spacing={2}>
+                      <Button
+                        variant="outlined"
+                        startIcon={<PictureAsPdfIcon />}
+                        onClick={exportToPDF}
+                        disabled={loading}
+                        fullWidth
+                        sx={{ borderRadius: 3, py: 1.5 }}
+                      >
+                        Exporter en PDF
+                      </Button>
+                      <Button
+                        variant="contained"
+                        startIcon={<SaveIcon />}
+                        onClick={addToWeeklyPlanner}
+                        disabled={loading}
+                        fullWidth
+                        sx={{
+                          borderRadius: 3,
+                          py: 1.5,
+                          background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                        }}
+                      >
+                        Ajouter au Planning
+                      </Button>
+                    </Stack>
+                  </DialogContent>
+                  <DialogActions>
+                    <Button onClick={() => setDialogOpen(false)} sx={{ borderRadius: 3 }}>
+                      Annuler
+                    </Button>
+                  </DialogActions>
+                </Dialog>
+              </Box>
+            </Fade>
+          </Container>
+        </Box>
+      </LocalizationProvider>
+    </ErrorBoundary>
+  )
 }
