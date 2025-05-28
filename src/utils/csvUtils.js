@@ -60,17 +60,14 @@ export const parseRecipesFromCSV = (file) => {
             }
 
             // Parse instructions
-            let instructions = [];
+            let instructions = "";
             try {
               if (row.instructions) {
-                instructions = JSON.parse(row.instructions);
-                if (!Array.isArray(instructions)) {
-                  // Attempt to recover by wrapping non-array instructions in an array
-                  instructions = [instructions];
-                }
+                const parsed = JSON.parse(row.instructions);
+                // Si c'est une chaîne, on la garde telle quelle ; sinon, on peut gérer les tableaux si nécessaire
+                instructions = typeof parsed === "string" ? parsed : (Array.isArray(parsed) ? parsed : "");
               }
             } catch (err) {
-              // Log error and skip recipe
               errors.push(`Erreur dans les instructions à la ligne ${index + 2} (recette "${row.name}") : ${err.message}`);
               return; // Skip this recipe
             }

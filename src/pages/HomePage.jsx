@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useState, useEffect, Component } from "react"
+import { useState, Component } from "react"
 import {
   Typography,
   Container,
@@ -35,10 +35,13 @@ import CalendarIcon from "@mui/icons-material/CalendarMonth"
 import RestaurantIcon from "@mui/icons-material/Restaurant"
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf"
 import SaveIcon from "@mui/icons-material/Save"
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart"
+import GroupIcon from "@mui/icons-material/Group"
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
 import { collection, query, where, getDocs, addDoc, Timestamp } from "firebase/firestore"
-import { format, differenceInDays, eachDayOfInterval } from "date-fns"
+import { format, eachDayOfInterval } from "date-fns"
 import { fr } from "date-fns/locale"
 
 // Meal categories
@@ -76,7 +79,6 @@ export default function HomePage() {
   const { currentUser, userData, loading: authLoading } = useAuth()
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
-  const isTablet = useMediaQuery(theme.breakpoints.between("sm", "md"))
 
   // Form states for meal planner
   const [startDate, setStartDate] = useState(null)
@@ -92,7 +94,6 @@ export default function HomePage() {
   const fetchRecipes = async () => {
     try {
       let recipes = []
-      // Fetch family recipes
       if (userData?.familyId) {
         const familyRecipesQuery = query(
           collection(db, "recipes"),
@@ -102,7 +103,6 @@ export default function HomePage() {
         recipes = familyRecipesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
       }
 
-      // Fetch public recipes if no family recipes
       if (recipes.length === 0) {
         const publicRecipesQuery = query(
           collection(db, "recipes"),
@@ -216,9 +216,8 @@ ${generatedPlan
 \\end{longtable}
 
 \\end{document}
-      `
+`
 
-      // Simulate PDF generation (requires backend)
       console.log("LaTeX content for PDF:", latexContent)
       setSuccess("PDF généré avec succès ! (Simulation)")
       setDialogOpen(false)
@@ -263,68 +262,95 @@ ${generatedPlan
     )
   }
 
-  const QuickActions = () => (
-    <Card
-      elevation={0}
-      sx={{
-        borderRadius: 4,
-        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-        height: "100%",
-      }}
-    >
-      <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
-        <Typography
-          variant="h6"
-          sx={{
-            mb: 2,
-            fontWeight: 600,
-            fontSize: { xs: "1rem", sm: "1.25rem" },
-          }}
-        >
-          Actions Rapides
-        </Typography>
-        <Stack spacing={2}>
-          <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
-            fullWidth
+  const QuickActions = () => {
+    const quickActions = [
+      {
+        title: "Planifier la Semaine",
+        description: "Organisez vos repas",
+        icon: <CalendarIcon />,
+        color: theme.palette.primary.main,
+        path: "/planner",
+      },
+      {
+        title: "Ajouter une Recette",
+        description: "Nouvelle création",
+        icon: <AddIcon />,
+        color: theme.palette.secondary.main,
+        path: "/recipes",
+      },
+      {
+        title: "Liste de Courses",
+        description: "Préparez vos achats",
+        icon: <ShoppingCartIcon />,
+        color: theme.palette.success.main,
+        path: "/shopping-list",
+      },
+      {
+        title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
+        description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
+        icon: userData?.familyRole === "Admin" ? <AdminPanelSettingsIcon /> : <GroupIcon />,
+        color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
+        path: "/family",
+      },
+    ]
+
+    return (
+      <Card
+        elevation={0}
+        sx={{
+          borderRadius: 4,
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+          height: "100%",
+        }}
+      >
+        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+          <Typography
+            variant="h6"
             sx={{
-              borderRadius: 3,
-              py: 1.5,
-              fontSize: { xs: "0.85rem", sm: "0.9rem" },
+              mb: 2,
+              fontWeight: 600,
+              fontSize: { xs: "1rem", sm: "1.25rem" },
             }}
           >
-            Ajouter une Recette
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<CalendarIcon />}
-            fullWidth
-            sx={{
-              borderRadius: 3,
-              py: 1.5,
-              fontSize: { xs: "0.85rem", sm: "0.9rem" },
-            }}
-          >
-            Voir le Planning
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<RestaurantIcon />}
-            fullWidth
-            sx={{
-              borderRadius: 3,
-              py: 1.5,
-              fontSize: { xs: "0.85rem", sm: "0.9rem" },
-            }}
-          >
-            Explorer les Recettes
-          </Button>
-        </Stack>
-      </CardContent>
-    </Card>
-  )
+            Actions Rapides
+          </Typography>
+          <Stack spacing={2}>
+            {quickActions.map((action, index) => (
+              <Button
+                key={index}
+                variant="outlined"
+                startIcon={action.icon}
+                fullWidth
+                sx={{
+                  borderRadius: 3,
+                  py: 1.5,
+                  fontSize: { xs: "0.85rem", sm: "0.9rem" },
+                  borderColor: alpha(action.color, 0.5),
+                  color: action.color,
+                  textAlign: "left",
+                  justifyContent: "flex-start",
+                  "&:hover": {
+                    backgroundColor: alpha(action.color, 0.05),
+                  },
+                }}
+                onClick={() => window.location.href = action.path}
+              >
+                <Box>
+                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    {action.title}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {action.description}
+                  </Typography>
+                </Box>
+              </Button>
+            ))}
+          </Stack>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <ErrorBoundary>

@@ -16,6 +16,7 @@ import Layout from './components/Layout';
 import AuthProvider from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import IngredientsPage from './pages/IngredientsPage';
+import AggregateRecipesPage from './pages/AggregateRecipesPage';
 
 function App() {
   return (
@@ -35,6 +36,9 @@ function App() {
           <Route path="/recipes/:recipeId" element={<ProtectedRoute><RecipeDetailPage /></ProtectedRoute>} />
           <Route path="/recipes/new" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
           <Route path="/recipes/:recipeId/edit" element={<ProtectedRoute><RecipeFormPage /></ProtectedRoute>} />
+          <Route path="/recipes/aggregate" element={<ProtectedRoute><AggregateRecipesPage /></ProtectedRoute>} />
+          
+          {/* NEW: Route for Weekly Planner */}
           <Route path="/planner" element={<ProtectedRoute><WeeklyPlannerPage /></ProtectedRoute>} />
           <Route path="/stock" element={<ProtectedRoute><StockPage /></ProtectedRoute>} />
           <Route path="/ingredients" element={<ProtectedRoute><IngredientsPage /></ProtectedRoute>} />
