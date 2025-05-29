@@ -35,6 +35,7 @@ import {
   InfoOutlined as InfoIcon, // Icon for info tooltips
   Sync as SyncIcon, // Icon for refresh button
   MoreVert,
+  PictureAsPdf,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
