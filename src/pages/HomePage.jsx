@@ -1,710 +1,607 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Component } from "react"
 import {
   Typography,
   Container,
   Box,
-  Button,
   Grid,
   Card,
   CardContent,
-  Avatar,
-  Chip,
-  Stack,
+  Button,
+  CircularProgress,
+  Alert,
   useTheme,
   alpha,
   Fade,
-  Zoom,
-  LinearProgress,
+  Stack,
+  Fab,
 } from "@mui/material"
-import {
-  Restaurant as RestaurantIcon,
-  CalendarMonth as CalendarIcon,
-  Group as GroupIcon,
-  Add as AddIcon,
-  ShoppingCart as ShoppingCartIcon,
-  ArrowForward as ArrowForwardIcon,
-  PlayArrow as PlayArrowIcon,
-  CheckCircle as CheckCircleIcon,
-  Dashboard as DashboardIcon,
-  AdminPanelSettings as AdminIcon,
-} from "@mui/icons-material"
-import StarsIcon from '@mui/icons-material/Stars';
-import { Link as RouterLink, useNavigate } from "react-router-dom"
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
+import AddIcon from "@mui/icons-material/Add"
+import CalendarIcon from "@mui/icons-material/CalendarMonth"
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart"
+import GroupIcon from "@mui/icons-material/Group"
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings"
+import ChatIcon from "@mui/icons-material/Chat"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
-import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore"
-import { format, isToday, isTomorrow } from "date-fns"
+import { collection, query, where, getDocs } from "firebase/firestore"
 import { fr } from "date-fns/locale"
+import Chatbot from "./Chatbot"
+import { useMediaQuery } from "@mui/material"
 
-// Landing Page pour utilisateurs non connectés
-function LandingPage() {
+const MEAL_CATEGORIES = [
+  { value: "breakfast", label: "Petit-déjeuner" },
+  { value: "lunch", label: "Déjeuner" },
+  { value: "dinner", label: "Dîner" },
+]
+
+class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Error caught in ErrorBoundary:", error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Alert severity="error" sx={{ m: 2 }}>
+          Une erreur est survenue. Veuillez réessayer. ({this.state.error?.message})
+        </Alert>
+      )
+    }
+    return this.props.children
+  }
+}
+
+export default function HomePage() {
+  const { currentUser, userData, loading: authLoading } = useAuth()
   const theme = useTheme()
-  const navigate = useNavigate()
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
+  const [chatOpen, setChatOpen] = useState(false)
+  const [stats, setStats] = useState({
+    familyRecipes: 0,
+    publicRecipes: 0,
+    weeklyPlans: 0,
+    topCategory: "Aucune",
+  })
+  const [loadingStats, setLoadingStats] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState("")
 
-  const features = [
-    {
-      icon: <CalendarIcon />,
-      title: "Planification Intelligente",
-      description: "Organisez vos repas de la semaine avec une interface intuitive et moderne",
-      color: theme.palette.primary.main,
-    },
-    {
-      icon: <RestaurantIcon />,
-      title: "Gestion des Recettes",
-      description: "Stockez, organisez et partagez vos recettes favorites avec votre famille",
-      color: theme.palette.secondary.main,
-    },
-    {
-      icon: <ShoppingCartIcon />,
-      title: "Liste de Courses Automatique",
-      description: "Générez automatiquement votre liste de courses basée sur vos repas planifiés",
-      color: theme.palette.success.main,
-    },
-    {
-      icon: <GroupIcon />,
-      title: "Collaboration Familiale",
-      description: "Partagez la planification avec tous les membres de votre famille",
-      color: theme.palette.warning.main,
-    },
-  ]
+  const handleChatToggle = () => {
+    setChatOpen(!chatOpen)
+  }
 
-  const benefits = [
-    "Économisez du temps et de l'argent",
-    "Réduisez le gaspillage alimentaire",
-    "Mangez plus sainement",
-    "Simplifiez vos courses",
-    "Partagez en famille",
-  ]
+  // Récupérer les statistiques
+  const fetchStats = async () => {
+    if (!userData?.familyId) return
 
-  return (
+    setLoadingStats(true)
+    setError("")
+
+    try {
+      // Nombre de recettes familiales
+      const familyRecipesQuery = query(
+        collection(db, "recipes"),
+        where("familyId", "==", userData.familyId)
+      )
+      const familyRecipesSnapshot = await getDocs(familyRecipesQuery)
+      const familyRecipesCount = familyRecipesSnapshot.size
+
+      // Nombre de recettes publiques
+      const publicRecipesQuery = query(
+        collection(db, "recipes"),
+        where("isPublic", "==", true)
+      )
+      const publicRecipesSnapshot = await getDocs(publicRecipesQuery)
+      const publicRecipesCount = publicRecipesSnapshot.size
+
+      // Nombre de plans hebdomadaires
+      const weeklyPlansQuery = query(
+        collection(db, "families", userData.familyId, "weeklyPlans")
+      )
+      const weeklyPlansSnapshot = await getDocs(weeklyPlansQuery)
+      const weeklyPlansCount = weeklyPlansSnapshot.size
+
+      // Catégorie la plus planifiée
+      let categoryCounts = { breakfast: 0, lunch: 0, dinner: 0 }
+      weeklyPlansSnapshot.forEach((doc) => {
+        const plan = doc.data()
+        Object.values(plan.days || {}).forEach((day) => {
+          if (day.breakfast) categoryCounts.breakfast++
+          if (day.lunch) categoryCounts.lunch++
+          if (day.dinner) categoryCounts.dinner++
+        })
+      })
+      const topCategory = Object.entries(categoryCounts).reduce(
+        (max, [category, count]) => (count > max.count ? { category, count } : max),
+        { category: "Aucune", count: 0 }
+      ).category
+
+      setStats({
+        familyRecipes: familyRecipesCount,
+        publicRecipes: publicRecipesCount,
+        weeklyPlans: weeklyPlansCount,
+        topCategory: MEAL_CATEGORIES.find((cat) => cat.value === topCategory)?.label || "Aucune",
+      })
+      setSuccess("Statistiques chargées avec succès !")
+    } catch (err) {
+      console.error("Error fetching stats:", err)
+      setError("Erreur lors de la récupération des statistiques.")
+    } finally {
+      setLoadingStats(false)
+    }
+  }
+
+  useEffect(() => {
+    if (currentUser && userData?.familyId) {
+      fetchStats()
+    }
+  }, [currentUser, userData])
+
+  const LandingPage = () => (
     <Box
       sx={{
         background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-        minHeight: "calc(100vh - 64px)",
-        position: "relative",
-        overflow: "hidden",
+        minHeight: "100vh",
+        py: 8,
       }}
     >
-      {/* Decorative Elements */}
-      <Box
-        sx={{
-          position: "absolute",
-          top: -100,
-          right: -100,
-          width: 400,
-          height: 400,
-          background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-      <Box
-        sx={{
-          position: "absolute",
-          bottom: -150,
-          left: -150,
-          width: 500,
-          height: 500,
-          background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.08)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-
-      <Container maxWidth="lg" sx={{ position: "relative", zIndex: 1, py: 8 }}>
-        {/* Hero Section */}
-        <Fade in timeout={800}>
-          <Box sx={{ textAlign: "center", mb: 10 }}>
-            <Typography
-              variant="h1"
-              sx={{
-                fontWeight: 800,
-                fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 2,
-                letterSpacing: "-2px",
-              }}
-            >
-              L'Avenir de la
-              <br />
-              Planification Culinaire
-            </Typography>
-            <Typography
-              variant="h5"
-              color="text.secondary"
-              sx={{
-                mb: 4,
-                maxWidth: "600px",
-                mx: "auto",
-                fontWeight: 400,
-                lineHeight: 1.6,
-              }}
-            >
-              Révolutionnez votre façon de planifier, cuisiner et partager vos repas avec une technologie de pointe
-            </Typography>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={3} justifyContent="center" sx={{ mb: 6 }}>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<PlayArrowIcon />}
-                onClick={() => navigate("/signup")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                  boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.4)}`,
-                  "&:hover": {
-                    transform: "translateY(-3px)",
-                    boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.5)}`,
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Commencer Gratuitement
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<ArrowForwardIcon />}
-                onClick={() => navigate("/login")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  borderWidth: 2,
-                  borderColor: alpha(theme.palette.primary.main, 0.3),
-                  "&:hover": {
-                    borderWidth: 2,
-                    borderColor: theme.palette.primary.main,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    transform: "translateY(-2px)",
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Se Connecter
-              </Button>
-            </Stack>
-
-            {/* Benefits Pills */}
-            <Stack direction="row" spacing={2} justifyContent="center" sx={{ flexWrap: "wrap", gap: 2 }}>
-              {benefits.map((benefit, index) => (
-                <Zoom in timeout={1000 + index * 100} key={benefit}>
-                  <Chip
-                    icon={<CheckCircleIcon />}
-                    label={benefit}
-                    sx={{
-                      backgroundColor: alpha(theme.palette.success.main, 0.1),
-                      color: theme.palette.success.main,
-                      fontWeight: 500,
-                      borderRadius: 3,
-                      "& .MuiChip-icon": {
-                        color: theme.palette.success.main,
-                      },
-                    }}
-                  />
-                </Zoom>
-              ))}
-            </Stack>
-          </Box>
-        </Fade>
-
-        {/* Features Section */}
-        <Box sx={{ mb: 10 }}>
+      <Container maxWidth="lg">
+        <Box sx={{ textAlign: "center", mb: 8 }}>
           <Typography
-            variant="h3"
-            align="center"
+            variant="h1"
             sx={{
-              fontWeight: 700,
+              fontWeight: 800,
+              fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+              backgroundClip: "text",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
               mb: 2,
-              color: theme.palette.text.primary,
             }}
           >
-            Fonctionnalités Révolutionnaires
+            Planifiez vos repas en famille facilement
           </Typography>
-          <Typography variant="h6" align="center" color="text.secondary" sx={{ mb: 6, maxWidth: "600px", mx: "auto" }}>
-            Découvrez comment Meal Planner 2025 transforme votre expérience culinaire
+          <Typography variant="h5" color="text.secondary" sx={{ mb: 4 }}>
+            Organisez vos repas, gérez vos recettes et simplifiez vos courses avec notre application intuitive.
           </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="center">
+            <Button
+              variant="contained"
+              size="large"
+              href="/signup"
+              sx={{
+                py: 2,
+                px: 4,
+                borderRadius: 3,
+                fontSize: "1.1rem",
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+              }}
+            >
+              S'inscrire
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              href="/login"
+              sx={{
+                py: 2,
+                px: 4,
+                borderRadius: 3,
+                fontSize: "1.1rem",
+                borderColor: theme.palette.primary.main,
+                color: theme.palette.primary.main,
+              }}
+            >
+              Se connecter
+            </Button>
+          </Stack>
+        </Box>
 
+        <Box sx={{ mb: 8 }}>
+          <Typography variant="h4" align="center" sx={{ mb: 4, fontWeight: 700 }}>
+            Fonctionnalités clés
+          </Typography>
           <Grid container spacing={4}>
-            {features.map((feature, index) => (
-              <Grid item xs={12} sm={6} md={3} key={feature.title}>
-                <Zoom in timeout={1200 + index * 150}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      height: "100%",
-                      borderRadius: 6,
-                      background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(feature.color, 0.02)} 100%)`,
-                      border: `1px solid ${alpha(feature.color, 0.1)}`,
-                      transition: "all 0.3s ease",
-                      "&:hover": {
-                        transform: "translateY(-8px)",
-                        boxShadow: `0 20px 60px ${alpha(feature.color, 0.2)}`,
-                        border: `1px solid ${alpha(feature.color, 0.3)}`,
-                      },
-                    }}
-                  >
-                    <CardContent sx={{ p: 4, textAlign: "center" }}>
-                      <Avatar
-                        sx={{
-                          width: 80,
-                          height: 80,
-                          background: `linear-gradient(135deg, ${feature.color} 0%, ${alpha(feature.color, 0.8)} 100%)`,
-                          mb: 3,
-                          mx: "auto",
-                          fontSize: "2rem",
+            {[
+              {
+                title: "Planification hebdomadaire",
+                description: "Organisez vos repas pour la semaine en quelques clics.",
+                image: "/planning-repas.png",
+              },
+              {
+                title: "Gestion des recettes",
+                description: "Créez, modifiez et partagez vos recettes familiales.",
+                image: "/gestion-recettes.png",
+              },
+              {
+                title: "Liste de courses automatique",
+                description: "Générez votre liste de courses en un clic.",
+                image: "/marche.png",
+              },
+              {
+                title: "Collaboration familiale",
+                description: "Partagez et collaborez avec les membres de votre famille.",
+                image: "/colab-famille.png",
+              },
+            ].map((feature, index) => (
+              <Grid item xs={12} sm={6} md={3} key={index}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 4,
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                    textAlign: "center",
+                    minHeight: 300,
+                  }}
+                >
+                  <CardContent>
+                    <Box
+                      sx={{
+                        height: 200,
+                        overflow: "hidden",
+                        borderRadius: 8,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <img
+                        src={feature.image}
+                        alt={feature.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
                         }}
-                      >
-                        {feature.icon}
-                      </Avatar>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                        {feature.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                        {feature.description}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Zoom>
+                      />
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                      {feature.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {feature.description}
+                    </Typography>
+                  </CardContent>
+                </Card>
               </Grid>
             ))}
           </Grid>
         </Box>
 
-        {/* CTA Section */}
-        <Fade in timeout={2000}>
-          <Card
-            elevation={0}
+        <Box sx={{ mb: 8, textAlign: "center" }}>
+          <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
+            Ils nous font confiance
+          </Typography>
+          <Grid container spacing={4} justifyContent="center">
+            {[
+              { name: "Famille Dupont", quote: "Une application indispensable pour notre organisation familiale !" },
+              { name: "Marie L.", quote: "Facile à utiliser et très pratique pour gérer les repas." },
+              { name: "Jean P.", quote: "La liste de courses automatique est un vrai gain de temps." },
+            ].map((testimonial, index) => (
+              <Grid item xs={12} sm={4} key={index}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 4,
+                    border: `1px solid ${alpha(theme.palette.success.main, 0.1)}`,
+                    p: 3,
+                  }}
+                >
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    "{testimonial.quote}"
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    - {testimonial.name}
+                  </Typography>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+
+        <Box sx={{ textAlign: "center", mb: 8 }}>
+          <Typography variant="h4" sx={{ mb: 2, fontWeight: 700 }}>
+            Prêt à simplifier votre vie ?
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            href="/signup"
             sx={{
-              borderRadius: 6,
-              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-              color: "white",
-              textAlign: "center",
-              p: 6,
-              position: "relative",
-              overflow: "hidden",
+              py: 2,
+              px: 4,
+              borderRadius: 3,
+              fontSize: "1.1rem",
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             }}
           >
-            <Box
-              sx={{
-                position: "absolute",
-                top: -50,
-                right: -50,
-                width: 200,
-                height: 200,
-                background: alpha(theme.palette.common.white, 0.1),
-                borderRadius: "50%",
-              }}
-            />
-            <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
-              Prêt à Révolutionner Vos Repas ?
-            </Typography>
-            <Typography variant="h6" sx={{ mb: 4, opacity: 0.9 }}>
-              Rejoignez des milliers de familles qui ont déjà transformé leur cuisine
-            </Typography>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<StarsIcon />}
-              onClick={() => navigate("/signup")}
-              sx={{
-                py: 2,
-                px: 4,
-                borderRadius: 4,
-                fontSize: "1.1rem",
-                fontWeight: 600,
-                backgroundColor: theme.palette.common.white,
-                color: theme.palette.primary.main,
-                "&:hover": {
-                  backgroundColor: alpha(theme.palette.common.white, 0.9),
-                  transform: "scale(1.05)",
-                },
-                transition: "all 0.3s ease",
-              }}
-            >
-              Commencer Maintenant
-            </Button>
-          </Card>
-        </Fade>
+            Commencer maintenant
+          </Button>
+        </Box>
       </Container>
     </Box>
   )
-}
 
-// Dashboard pour utilisateurs connectés
-function UserDashboard() {
-  const { userData } = useAuth()
-  const theme = useTheme()
-  const navigate = useNavigate()
-  const [stats, setStats] = useState({
-    totalRecipes: 0,
-    plannedMeals: 0,
-    familyMembers: 0,
-    loading: true,
-  })
-  const [recentRecipes, setRecentRecipes] = useState([])
-  const [upcomingMeals, setUpcomingMeals] = useState([])
+  const Dashboard = () => {
+    const QuickActions = () => {
+      const quickActions = [
+        {
+          title: "Planifier la Semaine",
+          description: "Organisez vos repas",
+          icon: <CalendarIcon />,
+          color: theme.palette.primary.main,
+          path: "/planner",
+        },
+        {
+          title: "Ajouter une Recette",
+          description: "Nouvelle création",
+          icon: <AddIcon />,
+          color: theme.palette.secondary.main,
+          path: "/recipes",
+        },
+        {
+          title: "Liste de Courses",
+          description: "Préparez vos achats",
+          icon: <ShoppingCartIcon />,
+          color: theme.palette.success.main,
+          path: "/shopping-list",
+        },
+        {
+          title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
+          description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
+          icon: userData?.familyRole === "Admin" ? <AdminPanelSettingsIcon /> : <GroupIcon />,
+          color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
+          path: "/family",
+        },
+      ]
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!userData?.familyId) return
-
-      try {
-        // Fetch recipes count
-        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", userData.familyId))
-        const recipesSnapshot = await getDocs(recipesQuery)
-
-        // Fetch recent recipes
-        const recentRecipesQuery = query(
-          collection(db, "recipes"),
-          where("familyId", "==", userData.familyId),
-          where("createdAt", "!=", null),
-          orderBy("createdAt", "desc"),
-          limit(3)
-        )
-        const recentRecipesSnapshot = await getDocs(recentRecipesQuery)
-        const recentRecipesData = recentRecipesSnapshot.docs.map((doc) => {
-          const data = doc.data()
-          console.log("Recipe ID:", doc.id, "createdAt:", data.createdAt)
-          return {
-            id: doc.id,
-            ...data,
-          }
-        })
-
-        // Fetch family members count
-        const familyMembersQuery = query(collection(db, "users"), where("familyId", "==", userData.familyId))
-        const familyMembersSnapshot = await getDocs(familyMembersQuery)
-
-        setStats({
-          totalRecipes: recipesSnapshot.size,
-          plannedMeals: 0, // TODO: Calculate from weekly plans
-          familyMembers: familyMembersSnapshot.size,
-          loading: false,
-        })
-        setRecentRecipes(recentRecipesData)
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-        setStats((prev) => ({ ...prev, loading: false }))
-      }
+      return (
+        <Card
+          elevation={0}
+          sx={{
+            borderRadius: 4,
+            background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+            height: "100%",
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+            <Typography
+              variant="h6"
+              sx={{
+                mb: 2,
+                fontWeight: 600,
+                fontSize: { xs: "1rem", sm: "1.25rem" },
+              }}
+            >
+              Actions Rapides
+            </Typography>
+            <Stack spacing={2}>
+              {quickActions.map((action, index) => (
+                <Button
+                  key={index}
+                  variant="outlined"
+                  startIcon={action.icon}
+                  fullWidth
+                  sx={{
+                    borderRadius: 3,
+                    py: 1.5,
+                    fontSize: { xs: "0.85rem", sm: "0.9rem" },
+                    borderColor: alpha(action.color, 0.5),
+                    color: action.color,
+                    textAlign: "left",
+                    justifyContent: "flex-start",
+                    "&:hover": {
+                      backgroundColor: alpha(action.color, 0.05),
+                    },
+                  }}
+                  onClick={() => window.location.href = action.path}
+                >
+                  <Box>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {action.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {action.description}
+                    </Typography>
+                  </Box>
+                </Button>
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
+      )
     }
 
-    fetchDashboardData()
-  }, [userData?.familyId])
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          py: { xs: 2, sm: 4 },
+        }}
+      >
+        <Container maxWidth="xl">
+          <Fade in timeout={600} mountOnEnter unmountOnExit>
+            <Box>
+              <Typography
+                variant="h2"
+                sx={{
+                  fontWeight: 800,
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                  backgroundClip: "text",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  mb: 4,
+                  textAlign: "center",
+                  fontSize: { xs: "2rem", sm: "3rem" },
+                }}
+              >
+                Bienvenue, {userData?.displayName || "Utilisateur"}
+              </Typography>
 
-  const quickActions = [
-    {
-      title: "Planifier la Semaine",
-      description: "Organisez vos repas",
-      icon: <CalendarIcon />,
-      color: theme.palette.primary.main,
-      path: "/planner",
-    },
-    {
-      title: "Ajouter une Recette",
-      description: "Nouvelle création",
-      icon: <AddIcon />,
-      color: theme.palette.secondary.main,
-      path: "/recipes",
-    },
-    {
-      title: "Liste de Courses",
-      description: "Préparez vos achats",
-      icon: <ShoppingCartIcon />,
-      color: theme.palette.success.main,
-      path: "/shopping-list",
-    },
-    {
-      title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
-      description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
-      icon: userData?.familyRole === "Admin" ? <AdminIcon /> : <GroupIcon />,
-      color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
-      path: "/family",
-    },
-  ]
+              {error && (
+                <Alert
+                  severity="error"
+                  sx={{ mb: 3, borderRadius: 4 }}
+                  onClose={() => setError("")}
+                >
+                  {error}
+                </Alert>
+              )}
+              {success && (
+                <Alert
+                  severity="success"
+                  sx={{ mb: 3, borderRadius: 4 }}
+                  onClose={() => setSuccess("")}
+                >
+                  {success}
+                </Alert>
+              )}
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return ""
+              <Grid container spacing={3} alignItems="stretch">
+                <Grid item xs={12} md={8}>
+                  <Card
+                    elevation={0}
+                    sx={{
+                      borderRadius: 4,
+                      background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                      border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                      height: "100%",
+                    }}
+                  >
+                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                      <Typography
+                        variant="h5"
+                        sx={{
+                          mb: 3,
+                          fontWeight: 600,
+                          fontSize: { xs: "1.25rem", sm: "1.5rem" },
+                        }}
+                      >
+                        Statistiques Familiales
+                      </Typography>
+                      {loadingStats ? (
+                        <CircularProgress size={40} sx={{ display: "block", mx: "auto" }} />
+                      ) : (
+                        <Grid container spacing={2}>
+                          <Grid item xs={12} sm={6}>
+                            <Card
+                              elevation={0}
+                              sx={{
+                                borderRadius: 3,
+                                border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+                                p: 2,
+                                textAlign: "center",
+                              }}
+                            >
+                              <Typography variant="h6" color="primary">
+                                {stats.familyRecipes}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Recettes Familiales
+                              </Typography>
+                            </Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            <Card
+                              elevation={0}
+                              sx={{
+                                borderRadius: 3,
+                                border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
+                                p: 2,
+                                textAlign: "center",
+                              }}
+                            >
+                              <Typography variant="h6" color="secondary">
+                                {stats.publicRecipes}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Recettes Publiques
+                              </Typography>
+                            </Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            <Card
+                              elevation={0}
+                              sx={{
+                                borderRadius: 3,
+                                border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
+                                p: 2,
+                                textAlign: "center",
+                              }}
+                            >
+                              <Typography variant="h6" color="success.main">
+                                {stats.weeklyPlans}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Plans Hebdomadaires
+                              </Typography>
+                            </Card>
+                          </Grid>
+                          <Grid item xs={12} sm={6}>
+                            <Card
+                              elevation={0}
+                              sx={{
+                                borderRadius: 3,
+                                border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+                                p: 2,
+                                textAlign: "center",
+                              }}
+                            >
+                              <Typography variant="h6" color="warning.main">
+                                {stats.topCategory}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary">
+                                Catégorie Préférée
+                              </Typography>
+                            </Card>
+                          </Grid>
+                        </Grid>
+                      )}
+                    </CardContent>
+                  </Card>
+                </Grid>
 
-    try {
-      let date
+                <Grid item xs={12} md={4}>
+                  <QuickActions />
+                </Grid>
+              </Grid>
 
-      if (timestamp.toDate && typeof timestamp.toDate === "function") {
-        date = timestamp.toDate()
-      } else if (timestamp._seconds && typeof timestamp._seconds === "number") {
-        date = new Date(timestamp._seconds * 1000)
-      } else if (typeof timestamp === "string" || typeof timestamp === "number") {
-        date = new Date(timestamp)
-      } else {
-        console.warn("Invalid timestamp format:", timestamp)
-        return ""
-      }
+              <Box sx={{ position: "fixed", bottom: 16, right: 16 }}>
+                <Fab color="primary" onClick={handleChatToggle}>
+                  <ChatIcon />
+                </Fab>
+              </Box>
+            </Box>
+          </Fade>
+        </Container>
+      </Box>
+    )
+  }
 
-      if (isNaN(date.getTime())) {
-        console.warn("Invalid date created from timestamp:", timestamp)
-        return ""
-      }
-
-      if (isToday(date)) return "Aujourd'hui"
-      if (isTomorrow(date)) return "Demain"
-      return format(date, "d MMM", { locale: fr })
-    } catch (error) {
-      console.error("Error formatting date:", error, "Timestamp:", timestamp)
-      return ""
-    }
+  if (authLoading) {
+    return (
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "80vh" }}>
+        <CircularProgress size={60} />
+      </Box>
+    )
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Fade in timeout={600}>
-        <Box>
-          {/* Welcome Header */}
-          <Box sx={{ mb: 4 }}>
-            <Typography
-              variant="h3"
-              sx={{
-                fontWeight: 700,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 1,
-              }}
-            >
-              Bonjour, {userData?.displayName || "Chef"} ! 👋
-            </Typography>
-            <Typography variant="h6" color="text.secondary">
-              Prêt à planifier de délicieux repas aujourd'hui ?
-            </Typography>
-          </Box>
-
-          <Grid container spacing={4}>
-            {/* Stats Cards */}
-            <Grid item xs={12}>
-              <Grid container spacing={3}>
-                {[
-                  {
-                    label: "Recettes",
-                    value: stats.totalRecipes,
-                    icon: <RestaurantIcon />,
-                    color: theme.palette.primary.main,
-                  },
-                  {
-                    label: "Repas Planifiés",
-                    value: stats.plannedMeals,
-                    icon: <CalendarIcon />,
-                    color: theme.palette.secondary.main,
-                  },
-                  {
-                    label: "Membres Famille",
-                    value: stats.familyMembers,
-                    icon: <GroupIcon />,
-                    color: theme.palette.success.main,
-                  },
-                  {
-                    label: "Rôle",
-                    value: userData?.familyRole || "Membre",
-                    icon: <DashboardIcon />,
-                    color: theme.palette.warning.main,
-                  },
-                ].map((stat, index) => (
-                  <Grid item xs={6} sm={3} key={stat.label}>
-                    <Zoom in timeout={800 + index * 100}>
-                      <Card
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(stat.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(stat.color, 0.1)}`,
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(stat.color, 0.15)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3, textAlign: "center" }}>
-                          <Avatar
-                            sx={{
-                              width: 48,
-                              height: 48,
-                              background: `linear-gradient(135deg, ${stat.color} 0%, ${alpha(stat.color, 0.8)} 100%)`,
-                              mb: 2,
-                              mx: "auto",
-                            }}
-                          >
-                            {stat.icon}
-                          </Avatar>
-                          <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
-                            {stats.loading ? <LinearProgress sx={{ width: 40, mx: "auto" }} /> : stat.value}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {stat.label}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Quick Actions */}
-            <Grid item xs={12} md={8}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Actions Rapides
-              </Typography>
-              <Grid container spacing={3}>
-                {quickActions.map((action, index) => (
-                  <Grid item xs={12} sm={6} key={action.title}>
-                    <Zoom in timeout={1000 + index * 100}>
-                      <Card
-                        component={RouterLink}
-                        to={action.path}
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(action.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(action.color, 0.1)}`,
-                          textDecoration: "none",
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(action.color, 0.2)}`,
-                            border: `1px solid ${alpha(action.color, 0.3)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3 }}>
-                          <Stack direction="row" spacing={2} alignItems="center">
-                            <Avatar
-                              sx={{
-                                width: 56,
-                                height: 56,
-                                background: `linear-gradient(135deg, ${action.color} 0%, ${alpha(action.color, 0.8)} 100%)`,
-                              }}
-                            >
-                              {action.icon}
-                            </Avatar>
-                            <Box>
-                              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                {action.title}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {action.description}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Recent Activity */}
-            <Grid item xs={12} md={4}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Activité Récente
-              </Typography>
-              <Card
-                elevation={0}
-                sx={{
-                  borderRadius: 4,
-                  background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                  height: "fit-content",
-                }}
-              >
-                <CardContent sx={{ p: 3 }}>
-                  {recentRecipes.length > 0 ? (
-                    <Stack spacing={2}>
-                      {recentRecipes.map((recipe, index) => (
-                        <Fade in timeout={1200 + index * 100} key={recipe.id}>
-                          <Box
-                            sx={{
-                              p: 2,
-                              borderRadius: 3,
-                              backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                            }}
-                          >
-                            <Stack direction="row" spacing={2} alignItems="center">
-                              <Avatar
-                                src={recipe.photoURL}
-                                sx={{
-                                  width: 40,
-                                  height: 40,
-                                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                                }}
-                              >
-                                <RestaurantIcon />
-                              </Avatar>
-                              <Box sx={{ flexGrow: 1 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                  {recipe.name}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {formatDate(recipe.createdAt)}
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Box>
-                        </Fade>
-                      ))}
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="outlined"
-                        fullWidth
-                        sx={{ borderRadius: 3, mt: 2 }}
-                      >
-                        Voir Toutes les Recettes
-                      </Button>
-                    </Stack>
-                  ) : (
-                    <Box sx={{ textAlign: "center", py: 4 }}>
-                      <RestaurantIcon sx={{ fontSize: "3rem", color: theme.palette.text.disabled, mb: 2 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Aucune recette récente
-                      </Typography>
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        Ajouter une Recette
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-        </Box>
-      </Fade>
-    </Container>
+    <ErrorBoundary>
+      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+        {currentUser ? <Dashboard /> : <LandingPage />}
+        <Chatbot open={chatOpen} onClose={handleChatToggle} />
+      </LocalizationProvider>
+    </ErrorBoundary>
   )
-}
-
-// Composant principal
-export default function HomePage() {
-  const { currentUser } = useAuth()
-
-  return currentUser ? <UserDashboard /> : <LandingPage />
 }
