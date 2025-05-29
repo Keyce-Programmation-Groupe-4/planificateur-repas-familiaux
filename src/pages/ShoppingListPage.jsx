@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { useNavigate } from "react-router-dom"
 import {
   Container,
@@ -16,34 +16,33 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
-  TextField,
   useTheme,
   alpha,
+  AppBar,
+  Toolbar,
+  Divider,
+  LinearProgress,
+  Skeleton,
+  Tooltip,
+  Snackbar, // Added Snackbar
+  Stack,
 } from "@mui/material"
 import {
-  ShoppingCart as ShoppingCartIcon,
-  MoreVert as MoreVertIcon,
-  Refresh as RefreshIcon,
-  PictureAsPdf as PictureAsPdfIcon,
   LocalShipping as DeliveryIcon, // Nouvel icône pour la livraison
+  PlaylistAddCheck,
+  DeleteSweep,
+  Inventory2 as InventoryIcon, // Icon for stock related info
+  InfoOutlined as InfoIcon, // Icon for info tooltips
+  Sync as SyncIcon, // Icon for refresh button
+  MoreVert,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc,
-  query,
-  orderBy,
-  serverTimestamp,
-} from "firebase/firestore"
-import { jsPDF } from "jspdf"
+import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from "firebase/firestore"
 import "jspdf-autotable"
 import PriceInputDialog from "../components/ShoppingList/PriceInputDialog"
 import ShoppingListCategory from "../components/ShoppingList/ShoppingListCategory"
+import { convertToStandardUnit, formatQuantityUnit, findStandardUnit } from "../utils/unitConverter" // Assuming findStandardUnit exists
 
 // --- PDFMake Import ---
 import pdfMake from "pdfmake/build/pdfmake"
@@ -79,135 +78,336 @@ const formatCurrency = (value) => {
 function ShoppingListPage() {
   const theme = useTheme()
   const navigate = useNavigate()
-  const { currentUser, userData } = useAuth()
+  const { currentUser, userData, loading: authLoading } = useAuth()
   const familyId = userData?.familyId
 
+  const [targetWeekStart, setTargetWeekStart] = useState(getStartOfWeek(new Date()))
+  const targetWeekId = getWeekId(targetWeekStart)
+
   const [shoppingListDoc, setShoppingListDoc] = useState(null)
-  const [weeklyPlanData, setWeeklyPlanData] = useState(null)
-  const [isGenerating, setIsGenerating] = useState(false)
-  const [error, setError] = useState(null)
-  const [success, setSuccess] = useState(null)
-  const [targetWeekId, setTargetWeekId] = useState("")
-  const [weekOptions, setWeekOptions] = useState([])
-  const [anchorEl, setAnchorEl] = useState(null)
-  const [isSaving, setIsSaving] = useState(false)
-  const [isNotifying, setIsNotifying] = useState(false)
-  const [priceDialogOpen, setPriceDialogOpen] = useState(false)
-  const [selectedItem, setSelectedItem] = useState(null)
-  const [newUnitDialogOpen, setNewUnitDialogOpen] = useState(false)
-  const [newItemName, setNewItemName] = useState("")
-  const [newItemCategory, setNewItemCategory] = useState("")
-  const [newItemDialogOpen, setNewItemDialogOpen] = useState(false)
-  const [categories, setCategories] = useState([])
-  const [combinedLoading, setCombinedLoading] = useState(true)
-
-  // État pour le dialogue de demande de livraison
-  const [deliveryDialogOpen, setDeliveryDialogOpen] = useState(false)
-
   const [shoppingListItems, setShoppingListItems] = useState({}) // Holds the items grouped by category for UI
   const [isLoading, setIsLoading] = useState(true)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [isUpdatingStock, setIsUpdatingStock] = useState(false) // State for stock update process
+  const [error, setError] = useState(null)
   const [successMessage, setSuccessMessage] = useState("")
 
+  const [anchorEl, setAnchorEl] = useState(null)
+  const menuOpen = Boolean(anchorEl)
+
+  const [priceDialogOpen, setPriceDialogOpen] = useState(false)
   const [priceDialogData, setPriceDialogData] = useState({ ingredientId: null, ingredientName: "", unit: "" })
 
-  const fetchWeeklyPlans = useCallback(async () => {
-    if (!familyId) return
+  const [weekOptions, setWeekOptions] = useState([])
+  const [weeklyPlanData, setWeeklyPlanData] = useState(null)
+  const [setSuccess, setSetSuccess] = useState(null)
 
-    try {
-      const weeklyPlansRef = collection(db, "families", familyId, "weeklyPlans")
-      const q = query(weeklyPlansRef, orderBy("startDate", "desc"))
-      const querySnapshot = await getDocs(q)
+  // --- Data Fetching and List Generation/Refresh Logic ---
+  const generateOrRefreshShoppingList = useCallback(
+    async (isRefresh = false) => {
+      if (!familyId) {
+        if (!authLoading) setIsLoading(false)
+        console.warn("Waiting for familyId...")
+        return
+      }
 
-      const options = []
-      querySnapshot.forEach((doc) => {
-        const data = doc.data()
-        if (!data.isLocal) {
-          options.push({
-            id: doc.id,
-            label: `${new Date(data.startDate).toLocaleDateString()} - ${new Date(data.endDate).toLocaleDateString()}`,
-            data: data,
-          })
+      setIsGenerating(true)
+      setError(null)
+      setSuccessMessage("")
+      console.log(
+        `${isRefresh ? "Refreshing" : "Generating"} shopping list for family ${familyId}, week: ${targetWeekId}`,
+      )
+
+      try {
+        // 1. Get Weekly Plan
+        const planDocRef = doc(db, "families", familyId, "weeklyPlans", targetWeekId)
+        const planDocSnap = await getDoc(planDocRef)
+        if (!planDocSnap.exists()) {
+          throw new Error(`Aucun planning trouvé pour la semaine ${targetWeekId}.`)
         }
-      })
+        const planData = planDocSnap.data()
 
-      setWeekOptions(options)
-      if (options.length > 0) {
-        setTargetWeekId(options[0].id)
-        setWeeklyPlanData(options[0].data)
+        // 2. Extract Unique Recipe IDs
+        const recipeIds = new Set()
+        Object.values(planData.days).forEach((day) => {
+          Object.values(day).forEach((recipeId) => {
+            if (recipeId) recipeIds.add(recipeId)
+          })
+        })
+        if (recipeIds.size === 0) {
+          throw new Error("Le planning ne contient aucune recette.")
+        }
+
+        // 3. Fetch Recipe Details
+        const recipePromises = Array.from(recipeIds).map((id) => getDoc(doc(db, "recipes", id)))
+        const recipeDocs = await Promise.all(recipePromises)
+        const recipesData = recipeDocs.filter((doc) => doc.exists()).map((doc) => ({ id: doc.id, ...doc.data() }))
+
+        // 4. Create Raw Ingredient List (Gross Requirements)
+        const rawIngredientItems = []
+        recipesData.forEach((recipe) => {
+          if (recipe.ingredientsList && Array.isArray(recipe.ingredientsList)) {
+            recipe.ingredientsList.forEach((item) => {
+              if (item.ingredientId && item.quantity && item.unit) {
+                rawIngredientItems.push({ ...item })
+              } else {
+                console.warn(`Invalid ingredient in recipe ${recipe.id}:`, item)
+              }
+            })
+          }
+        })
+        if (rawIngredientItems.length === 0) {
+          throw new Error("Aucun ingrédient valide trouvé dans les recettes.")
+        }
+
+        // 5. Fetch Unique Ingredient Details
+        const uniqueIngredientIds = new Set(rawIngredientItems.map((item) => item.ingredientId))
+        const ingredientPromises = Array.from(uniqueIngredientIds).map((id) => getDoc(doc(db, "ingredients", id)))
+        const ingredientDocs = await Promise.all(ingredientPromises)
+        const ingredientDetailsMap = {}
+        ingredientDocs.forEach((doc) => {
+          if (doc.exists()) {
+            ingredientDetailsMap[doc.id] = { id: doc.id, ...doc.data() }
+          }
+        })
+
+        // 6. Fetch Current Stock
+        const stockItemsRef = collection(db, "families", familyId, "stockItems")
+        const stockSnapshot = await getDocs(stockItemsRef)
+        const stockItemsMap = {} // Key: ingredientId, Value: { quantity, unit }
+        stockSnapshot.forEach((doc) => {
+          stockItemsMap[doc.id] = doc.data()
+        })
+        console.log("Current stock fetched:", stockItemsMap)
+
+        // 7. Aggregate, Convert, Calculate Net Quantity and Costs
+        const aggregatedList = {} // Key: ingredientId
+        rawIngredientItems.forEach((item) => {
+          const details = ingredientDetailsMap[item.ingredientId]
+          if (!details || !details.units) {
+            console.warn(`Details/units missing for ingredient ${item.ingredientId}`)
+            return // Skip this ingredient if details are missing
+          }
+
+          const ingredientId = item.ingredientId
+          const grossQuantity = item.quantity
+          const requiredUnit = item.unit
+
+          // Aggregate gross quantities first (handling potential different units for the same ingredient)
+          if (!aggregatedList[ingredientId]) {
+            aggregatedList[ingredientId] = {
+              ingredientId: ingredientId,
+              name: details.name || "Inconnu",
+              category: details.category || "Autre",
+              unitsData: details.units,
+              grossQuantities: {}, // Stores { unit: totalGrossQuantity }
+              stockInfo: stockItemsMap[ingredientId] || {
+                quantity: 0,
+                unit: findStandardUnit(details.units) || requiredUnit,
+              }, // Default to 0 stock
+              netQuantities: {}, // Stores { unit: netQuantity }
+              costs: {}, // Stores { unit: { theoretical, actual, needsPriceInput, priceSource } }
+            }
+          }
+          if (!aggregatedList[ingredientId].grossQuantities[requiredUnit]) {
+            aggregatedList[ingredientId].grossQuantities[requiredUnit] = 0
+          }
+          aggregatedList[ingredientId].grossQuantities[requiredUnit] += grossQuantity
+        })
+
+        // Now, for each aggregated ingredient, calculate net quantity and costs
+        Object.values(aggregatedList).forEach((aggItem) => {
+          const details = ingredientDetailsMap[aggItem.ingredientId]
+          const stockInfo = aggItem.stockInfo
+          let totalGrossInStandard = 0
+          let totalStockInStandard = 0
+          const standardUnit = findStandardUnit(details.units)
+
+          if (!standardUnit) {
+            console.warn(`No standard unit found for ${aggItem.name}, calculations might be inaccurate.`)
+            // Handle this case: maybe skip stock deduction or use a default logic?
+          }
+
+          // Convert all gross quantities to standard unit
+          Object.entries(aggItem.grossQuantities).forEach(([unit, quantity]) => {
+            if (unit === standardUnit) {
+              totalGrossInStandard += quantity
+            } else {
+              const conversion = convertToStandardUnit(quantity, unit, details.units)
+              if (conversion && conversion.standardUnit === standardUnit) {
+                totalGrossInStandard += conversion.standardQuantity
+              } else {
+                console.warn(
+                  `Cannot convert gross quantity ${quantity} ${unit} to standard unit ${standardUnit} for ${aggItem.name}`,
+                )
+                // Decide how to handle: add as separate item? ignore? For now, we might ignore conversion errors.
+              }
+            }
+          })
+
+          // Convert stock quantity to standard unit
+          if (stockInfo.quantity > 0 && standardUnit) {
+            if (stockInfo.unit === standardUnit) {
+              totalStockInStandard = stockInfo.quantity
+            } else {
+              const conversion = convertToStandardUnit(stockInfo.quantity, stockInfo.unit, details.units)
+              if (conversion && conversion.standardUnit === standardUnit) {
+                totalStockInStandard = conversion.standardQuantity
+              } else {
+                console.warn(
+                  `Cannot convert stock quantity ${stockInfo.quantity} ${stockInfo.unit} to standard unit ${standardUnit} for ${aggItem.name}`,
+                )
+              }
+            }
+          }
+
+          aggItem.totalGrossInStandard = totalGrossInStandard
+          aggItem.totalStockInStandard = totalStockInStandard
+          aggItem.standardUnit = standardUnit
+
+          // Calculate Net Quantity in standard unit
+          const netQuantityInStandard = Math.max(0, totalGrossInStandard - totalStockInStandard)
+          aggItem.netQuantityInStandard = netQuantityInStandard
+
+          // Calculate Costs (using standard unit price if available)
+          let pricePerStandardUnit = null
+          let priceSource = null
+          let needsInput = true
+          if (
+            standardUnit &&
+            details.units[standardUnit] &&
+            typeof details.units[standardUnit].standardPrice === "number"
+          ) {
+            pricePerStandardUnit = details.units[standardUnit].standardPrice
+            priceSource = details.units[standardUnit].priceSource || "unknown"
+            needsInput = false
+          } else {
+            // If standard unit price is missing, mark as needs input
+            needsInput = true
+          }
+
+          aggItem.costs = {
+            theoretical: pricePerStandardUnit !== null ? totalGrossInStandard * pricePerStandardUnit : null,
+            actual: pricePerStandardUnit !== null ? netQuantityInStandard * pricePerStandardUnit : null,
+            needsPriceInput: needsInput,
+            priceSource: priceSource,
+            pricePerStandardUnit: pricePerStandardUnit,
+          }
+        })
+
+        // 8. Prepare Firestore Document Data
+        const listItemsForFirestore = []
+        let totalTheoreticalCost = 0
+        let totalActualCost = 0
+
+        Object.values(aggregatedList).forEach((aggItem) => {
+          // Only add items that need to be bought (net quantity > 0)
+          if (aggItem.netQuantityInStandard > 0) {
+            const itemData = {
+              itemId: `${aggItem.ingredientId}_${aggItem.standardUnit || "unit"}`, // Use standard unit in ID
+              ingredientId: aggItem.ingredientId,
+              name: aggItem.name,
+              category: aggItem.category,
+              // Store quantities in standard unit for consistency
+              grossQuantity: aggItem.totalGrossInStandard,
+              stockQuantity: aggItem.totalStockInStandard,
+              netQuantity: aggItem.netQuantityInStandard,
+              unit: aggItem.standardUnit || "unité", // Use standard unit
+              // Costs
+              theoreticalItemCost: aggItem.costs.theoretical,
+              actualItemCost: aggItem.costs.actual,
+              needsPriceInput: aggItem.costs.needsPriceInput,
+              priceSource: aggItem.costs.priceSource,
+              // Status
+              isChecked: false, // Default to not checked
+            }
+            listItemsForFirestore.push(itemData)
+
+            if (typeof itemData.theoreticalItemCost === "number") {
+              totalTheoreticalCost += itemData.theoreticalItemCost
+            }
+            if (typeof itemData.actualItemCost === "number") {
+              totalActualCost += itemData.actualItemCost
+            }
+          } else {
+            // Optionally, still calculate theoretical cost for items fully in stock
+            if (typeof aggItem.costs.theoretical === "number") {
+              totalTheoreticalCost += aggItem.costs.theoretical
+            }
+          }
+        })
+
+        const shoppingListDocData = {
+          weekId: targetWeekId,
+          familyId: familyId,
+          createdAt: isRefresh ? shoppingListDoc?.createdAt || serverTimestamp() : serverTimestamp(), // Keep original creation date on refresh
+          lastGeneratedAt: serverTimestamp(),
+          status: "active", // or 'refreshed'
+          totalTheoreticalCost: totalTheoreticalCost,
+          totalActualCost: totalActualCost,
+          items: listItemsForFirestore,
+        }
+
+        // 9. Save to Firestore
+        const listDocRef = doc(db, "families", familyId, "shoppingLists", targetWeekId)
+        await setDoc(listDocRef, shoppingListDocData, { merge: true }) // Use setDoc with merge for upsert
+
+        console.log("Shopping list saved/updated successfully:", shoppingListDocData)
+        setShoppingListDoc(shoppingListDocData) // Update local state with the full document
+        setSuccessMessage(isRefresh ? "Liste actualisée avec succès !" : "Liste de courses générée avec succès !")
+        setTimeout(() => setSuccessMessage(""), 3000)
+      } catch (err) {
+        console.error(`Error ${isRefresh ? "refreshing" : "generating"} shopping list: `, err)
+        setError(err.message || `Erreur lors de ${isRefresh ? "l'actualisation" : "la génération"} de la liste.`)
+      } finally {
+        setIsGenerating(false)
+        setIsLoading(false) // Also set main loading to false
       }
-    } catch (err) {
-      console.error("Error fetching weekly plans:", err)
-      setError("Erreur lors du chargement des plans hebdomadaires.")
-    }
-  }, [familyId])
+    },
+    [familyId, targetWeekId, authLoading, shoppingListDoc],
+  ) // Added shoppingListDoc dependency for refresh
 
-  const fetchCategories = useCallback(async () => {
-    if (!familyId) return
-
-    try {
-      const categoriesRef = collection(db, "families", familyId, "categories")
-      const querySnapshot = await getDocs(categoriesRef)
-
-      const fetchedCategories = []
-      querySnapshot.forEach((doc) => {
-        fetchedCategories.push({ id: doc.id, ...doc.data() })
-      })
-
-      setCategories(fetchedCategories)
-    } catch (err) {
-      console.error("Error fetching categories:", err)
-    }
-  }, [familyId])
-
-  const fetchShoppingList = useCallback(async () => {
-    if (!familyId || !targetWeekId) {
-      setCombinedLoading(false)
-      return
-    }
-
-    try {
-      const shoppingListRef = doc(db, "families", familyId, "shoppingLists", targetWeekId)
-      const docSnap = await getDoc(shoppingListRef)
-
-      if (docSnap.exists()) {
-        setShoppingListDoc(docSnap.data())
-      } else {
-        setShoppingListDoc(null)
+  // --- Fetch Existing List on Load ---
+  useEffect(() => {
+    const fetchExistingList = async () => {
+      if (!familyId) {
+        if (!authLoading) setIsLoading(false)
+        return
       }
-    } catch (err) {
-      console.error("Error fetching shopping list:", err)
-      setError("Erreur lors du chargement de la liste de courses.")
-    } finally {
-      setCombinedLoading(false)
-      setIsLoading(false)
+      setIsLoading(true)
+      setError(null)
+      const listDocRef = doc(db, "families", familyId, "shoppingLists", targetWeekId)
+      try {
+        const docSnap = await getDoc(listDocRef)
+        if (docSnap.exists()) {
+          console.log("Existing shopping list found for", targetWeekId)
+          setShoppingListDoc(docSnap.data())
+        } else {
+          console.log("No existing shopping list for", targetWeekId, ". Need to generate.")
+          setShoppingListDoc(null) // Explicitly set to null if not found
+          // Optionally trigger generation automatically if no list exists?
+          // generateOrRefreshShoppingList(false);
+        }
+      } catch (err) {
+        console.error("Error fetching existing shopping list:", err)
+        setError("Erreur lors du chargement de la liste existante.")
+      } finally {
+        setIsLoading(false)
+      }
     }
-  }, [familyId, targetWeekId])
 
-  useEffect(() => {
-    setCombinedLoading(true)
-    fetchWeeklyPlans()
-    fetchCategories()
-  }, [fetchWeeklyPlans, fetchCategories])
-
-  useEffect(() => {
-    if (targetWeekId) {
-      fetchShoppingList()
+    if (!authLoading) {
+      fetchExistingList()
     }
-  }, [targetWeekId, fetchShoppingList])
+  }, [familyId, targetWeekId, authLoading])
 
   // --- UI Event Handlers ---
   const handleMenuClick = (event) => setAnchorEl(event.currentTarget)
   const handleMenuClose = () => setAnchorEl(null)
-  const generateOrRefreshShoppingList = (isRefresh) => {
-    // Placeholder function for generating or refreshing the shopping list
-    console.log(`Generating or refreshing shopping list. isRefresh: ${isRefresh}`)
-  }
   const handleRefresh = () => {
     handleMenuClose()
     generateOrRefreshShoppingList(true)
   } // Call with isRefresh = true
-
   const handleWeekChange = (event) => {
     const selectedWeekId = event.target.value
     setTargetWeekId(selectedWeekId)
@@ -229,7 +429,7 @@ function ShoppingListPage() {
 
     setIsGenerating(true)
     setError(null)
-    setSuccess(null)
+    setSetSuccess(null)
 
     try {
       // Logique de génération de la liste de courses
@@ -245,8 +445,8 @@ function ShoppingListPage() {
         totalActualCost: 0,
       })
 
-      setSuccess("Liste de courses générée avec succès!")
-      fetchShoppingList()
+      setSetSuccess("Liste de courses générée avec succès!")
+      //fetchShoppingList()
     } catch (err) {
       console.error("Error generating shopping list:", err)
       setError("Erreur lors de la génération de la liste de courses.")
@@ -383,7 +583,7 @@ function ShoppingListPage() {
   const handleOpenPriceDialog = useCallback(
     (ingredientId, ingredientName, unit) => {
       // We need the standard unit price, so we pass the standard unit
-      const itemDetails = Object.values(shoppingListItems).find((i) => i.ingredientId === ingredientId)
+      const itemDetails = Object.values(shoppingListItems || {}).find((i) => i.ingredientId === ingredientId)
       const standardUnit = itemDetails?.unit
       if (!standardUnit) {
         alert("Impossible de déterminer l'unité standard pour cet ingrédient.")
@@ -423,8 +623,21 @@ function ShoppingListPage() {
     }
   }
 
+  // --- Fonction pour demander une livraison ---
+  const handleRequestDelivery = () => {
+    handleMenuClose()
+    if (!shoppingListDoc || !shoppingListDoc.items || shoppingListDoc.items.length === 0) {
+      setError("Veuillez d'abord générer une liste de courses avec des articles.")
+      return
+    }
+
+    // Stocker l'ID de la liste de courses dans sessionStorage pour y accéder dans la page de demande
+    sessionStorage.setItem("currentShoppingListId", targetWeekId)
+    navigate("/delivery/request")
+  }
+
   // --- Total Cost Calculation ---
-  const { totalActualCostToPay, totalTheoreticalCostValue } = React.useMemo(() => {
+  const { totalActualCostToPay, totalTheoreticalCostValue } = useMemo(() => {
     let actual = 0
     const theoretical = shoppingListDoc?.totalTheoreticalCost || 0 // Get theoretical from doc if available
 
@@ -440,35 +653,102 @@ function ShoppingListPage() {
     return { totalActualCostToPay: actual, totalTheoreticalCostValue: theoretical }
   }, [shoppingListDoc])
 
+  // --- Export PDF Handler ---
   const handleExportPdf = () => {
-    if (!shoppingListDoc) return
+    handleMenuClose()
+    console.log("Exporting PDF with data:", shoppingListItems)
 
-    const doc = new jsPDF()
-    doc.setFontSize(18)
-    doc.text("Liste de courses", 14, 22)
-    doc.setFontSize(11)
-    doc.text(
-      `Semaine du ${new Date(weeklyPlanData.startDate).toLocaleDateString()} au ${new Date(weeklyPlanData.endDate).toLocaleDateString()}`,
-      14,
-      30,
-    )
-
-    // Logique d'export PDF
-    // ...
-
-    doc.save(`liste_courses_${targetWeekId}.pdf`)
-  }
-
-  // Fonction pour ouvrir le dialogue de demande de livraison
-  const handleRequestDelivery = () => {
-    if (!shoppingListDoc) {
-      setError("Veuillez d'abord générer une liste de courses.")
+    if (!shoppingListItems || Object.keys(shoppingListItems).length === 0) {
+      alert("La liste de courses est vide, impossible d'exporter.")
       return
     }
 
-    // Stocker l'ID de la liste de courses dans sessionStorage pour y accéder dans la page de demande
-    sessionStorage.setItem("currentShoppingListId", targetWeekId)
-    navigate("/delivery/request")
+    const content = []
+
+    // Title and date
+    content.push({ text: "Liste de Courses", style: "header", alignment: "center" })
+    content.push({
+      text: `Semaine du ${targetWeekStart.toLocaleDateString("fr-FR")}`,
+      style: "subheader",
+      alignment: "center",
+      margin: [0, 0, 0, 10],
+    })
+
+    // Costs Summary
+    content.push({
+      columns: [
+        { text: `Coût Réel à Payer: ${formatCurrency(totalActualCostToPay)}`, style: "costSummary" },
+        {
+          text: `Coût Théorique (sans stock): ${formatCurrency(totalTheoreticalCostValue)}`,
+          style: "costSummary",
+          alignment: "right",
+        },
+      ],
+      margin: [0, 0, 0, 15],
+    })
+
+    // Items by category
+    Object.entries(shoppingListItems).forEach(([category, items]) => {
+      content.push({ text: category, style: "categoryHeader", margin: [0, 10, 0, 5] })
+
+      const categoryItemsContent = items.map((item) => {
+        const quantityText = formatQuantityUnit(item.netQuantity, item.unit) // Display net quantity
+        const costText =
+          item.actualItemCost !== null ? formatCurrency(item.actualItemCost) : item.needsPriceInput ? "(Prix?!)" : ""
+        const itemStyle = item.isChecked ? { decoration: "lineThrough", color: "grey" } : {}
+
+        return [
+          {
+            text: item.isChecked ? { text: "✓", bold: true, color: "green" } : { text: "☐" },
+            style: ["checkbox", itemStyle],
+          }, // Checkbox column
+          { text: item.name, style: ["itemText", itemStyle] },
+          { text: quantityText, style: ["itemText", itemStyle], alignment: "right" },
+          { text: costText, style: ["itemText", itemStyle], alignment: "right" },
+        ]
+      })
+
+      content.push({
+        layout: "lightHorizontalLines", // optional
+        table: {
+          headerRows: 0,
+          widths: ["auto", "*", "auto", "auto"], // Widths for checkbox, name, quantity, cost
+          body: categoryItemsContent,
+        },
+        // Remove borders
+        layout: {
+          hLineWidth: (i, node) => (i === 0 || i === node.table.body.length ? 0 : 0.5),
+          vLineWidth: (i, node) => 0,
+          hLineColor: (i, node) => "#dddddd",
+          paddingLeft: (i, node) => (i === 0 ? 0 : 8), // Padding for checkbox
+          paddingRight: (i, node) => 8,
+          paddingTop: (i, node) => 4,
+          paddingBottom: (i, node) => 4,
+        },
+      })
+    })
+
+    const docDefinition = {
+      content: content,
+      styles: {
+        header: { fontSize: 18, bold: true, margin: [0, 0, 0, 10] },
+        subheader: { fontSize: 14, margin: [0, 0, 0, 10], color: "gray" },
+        categoryHeader: { fontSize: 14, bold: true, margin: [0, 10, 0, 5], color: theme.palette.primary.main },
+        itemText: { fontSize: 10 },
+        costSummary: { fontSize: 12, bold: true, margin: [0, 5, 0, 5] },
+        checkbox: { fontSize: 12, margin: [0, 0, 5, 0] },
+      },
+      defaultStyle: {
+        // font: 'Roboto' // Ensure you have Roboto font configured if needed
+      },
+    }
+
+    try {
+      pdfMake.createPdf(docDefinition).download(`liste_courses_${targetWeekId}.pdf`)
+    } catch (e) {
+      console.error("Error creating PDF:", e)
+      alert("Une erreur est survenue lors de la création du PDF.")
+    }
   }
 
   // --- Process Firestore Doc into UI State ---
@@ -497,228 +777,223 @@ function ShoppingListPage() {
   }, [shoppingListDoc])
 
   // --- Render Logic ---
-  if (combinedLoading) {
+  if (isLoading) {
     return (
-      <Container maxWidth="lg">
-        <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "50vh" }}>
-          <CircularProgress />
-        </Box>
+      <Container maxWidth="md" sx={{ py: 4 }}>
+        <Skeleton variant="text" width="60%" height={40} />
+        <Skeleton variant="rectangular" width="100%" height={60} sx={{ mt: 2, borderRadius: 2 }} />
+        <Skeleton variant="rectangular" width="100%" height={200} sx={{ mt: 2, borderRadius: 2 }} />
       </Container>
     )
   }
 
   return (
-    <Container maxWidth="lg">
-      <Box sx={{ mb: 4 }}>
-        <Typography
-          variant="h4"
-          component="h1"
-          gutterBottom
-          sx={{ fontWeight: "bold", display: "flex", alignItems: "center" }}
-        >
-          <ShoppingCartIcon sx={{ mr: 1 }} />
-          Liste de Courses
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          Générez et gérez votre liste de courses basée sur votre planification de repas.
-        </Typography>
-      </Box>
-
-      <Paper
-        elevation={0}
+    <Box sx={{ pb: 10 }}>
+      {" "}
+      {/* Add padding bottom for FAB */}
+      {/* App Bar for Title and Actions */}
+      <AppBar
+        position="sticky"
+        color="default"
+        elevation={1}
         sx={{
-          p: 3,
-          mb: 4,
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
+          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
         }}
       >
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: { xs: "column", sm: "row" },
-            alignItems: { xs: "stretch", sm: "center" },
-            mb: 2,
-            gap: 2,
-          }}
-        >
-          <TextField
-            select
-            label="Semaine"
-            value={targetWeekId}
-            onChange={handleWeekChange}
-            variant="outlined"
-            fullWidth
-            sx={{ flexGrow: 1 }}
-            disabled={combinedLoading || isGenerating}
-          >
-            {weekOptions.map((option) => (
-              <MenuItem key={option.id} value={option.id}>
-                {option.label}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Button
-              variant="contained"
-              startIcon={<RefreshIcon />}
-              onClick={handleGenerateList}
-              disabled={combinedLoading || isSaving || isNotifying || !weeklyPlanData || weeklyPlanData.isLocal}
-              sx={{
-                borderRadius: 3,
-                px: { xs: 2, sm: 3 },
-                py: { xs: 0.5, sm: 1 },
-                fontSize: { xs: "0.75rem", sm: "0.875rem" },
-              }}
-            >
-              {isGenerating ? <CircularProgress size={24} /> : "Générer"}
-            </Button>
-
-            <IconButton
-              aria-label="more"
-              aria-controls="long-menu"
-              aria-haspopup="true"
-              onClick={handleMenuOpen}
-              disabled={combinedLoading || isGenerating || isSaving || isNotifying || !shoppingListDoc}
-            >
-              <MoreVertIcon />
-            </IconButton>
-
-            <Menu id="long-menu" anchorEl={anchorEl} keepMounted open={Boolean(anchorEl)} onClose={handleMenuClose}>
-              <MenuItem onClick={handleExportPdf}>
-                <ListItemIcon>
-                  <PictureAsPdfIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Exporter en PDF</ListItemText>
-              </MenuItem>
-              <MenuItem onClick={handleRequestDelivery} disabled={!shoppingListDoc || isGenerating}>
-                <ListItemIcon>
-                  <DeliveryIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText>Se faire livrer</ListItemText>
-              </MenuItem>
-            </Menu>
+        <Toolbar>
+          <InventoryIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
+          <Box sx={{ flexGrow: 1 }}>
+            <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+              Liste de Courses
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Semaine du {targetWeekStart.toLocaleDateString("fr-FR")}
+            </Typography>
           </Box>
-        </Box>
-
-        {/* Bouton de livraison principal */}
-        <Button
-          variant="contained"
-          startIcon={<DeliveryIcon />}
-          onClick={handleRequestDelivery}
-          disabled={combinedLoading || isSaving || isNotifying || !weeklyPlanData || !shoppingListDoc}
-          sx={{
-            borderRadius: 3,
-            ml: 1,
-            px: { xs: 2, sm: 3 },
-            py: { xs: 0.5, sm: 1 },
-            fontSize: { xs: "0.75rem", sm: "0.875rem" },
-            background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.secondary.dark} 100%)`,
-            boxShadow: `0 4px 20px ${alpha(theme.palette.secondary.main, 0.3)}`,
-            "&:hover": {
-              transform: "translateY(-2px)",
-              boxShadow: `0 6px 25px ${alpha(theme.palette.secondary.main, 0.4)}`,
-            },
-            transition: "all 0.3s ease",
-          }}
-        >
-          Se faire livrer
-        </Button>
-
+          <Tooltip title="Actualiser la liste avec le stock actuel">
+            <span>
+              {" "}
+              {/* Span needed for disabled button tooltip */}
+              <IconButton onClick={handleRefresh} disabled={isGenerating || isUpdatingStock}>
+                {isGenerating ? <CircularProgress size={24} /> : <SyncIcon />}
+              </IconButton>
+            </span>
+          </Tooltip>
+          <IconButton
+            aria-label="more"
+            aria-controls="long-menu"
+            aria-haspopup="true"
+            onClick={handleMenuClick}
+            disabled={isGenerating || isUpdatingStock}
+          >
+            <MoreVert />
+          </IconButton>
+          <Menu id="long-menu" anchorEl={anchorEl} keepMounted open={menuOpen} onClose={handleMenuClose}>
+            <MenuItem onClick={handleUncheckAll}>
+              <ListItemIcon>
+                <PlaylistAddCheck fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Tout décocher</ListItemText>
+            </MenuItem>
+            <MenuItem onClick={handleClearChecked}>
+              <ListItemIcon>
+                <DeleteSweep fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Supprimer les articles cochés</ListItemText>
+            </MenuItem>
+            <Divider />
+            <MenuItem onClick={handleExportPdf}>
+              <ListItemIcon>
+                <PictureAsPdf fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Exporter en PDF</ListItemText>
+            </MenuItem>
+            <MenuItem
+              onClick={handleRequestDelivery}
+              disabled={!shoppingListDoc || !shoppingListDoc.items || shoppingListDoc.items.length === 0}
+            >
+              <ListItemIcon>
+                <DeliveryIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Se faire livrer</ListItemText>
+            </MenuItem>
+          </Menu>
+        </Toolbar>
+        {/* Progress indicator for stock updates */}
+        {isUpdatingStock && (
+          <LinearProgress color="secondary" sx={{ position: "absolute", bottom: 0, left: 0, width: "100%" }} />
+        )}
+      </AppBar>
+      <Container maxWidth="md" sx={{ mt: 3 }}>
         {error && (
-          <Alert severity="error" sx={{ mt: 2 }}>
+          <Alert severity="error" sx={{ mb: 2, borderRadius: 3 }}>
             {error}
           </Alert>
         )}
-        {success && (
-          <Alert severity="success" sx={{ mt: 2 }}>
-            {success}
-          </Alert>
+        {successMessage && (
+          <Snackbar
+            open={!!successMessage}
+            autoHideDuration={3000}
+            onClose={() => setSuccessMessage("")}
+            message={successMessage}
+          />
         )}
 
-        {combinedLoading ? (
-          <Box sx={{ display: "flex", justifyContent: "center", my: 4 }}>
-            <CircularProgress />
+        {Object.keys(shoppingListItems).length === 0 && !isGenerating && (
+          <Paper
+            elevation={0}
+            sx={{
+              p: 3,
+              textAlign: "center",
+              borderRadius: 4,
+              background: alpha(theme.palette.info.main, 0.05),
+              border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
+            }}
+          >
+            <Typography color="text.secondary">
+              Votre liste de courses est vide pour cette semaine.
+              {shoppingListDoc === null && " Cliquez sur Actualiser pour la générer si un planning existe."}
+            </Typography>
+          </Paper>
+        )}
+
+        {/* Costs Summary */}
+        {Object.keys(shoppingListItems).length > 0 && (
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2,
+              mb: 3,
+              borderRadius: 4,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.05)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+              border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Coût Réel à Payer:
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.success.dark }}>
+                  {formatCurrency(totalActualCostToPay)}
+                </Typography>
+              </Box>
+              <Divider orientation="vertical" flexItem />
+              <Box sx={{ textAlign: "right" }}>
+                <Typography variant="body2" color="text.secondary">
+                  Coût Théorique (sans stock):
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                  {formatCurrency(totalTheoreticalCostValue)}
+                </Typography>
+              </Box>
+            </Stack>
+            <Tooltip title="Le coût réel est basé sur les articles non cochés et déduit le stock. Le coût théorique est basé sur tous les ingrédients des recettes planifiées, sans déduire le stock.">
+              <IconButton size="small" sx={{ position: "absolute", top: 8, right: 8 }}>
+                <InfoIcon fontSize="small" color="action" />
+              </IconButton>
+            </Tooltip>
+          </Paper>
+        )}
+
+        {/* Bouton de livraison principal - affiché seulement s'il y a des articles */}
+        {Object.keys(shoppingListItems).length > 0 && (
+          <Box sx={{ mb: 3, textAlign: "center" }}>
+            <Button
+              variant="contained"
+              startIcon={<DeliveryIcon />}
+              onClick={handleRequestDelivery}
+              disabled={
+                isGenerating ||
+                isUpdatingStock ||
+                !shoppingListDoc ||
+                !shoppingListDoc.items ||
+                shoppingListDoc.items.length === 0
+              }
+              sx={{
+                borderRadius: 3,
+                px: 4,
+                py: 1.5,
+                fontSize: "1rem",
+                background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.secondary.dark} 100%)`,
+                boxShadow: `0 4px 20px ${alpha(theme.palette.secondary.main, 0.3)}`,
+                "&:hover": {
+                  transform: "translateY(-2px)",
+                  boxShadow: `0 6px 25px ${alpha(theme.palette.secondary.main, 0.4)}`,
+                },
+                transition: "all 0.3s ease",
+              }}
+            >
+              Se faire livrer
+            </Button>
           </Box>
-        ) : !shoppingListDoc ? (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            Aucune liste de courses générée pour cette semaine. Cliquez sur "Générer" pour créer une liste basée sur
-            votre planification.
-          </Alert>
-        ) : (
-          <Box sx={{ mt: 3 }}>
-            {/* Contenu de la liste de courses */}
-            {/* Costs Summary */}
-            {Object.keys(shoppingListItems).length > 0 && (
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  mb: 3,
-                  borderRadius: 4,
-                  background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.main, 0.05)} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-                }}
-              >
-                {/*<Stack direction="row" justifyContent="space-between" alignItems="center" spacing={2}>
-                  <Box>
-                    <Typography variant="body2" color="text.secondary">
-                      Coût Réel à Payer:
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 600, color: theme.palette.success.dark }}>
-                      {formatCurrency(totalActualCostToPay)}
-                    </Typography>
-                  </Box>
-                  <Divider orientation="vertical" flexItem />
-                  <Box sx={{ textAlign: "right" }}>
-                    <Typography variant="body2" color="text.secondary">
-                      Coût Théorique (sans stock):
-                    </Typography>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                      {formatCurrency(totalTheoreticalCostValue)}
-                    </Typography>
-                  </Box>
-                </Stack>
-                <Tooltip title="Le coût réel est basé sur les articles non cochés et déduit le stock. Le coût théorique est basé sur tous les ingrédients des recettes planifiées, sans déduire le stock.">
-                  <IconButton size="small" sx={{ position: "absolute", top: 8, right: 8 }}>
-                    <InfoIcon fontSize="small" color="action" />
-                  </IconButton>
-                </Tooltip>*/}
-              </Paper>
-            )}
+        )}
 
-            {/* List Items */}
-            <List sx={{ p: 0 }}>
-              {Object.entries(shoppingListItems).map(([category, items]) => (
-                <ShoppingListCategory
-                  key={category}
-                  category={category}
-                  items={items}
-                  onToggleCheck={handleToggleCheck}
-                  onPriceInputClick={handleOpenPriceDialog}
-                />
-              ))}
-            </List>
-
-            {/* Add Item Manually FAB? - Maybe later */}
-            {/* <Fab color="primary" aria-label="add" sx={{ position: 'fixed', bottom: 16, right: 16 }}>
-              <AddIcon />
-            </Fab> */}
-
-            {/* Price Input Dialog */}
-            <PriceInputDialog
-              open={priceDialogOpen}
-              onClose={handleClosePriceDialog}
-              onSave={handleSavePrice}
-              ingredientName={priceDialogData.ingredientName}
-              unit={priceDialogData.unit}
-              ingredientId={priceDialogData.ingredientId}
+        {/* List Items */}
+        <List sx={{ p: 0 }}>
+          {Object.entries(shoppingListItems).map(([category, items]) => (
+            <ShoppingListCategory
+              key={category}
+              category={category}
+              items={items}
+              onToggleCheck={handleToggleCheck}
+              onPriceInputClick={handleOpenPriceDialog}
             />
-          </Box>
-        )}
-      </Paper>
-    </Container>
+          ))}
+        </List>
+
+        {/* Price Input Dialog */}
+        <PriceInputDialog
+          open={priceDialogOpen}
+          onClose={handleClosePriceDialog}
+          onSave={handleSavePrice}
+          ingredientName={priceDialogData.ingredientName}
+          unit={priceDialogData.unit}
+          ingredientId={priceDialogData.ingredientId}
+        />
+      </Container>
+    </Box>
   )
 }
 
