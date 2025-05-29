@@ -84,7 +84,7 @@ function ShoppingListPage() {
 
   const [shoppingListDoc, setShoppingListDoc] = useState(null)
   const [weeklyPlanData, setWeeklyPlanData] = useState(null)
-  const [isGenerating, setIsGenerating] = useState(isGenerating)
+  const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
   const [targetWeekId, setTargetWeekId] = useState("")
