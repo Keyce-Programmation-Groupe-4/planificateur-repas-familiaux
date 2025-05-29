@@ -917,4 +917,3 @@ export default function IngredientsPage() {
     </Box>
   );
 }
-

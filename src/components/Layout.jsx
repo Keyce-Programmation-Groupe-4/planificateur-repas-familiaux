@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import Logo1 from '/public/Logo1.png'
+import Logo1 from "/public/Logo1.png"
 import { Link as RouterLink, useNavigate, useLocation } from "react-router-dom"
 import {
   AppBar,
@@ -39,10 +39,10 @@ import {
   Logout as LogoutIcon,
   Login as LoginIcon,
   PersonAdd as PersonAddIcon,
-  LocalDining as LocalDiningIcon,
-  Fastfood as FastfoodIcon,
   Kitchen as KitchenIcon,
   LocalGroceryStore as LocalGroceryStoreIcon,
+  ShoppingCart as ShoppingCartIcon,
+  LocalShipping as LocalShippingIcon,
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { auth } from "../firebaseConfig"
@@ -52,9 +52,11 @@ const navigationItems = [
   { path: "/", label: "Accueil", icon: HomeIcon },
   { path: "/planner", label: "Planificateur", icon: CalendarIcon },
   { path: "/recipes", label: "Mes Recettes", icon: RestaurantIcon },
+  { path: "/shopping-list", label: "Liste de Courses", icon: ShoppingCartIcon },
   { path: "/stock", label: "Garde Manger", icon: KitchenIcon },
   { path: "/ingredients", label: "Ingrédients", icon: LocalGroceryStoreIcon },
   { path: "/family", label: "Ma Famille", icon: PeopleIcon },
+  { path: "/deliveries", label: "Mes Livraisons", icon: LocalShippingIcon }, // Ajout du lien vers les livraisons
 ]
 
 export default function Layout({ children }) {
@@ -127,7 +129,14 @@ export default function Layout({ children }) {
             gap: 1,
           }}
         >
-          <div><img src={Logo1} alt="Logo de l'application" style={{ width: '40px', height: 'auto' }} />  EasyMeal 2025</div>
+          <div>
+            <img
+              src={Logo1 || "/placeholder.svg"}
+              alt="Logo de l'application"
+              style={{ width: "40px", height: "auto" }}
+            />{" "}
+            EasyMeal 2025
+          </div>
         </Typography>
         <IconButton onClick={handleDrawerToggle} sx={{ color: theme.palette.text.secondary }}>
           <CloseIcon />
@@ -334,7 +343,14 @@ export default function Layout({ children }) {
               transition: "transform 0.2s ease",
             }}
           >
-            <div><img src={Logo1} alt="Logo de l'application" style={{ width: '50px', height: 'auto' }} />    EasyMeal 2025</div>
+            <div>
+              <img
+                src={Logo1 || "/placeholder.svg"}
+                alt="Logo de l'application"
+                style={{ width: "50px", height: "auto" }}
+              />{" "}
+              EasyMeal 2025
+            </div>
           </Typography>
 
           {/* Desktop Navigation */}

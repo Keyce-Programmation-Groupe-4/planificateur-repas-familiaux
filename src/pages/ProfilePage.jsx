@@ -1,4 +1,3 @@
-
 "use client"
 
 import { useState, useEffect } from "react"
@@ -54,14 +53,13 @@ import CalendarIcon from "@mui/icons-material/CalendarMonth"
 import CakeIcon from '@mui/icons-material/Cake'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
-import DashboardIcon from '@mui/icons-material/Dashboard'
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
 import { DatePicker } from "@mui/x-date-pickers/DatePicker"
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
 import { updateProfile } from "firebase/auth"
-import { doc, updateDoc, serverTimestamp, Timestamp, collection, query, where, getDocs } from "firebase/firestore"
+import { doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
@@ -213,14 +211,6 @@ export default function ProfilePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoUploadProgress, setPhotoUploadProgress] = useState(0)
 
-  // Stats state
-  const [stats, setStats] = useState({
-    totalRecipes: 0,
-    plannedMeals: 0,
-    familyMembers: 0,
-    loading: true,
-  })
-
   useEffect(() => {
     if (userData) {
       setDisplayName(userData.displayName || "")
@@ -240,41 +230,6 @@ export default function ProfilePage() {
         shoppingListUpdates: userData.notificationSettings?.shoppingListUpdates ?? true,
         frequency: userData.notificationSettings?.frequency || "daily",
       })
-    }
-  }, [userData])
-
-  // Fetch statistics data
-  useEffect(() => {
-    const fetchStatsData = async () => {
-      if (!userData?.familyId) {
-        setStats((prev) => ({ ...prev, loading: false }))
-        return
-      }
-
-      try {
-        // Fetch recipes count
-        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", userData.familyId))
-        const recipesSnapshot = await getDocs(recipesQuery)
-
-        // Fetch family members count
-        const familyMembersQuery = query(collection(db, "users"), where("familyId", "==", userData.familyId))
-        const familyMembersSnapshot = await getDocs(familyMembersQuery)
-
-        setStats({
-          totalRecipes: recipesSnapshot.size,
-          plannedMeals: 0, // TODO: Calculate from weekly plans
-          familyMembers: familyMembersSnapshot.size,
-          loading: false,
-        })
-      } catch (err) {
-        console.error("Error fetching stats data:", err)
-        setError("Erreur lors de la récupération des statistiques.")
-        setStats((prev) => ({ ...prev, loading: false }))
-      }
-    }
-
-    if (userData) {
-      fetchStatsData()
     }
   }, [userData])
 
@@ -326,7 +281,7 @@ export default function ProfilePage() {
 
       setSuccess("Profil mis à jour avec succès !")
       setIsEditing(false)
-      setTimeout(() => setSuccess(""), 200)
+      setTimeout(() => setSuccess(""), 3000)
     } catch (err) {
       console.error("Profile Update Error:", err)
       setError("Échec de la mise à jour du profil. Détails: " + err.message)
@@ -346,10 +301,6 @@ export default function ProfilePage() {
       setSelectedDiet(userData.dietaryPreferences?.diet || "")
       setAllergies(userData.dietaryPreferences?.allergies || [])
       setDislikes(userData.dietaryPreferences?.dislikes || [])
- setNotificationSettings({
-  invitations: userData.notificationSettings?.invitations ?? true,
-  lavishGifts: [] // Renommez la clé pour éviter les espaces
-});
       setFavorites(userData.dietaryPreferences?.favorites || [])
       setNotificationSettings({
         invitations: userData.notificationSettings?.invitations ?? true,
@@ -371,7 +322,7 @@ export default function ProfilePage() {
     }
 
     if (file.size > 5 * 1024 * 1024) {
-      setError("Le fichier est trop volumineux (max 5MB).")
+      setError("Le fichier est trop volumineux (max 5MB").toUpperCase()
       return
     }
     if (!file.type.startsWith("image/")) {
@@ -382,6 +333,8 @@ export default function ProfilePage() {
     setError("")
     setSuccess("")
     setUploadingPhoto(true)
+    setPhotoUploadProgress(0)
+
     const storageRef = ref(storage, `profilePictures/${currentUser.uid}/${file.name}`)
     const uploadTask = uploadBytesResumable(storageRef, file)
 
@@ -820,7 +773,7 @@ export default function ProfilePage() {
               >
                 {!isMobile && (
                   <Zoom in timeout={800}>
-                    <Box sx={{ flexShrink: 0 }}>
+                    <Box sx={{ flexShrinkZu: 0 }}>
                       <ProfileSidebar />
                     </Box>
                   </Zoom>
@@ -1489,72 +1442,150 @@ export default function ProfilePage() {
                               </Box>
                               Statistiques d'utilisation
                             </Typography>
-                            <Grid container spacing={3}>
-                              {[
-                                {
-                                  label: "Recettes",
-                                  value: stats.totalRecipes,
-                                  icon: <RestaurantIcon />,
-                                  color: theme.palette.primary.main,
-                                },
-                                {
-                                  label: "Repas Planifiés",
-                                  value: stats.plannedMeals,
-                                  icon: <CalendarIcon />,
-                                  color: theme.palette.secondary.main,
-                                },
-                                {
-                                  label: "Membres Famille",
-                                  value: stats.familyMembers,
-                                  icon: <GroupIcon />,
-                                  color: theme.palette.success.main,
-                                },
-                                {
-                                  label: "Rôle",
-                                  value: userData?.familyRole || "Membre",
-                                  icon: <DashboardIcon />,
-                                  color: theme.palette.warning.main,
-                                },
-                              ].map((stat, index) => (
-                                <Grid item xs={6} sm={3} key={stat.label}>
-                                  <Zoom in timeout={800 + index * 100}>
-                                    <Card
-                                      elevation={0}
-                                      sx={{
-                                        borderRadius: 4,
-                                        background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(stat.color, 0.02)} 100%)`,
-                                        border: `1px solid ${alpha(stat.color, 0.1)}`,
-                                        transition: "all 0.3s ease",
-                                        "&:hover": {
-                                          transform: "translateY(-4px)",
-                                          boxShadow: `0 12px 40px ${alpha(stat.color, 0.15)}`,
-                                        },
-                                      }}
-                                    >
-                                      <CardContent sx={{ p: 3, textAlign: "center" }}>
-                                        <Avatar
-                                          sx={{
-                                            width: 48,
-                                            height: 48,
-                                            background: `linear-gradient(135deg, ${stat.color} 0%, ${alpha(stat.color, 0.8)} 100%)`,
-                                            mb: 2,
-                                            mx: "auto",
-                                          }}
-                                        >
-                                          {stat.icon}
-                                        </Avatar>
-                                        <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
-                                          {stats.loading ? <LinearProgress sx={{ width: 40, mx: "auto" }} /> : stat.value}
-                                        </Typography>
-                                        <Typography variant="body2" color="text.secondary">
-                                          {stat.label}
-                                        </Typography>
-                                      </CardContent>
-                                    </Card>
-                                  </Zoom>
-                                </Grid>
-                              ))}
+                            <Grid container spacing={2}>
+                              <Grid item xs={12} sm={6} md={3}>
+                                <Card
+                                  elevation={2}
+                                  sx={{
+                                    borderRadius: 4,
+                                    textAlign: "center",
+                                    p: 2,
+                                    background: `linear-gradient(135deg, ${alpha(theme.palette.info.light, 0.1)} 0%, ${alpha(theme.palette.info.main, 0.05)} 100%)`,
+                                    border: `1px solid ${alpha(theme.palette.info.main, 0.2)}`,
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    "&:hover": {
+                                      transform: "translateY(-4px)",
+                                      boxShadow: `0 8px 25px ${alpha(theme.palette.info.main, 0.2)}`,
+                                    },
+                                  }}
+                                >
+                                  <Typography
+                                    variant="h3"
+                                    color="info.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
+                                    {getStatValue(userData.usageStats?.recipesCreated)}
+                                  </Typography>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
+                                    Recettes créées
+                                  </Typography>
+                                </Card>
+                              </Grid>
+                              <Grid item xs={12} sm={6} md={3}>
+                                <Card
+                                  elevation={2}
+                                  sx={{
+                                    borderRadius: 4,
+                                    textAlign: "center",
+                                    p: 2,
+                                    background: `linear-gradient(135deg, ${alpha(theme.palette.success.light, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
+                                    border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    "&:hover": {
+                                      transform: "translateY(-4px)",
+                                      boxShadow: `0 8px 25px ${alpha(theme.palette.success.main, 0.2)}`,
+                                    },
+                                  }}
+                                >
+                                  <Typography
+                                    variant="h3"
+                                    color="success.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
+                                    {getStatValue(userData.usageStats?.mealsPlanned)}
+                                  </Typography>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
+                                    Repas planifiés
+                                  </Typography>
+                                </Card>
+                              </Grid>
+                              <Grid item xs={12} sm={6} md={3}>
+                                <Card
+                                  elevation={2}
+                                  sx={{
+                                    borderRadius: 4,
+                                    textAlign: "center",
+                                    p: 2,
+                                    background: `linear-gradient(135deg, ${alpha(theme.palette.warning.light, 0.1)} 0%, ${alpha(theme.palette.warning.main, 0.05)} 100%)`,
+                                    border: `1px solid ${alpha(theme.palette.warning.main, 0.2)}`,
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    "&:hover": {
+                                      transform: "translateY(-4px)",
+                                      boxShadow: `0 8px 25px ${alpha(theme.palette.warning.main, 0.2)}`,
+                                    },
+                                  }}
+                                >
+                                  <Typography
+                                    variant="h3"
+                                    color="warning.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
+                                    {getStatValue(userData.usageStats?.shoppingListsGenerated)}
+                                  </Typography>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
+                                    Listes générées
+                                  </Typography>
+                                </Card>
+                              </Grid>
+                              <Grid item xs={12} sm={6} md={3}>
+                                <Card
+                                  elevation={2}
+                                  sx={{
+                                    borderRadius: 4,
+                                    textAlign: "center",
+                                    p: 2,
+                                    background: `linear-gradient(135deg, ${alpha(theme.palette.secondary.light, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+                                    border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
+                                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                    "&:hover": {
+                                      transform: "translateY(-4px)",
+                                      boxShadow: `0 8px 25px ${alpha(theme.palette.secondary.main, 0.2)}`,
+                                    },
+                                  }}
+                                >
+                                  <Typography
+                                    variant="h3"
+                                    color="secondary.main"
+                                    sx={{ fontWeight: 700, mb: 1, fontSize: { xs: "1.5rem", md: "2rem" } }}
+                                  >
+                                    {getStatValue(userData.usageStats?.estimatedSavings?.amount).toLocaleString("fr-FR")}
+                                  </Typography>
+                                  <Typography
+                                    variant="body2"
+                                    color="secondary.main"
+                                    sx={{ fontWeight: 600, mb: 0.5, fontSize: { xs: "0.75rem", md: "0.9rem" } }}
+                                  >
+                                    {userData.usageStats?.estimatedSavings?.currency || "FCFA"}
+                                  </Typography>
+                                  <Typography
+                                    variant="body1"
+                                    color="text.secondary"
+                                    sx={{ fontWeight: 500, fontSize: { xs: "0.85rem", md: "1rem" } }}
+                                  >
+                                    Économies estimées
+                                  </Typography>
+                                </Card>
+                              </Grid>
                             </Grid>
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ display: "block", mt: 2, fontStyle: "italic", fontSize: { xs: "0.75rem", md: "0.85rem" } }}
+                            >
+                              💡 Note : Les économies sont une estimation basée sur les prix renseignés et peuvent varier selon les fluctuations du marché.
+                            </Typography>
                           </TabPanel>
                         </Box>
                       </CardContent>

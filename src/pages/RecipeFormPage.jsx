@@ -1040,4 +1040,3 @@ export default function RecipeFormPage() {
     </Container>
   );
 }
-
