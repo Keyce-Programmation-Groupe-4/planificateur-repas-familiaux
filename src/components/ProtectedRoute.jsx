@@ -27,4 +27,3 @@ export default function ProtectedRoute({ children }) {
   // If logged in and not loading, render the requested component
   return children;
 }
-

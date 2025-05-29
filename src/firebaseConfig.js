@@ -27,4 +27,3 @@ const storage = getStorage(app);
 // Exporter les instances
 export { app, db, auth, storage, functions }; // 👈 Exporter functions
 // export const analytics = getAnalytics(app); // Si vous utilisez Google Analytics
-

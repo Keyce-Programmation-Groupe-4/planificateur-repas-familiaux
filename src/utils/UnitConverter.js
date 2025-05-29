@@ -1,5 +1,3 @@
-// /home/ubuntu/meal_planner/app-react/src/utils/unitConverter.js
-
 /**
  * Tente de convertir une quantité d'une unité donnée vers l'unité standard
  * définie pour cet ingrédient (ex: convertir des grammes en kilogrammes).
@@ -13,39 +11,39 @@
  *          (unité inconnue, pas de facteur de conversion, pas d'unité standard définie).
  */
 export function convertToStandardUnit(quantity, unit, ingredientUnitsData) {
-  if (!ingredientUnitsData || typeof ingredientUnitsData !== 'object' || !unit || typeof quantity !== 'number') {
-    console.error("convertToStandardUnit: Invalid input data.", { quantity, unit, ingredientUnitsData });
-    return null;
+  if (!ingredientUnitsData || typeof ingredientUnitsData !== "object" || !unit || typeof quantity !== "number") {
+    console.error("convertToStandardUnit: Invalid input data.", { quantity, unit, ingredientUnitsData })
+    return null
   }
 
-  const unitData = ingredientUnitsData[unit];
+  const unitData = ingredientUnitsData[unit]
 
   if (!unitData) {
-    console.warn(`convertToStandardUnit: Unit '${unit}' not found in ingredient data.`);
-    return null; // Unité source inconnue pour cet ingrédient
+    console.warn(`convertToStandardUnit: Unit '${unit}' not found in ingredient data.`)
+    return null // Unité source inconnue pour cet ingrédient
   }
 
   // Si l'unité fournie est déjà l'unité standard pour cet ingrédient
   if (unitData.isStandard) {
-    return { standardQuantity: quantity, standardUnit: unit };
+    return { standardQuantity: quantity, standardUnit: unit }
   }
 
   // Trouver l'unité standard correspondante
-  const standardUnitKey = findStandardUnit(ingredientUnitsData);
+  const standardUnitKey = findStandardUnit(ingredientUnitsData)
 
   if (!standardUnitKey) {
-    console.warn(`convertToStandardUnit: No standard unit defined for this ingredient.`);
-    return null; // Pas d'unité standard définie
+    console.warn(`convertToStandardUnit: No standard unit defined for this ingredient.`)
+    return null // Pas d'unité standard définie
   }
 
   // Vérifier si l'unité source a un facteur de conversion vers l'unité standard
-  if (typeof unitData.conversionFactor === 'number' && unitData.conversionFactor > 0) {
-    const convertedQuantity = quantity / unitData.conversionFactor;
-    return { standardQuantity: convertedQuantity, standardUnit: standardUnitKey };
+  if (typeof unitData.conversionFactor === "number" && unitData.conversionFactor > 0) {
+    const convertedQuantity = quantity / unitData.conversionFactor
+    return { standardQuantity: convertedQuantity, standardUnit: standardUnitKey }
   } else {
     // Pas de facteur de conversion défini pour cette unité (ex: "piece")
-    console.log(`convertToStandardUnit: Unit '${unit}' is not directly convertible to '${standardUnitKey}'.`);
-    return null;
+    console.log(`convertToStandardUnit: Unit '${unit}' is not directly convertible to '${standardUnitKey}'.`)
+    return null
   }
 }
 
@@ -58,21 +56,22 @@ export function convertToStandardUnit(quantity, unit, ingredientUnitsData) {
  * @returns {string} La chaîne formatée (ex: "5 kg", "1 g", "10 pièces").
  */
 export function formatQuantityUnit(quantity, unit) {
-    if (typeof quantity !== 'number' || !unit) {
-        return '';
-    }
+  if (typeof quantity !== "number" || !unit) {
+    return ""
+  }
 
-    // Gestion simple du pluriel pour certaines unités
-    let displayUnit = unit;
-    if (quantity > 1 || quantity === 0) { // Also handle 0 quantity for plural (e.g., 0 pièces)
-        if (unit === 'piece') displayUnit = 'pièces';
-        // Ajouter d'autres règles de pluriel si nécessaire (ex: 'boite' -> 'boites')
-    }
+  // Gestion simple du pluriel pour certaines unités
+  let displayUnit = unit
+  if (quantity > 1 || quantity === 0) {
+    // Also handle 0 quantity for plural (e.g., 0 pièces)
+    if (unit === "piece") displayUnit = "pièces"
+    // Ajouter d'autres règles de pluriel si nécessaire (ex: 'boite' -> 'boites')
+  }
 
-    // Formatage du nombre (peut être amélioré avec toLocaleString)
-    const formattedQuantity = Number.isInteger(quantity) ? quantity : quantity.toFixed(2).replace(/\.00$/, '');
+  // Formatage du nombre (peut être amélioré avec toLocaleString)
+  const formattedQuantity = Number.isInteger(quantity) ? quantity : quantity.toFixed(2).replace(/\.00$/, "")
 
-    return `${formattedQuantity} ${displayUnit}`;
+  return `${formattedQuantity} ${displayUnit}`
 }
 
 /**
@@ -83,15 +82,14 @@ export function formatQuantityUnit(quantity, unit) {
  * @returns {string | null} The key of the standard unit (e.g., "kg"), or null if none is found.
  */
 export function findStandardUnit(ingredientUnitsData) {
-  if (!ingredientUnitsData || typeof ingredientUnitsData !== 'object') {
-    return null;
+  if (!ingredientUnitsData || typeof ingredientUnitsData !== "object") {
+    return null
   }
   for (const unitKey in ingredientUnitsData) {
     if (ingredientUnitsData[unitKey] && ingredientUnitsData[unitKey].isStandard === true) {
-      return unitKey;
+      return unitKey
     }
   }
-  console.warn("findStandardUnit: No standard unit found in", ingredientUnitsData);
-  return null; // No standard unit found
+  console.warn("findStandardUnit: No standard unit found in", ingredientUnitsData)
+  return null // No standard unit found
 }
-
