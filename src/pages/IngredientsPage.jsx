@@ -194,19 +194,28 @@ function UnitEditor({ units, onUnitsChange }) {
     const [newUnitIsStandard, setNewUnitIsStandard] = useState(false);
 
     useEffect(() => {
-        // Convert internal state back to Firestore format when changed
-        const newUnitsData = {};
-        unitList.forEach(unit => {
-            newUnitsData[unit.name] = {
-                isStandard: unit.isStandard || false,
-                conversionFactor: unit.conversionFactor ? Number(unit.conversionFactor) : undefined,
-                standardPrice: unit.standardPrice ? Number(unit.standardPrice) : undefined,
-                // Keep existing priceSource and lastPriceUpdate if they exist
-                priceSource: unit.priceSource,
-                lastPriceUpdate: unit.lastPriceUpdate,
-            };
-        });
-        onUnitsChange(newUnitsData);
+      // Convert internal state back to Firestore format when changed
+      const newUnitsData = {};
+      unitList.forEach(unit => {
+          const unitData = {
+              isStandard: unit.isStandard || false,
+          };
+          // Only include conversionFactor if it's a valid number
+          if (unit.conversionFactor !== undefined && unit.conversionFactor !== '' && !isNaN(Number(unit.conversionFactor))) {
+              unitData.conversionFactor = Number(unit.conversionFactor);
+          }
+          // Only include standardPrice if it's a valid number
+          if (unit.standardPrice !== undefined && unit.standardPrice !== '' && !isNaN(Number(unit.standardPrice))) {
+              unitData.standardPrice = Number(unit.standardPrice);
+          }
+          // Include priceSource and lastPriceUpdate only if standardPrice is provided
+          if (unitData.standardPrice !== undefined) {
+              unitData.priceSource = unit.priceSource || 'user_input';
+              unitData.lastPriceUpdate = unit.lastPriceUpdate || serverTimestamp();
+          }
+          newUnitsData[unit.name] = unitData;
+      });
+      onUnitsChange(newUnitsData);
     }, [unitList, onUnitsChange]);
 
     const handleUnitChange = (index, field, value) => {
@@ -233,17 +242,22 @@ function UnitEditor({ units, onUnitsChange }) {
             currentList = currentList.map(u => ({ ...u, isStandard: false }));
         }
 
-        setUnitList([
-            ...currentList,
-            {
-                name: newUnitName.trim(),
-                isStandard: newUnitIsStandard,
-                conversionFactor: newUnitConversion ? Number(newUnitConversion) : undefined,
-                standardPrice: newUnitPrice ? Number(newUnitPrice) : undefined,
-                priceSource: newUnitPrice ? 'user_input' : undefined,
-                lastPriceUpdate: newUnitPrice ? serverTimestamp() : undefined, // Set timestamp if price added
-            }
-        ]);
+        const newUnit = {
+            name: newUnitName.trim(),
+            isStandard: newUnitIsStandard,
+        };
+        // Only include conversionFactor if valid
+        if (newUnitConversion !== '' && !isNaN(Number(newUnitConversion))) {
+            newUnit.conversionFactor = Number(newUnitConversion);
+        }
+        // Only include standardPrice and related fields if valid
+        if (newUnitPrice !== '' && !isNaN(Number(newUnitPrice))) {
+            newUnit.standardPrice = Number(newUnitPrice);
+            newUnit.priceSource = 'user_input';
+            newUnit.lastPriceUpdate = serverTimestamp();
+        }
+
+        setUnitList([...currentList, newUnit]);
         // Reset new unit form
         setNewUnitName('');
         setNewUnitConversion('');
