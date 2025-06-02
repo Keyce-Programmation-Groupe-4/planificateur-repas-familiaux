@@ -1,710 +1,1368 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, Component, useCallback } from "react" // Ajout de useCallback
 import {
   Typography,
   Container,
   Box,
-  Button,
   Grid,
   Card,
   CardContent,
-  Avatar,
-  Chip,
-  Stack,
+  Button,
+  CircularProgress,
+  Alert,
   useTheme,
   alpha,
   Fade,
-  Zoom,
-  LinearProgress,
+  Stack,
+  Fab,
+  TextField,
+  IconButton,
+  Paper,
+  List,
+  ListItem,
+  ListItemText,
+  Avatar,
+  Skeleton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  useMediaQuery,
+  Tooltip, // Ajout pour les tooltips
+  Zoom, // Ajout pour les animations
+  Chip, // Ajout pour les puces
+  Snackbar, // Ajout pour les notifications
 } from "@mui/material"
-import {
-  Restaurant as RestaurantIcon,
-  CalendarMonth as CalendarIcon,
-  Group as GroupIcon,
-  Add as AddIcon,
-  ShoppingCart as ShoppingCartIcon,
-  ArrowForward as ArrowForwardIcon,
-  PlayArrow as PlayArrowIcon,
-  CheckCircle as CheckCircleIcon,
-  Dashboard as DashboardIcon,
-  AdminPanelSettings as AdminIcon,
-} from "@mui/icons-material"
-import StarsIcon from '@mui/icons-material/Stars';
-import { Link as RouterLink, useNavigate } from "react-router-dom"
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
+import { DatePicker } from "@mui/x-date-pickers/DatePicker"
+import AddIcon from "@mui/icons-material/Add"
+import CalendarIcon from "@mui/icons-material/CalendarMonth"
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf"
+import SaveIcon from "@mui/icons-material/Save"
+import ShoppingCartIcon from "@mui/icons-material/ShoppingCart"
+import GroupIcon from "@mui/icons-material/Group"
+import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings"
+import ChatIcon from "@mui/icons-material/Chat"
+import SendIcon from "@mui/icons-material/Send"
+import CloseIcon from "@mui/icons-material/Close"
+import SmartToyIcon from '@mui/icons-material/SmartToy'
+import AccountCircleIcon from '@mui/icons-material/AccountCircle'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome' // Ajout pour l'icône de génération aléatoire
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
-import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore"
-import { format, isToday, isTomorrow } from "date-fns"
+import { collection, query, where, getDocs, doc, setDoc, Timestamp, orderBy, serverTimestamp } from "firebase/firestore" // Ajout de orderBy et serverTimestamp
+import { format, eachDayOfInterval, getDay, startOfWeek, endOfWeek, isValid } from "date-fns" // Ajout de isValid
 import { fr } from "date-fns/locale"
+import { generateRandomPlan } from "../utils/plannerUtils"
+import pdfMake from "pdfmake/build/pdfmake"
+import pdfFonts from "pdfmake/build/vfs_fonts"
 
-// Landing Page pour utilisateurs non connectés
-function LandingPage() {
+pdfMake.vfs = pdfFonts.vfs
+
+// --- Début de l'intégration Gemini --- 
+const GEMINI_API_KEY = "AIzaSyDfu0Q9IKDvQu5ewtsG7xnh43iebNDDuyU"; 
+const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+
+// Fonction pour appeler l'API Gemini (avec historique structuré)
+const callGeminiAPI = async (messages) => {
+  const formattedContents = messages.map(msg => ({
+    role: msg.sender === 'user' ? 'user' : 'model',
+    parts: [{ text: msg.text }]
+  }));
+
+  console.log("Appel de l'API Gemini avec l'historique:", formattedContents);
+
+  try {
+    const requestBody = {
+      contents: formattedContents,
+      generationConfig: {
+        maxOutputTokens: 300,
+      },
+    };
+    console.log("Corps de la requête Gemini:", JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(GEMINI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    console.log("Réponse brute de l'API Gemini:", response);
+
+    if (!response.ok) {
+      let errorData = { message: `Erreur HTTP: ${response.status} ${response.statusText}` };
+      try {
+        errorData = await response.json();
+        console.error("Erreur API Gemini (données JSON):", errorData);
+      } catch (jsonError) {
+        const errorText = await response.text();
+        console.error("Erreur API Gemini (données texte):", errorText);
+        errorData.message += ` - ${errorText}`;
+      }
+      throw new Error(errorData?.error?.message || errorData.message || `Erreur API: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log("Données reçues de l'API Gemini:", data);
+
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const finishReason = data?.candidates?.[0]?.finishReason;
+
+    if (!text) {
+        if (finishReason && finishReason !== "STOP") {
+            console.warn(`Réponse Gemini terminée prématurément: ${finishReason}`);
+            return `Désolé, la génération de la réponse a été interrompue (${finishReason}). Veuillez réessayer ou reformuler.`;
+        }
+        const safetyRatings = data?.promptFeedback?.safetyRatings || data?.candidates?.[0]?.safetyRatings;
+        if (safetyRatings?.some(rating => rating.blocked || rating.probability === 'HIGH')) {
+            console.warn("Réponse Gemini bloquée pour des raisons de sécurité:", safetyRatings);
+            return "Désolé, je ne peux pas répondre à cette demande pour des raisons de sécurité.";
+        }
+        console.error("Structure de réponse inattendue de Gemini:", data);
+        return "Désolé, je n'ai pas pu extraire la réponse (structure inattendue).";
+    }
+
+    return text;
+
+  } catch (error) {
+    console.error("Erreur détaillée lors de l'appel à l'API Gemini:", error);
+    return `Une erreur est survenue lors de la communication avec l'assistant: ${error.message}`;
+  }
+};
+// --- Fin de l'intégration Gemini ---
+
+const MEAL_CATEGORIES = [
+  { value: "breakfast", label: "Petit-déjeuner" },
+  { value: "lunch", label: "Déjeuner" },
+  { value: "dinner", label: "Dîner" },
+]
+
+const orderedDays = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+const dayNames = {
+  monday: "Lundi",
+  tuesday: "Mardi",
+  wednesday: "Mercredi",
+  thursday: "Jeudi",
+  friday: "Vendredi",
+  saturday: "Samedi",
+  sunday: "Dimanche",
+};
+
+// Fonction pour vérifier si un objet ressemble à un Timestamp
+const isTimestampLike = (value) => {
+  return value && typeof value === "object" && value.hasOwnProperty("seconds") && value.hasOwnProperty("nanoseconds");
+};
+
+// Fonction pour obtenir l'ID de la semaine
+const getWeekId = (date) => {
+  const startDate = startOfWeek(date, { weekStartsOn: 1 });
+  const year = startDate.getFullYear();
+  const thursday = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 3);
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+  const weekNumber = Math.ceil(1 + (thursday - firstThursday) / (7 * 24 * 60 * 60 * 1000));
+  return `${year}-W${String(weekNumber).padStart(2, "0")}`;
+};
+
+class ErrorBoundary extends Component {
+  state = { hasError: false, error: null }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Error caught in ErrorBoundary:", error, errorInfo)
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Alert severity="error" sx={{ m: 2 }}>
+          Une erreur est survenue. Veuillez réessayer. ({this.state.error?.message})
+        </Alert>
+      )
+    }
+    return this.props.children
+  }
+}
+
+export default function HomePage() {
+  const { currentUser, userData, loading: authLoading } = useAuth()
   const theme = useTheme()
-  const navigate = useNavigate()
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
 
-  const features = [
-    {
-      icon: <CalendarIcon />,
-      title: "Planification Intelligente",
-      description: "Organisez vos repas de la semaine avec une interface intuitive et moderne",
-      color: theme.palette.primary.main,
-    },
-    {
-      icon: <RestaurantIcon />,
-      title: "Gestion des Recettes",
-      description: "Stockez, organisez et partagez vos recettes favorites avec votre famille",
-      color: theme.palette.secondary.main,
-    },
-    {
-      icon: <ShoppingCartIcon />,
-      title: "Liste de Courses Automatique",
-      description: "Générez automatiquement votre liste de courses basée sur vos repas planifiés",
-      color: theme.palette.success.main,
-    },
-    {
-      icon: <GroupIcon />,
-      title: "Collaboration Familiale",
-      description: "Partagez la planification avec tous les membres de votre famille",
-      color: theme.palette.warning.main,
-    },
-  ]
+  // --- State pour le Chatbot Gemini ---
+  const [chatOpen, setChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState([
+    { sender: 'bot', text: 'Bonjour ! Comment puis-je vous aider avec vos plans de repas aujourd\'hui ?' }
+  ]);
+  const [userInput, setUserInput] = useState('');
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  const [chatError, setChatError] = useState('');
+  const chatListRef = useRef(null); // Ref for scrolling
+  // --- Fin State Chatbot ---
 
-  const benefits = [
-    "Économisez du temps et de l'argent",
-    "Réduisez le gaspillage alimentaire",
-    "Mangez plus sainement",
-    "Simplifiez vos courses",
-    "Partagez en famille",
-  ]
+  // --- Scroll to bottom effect ---
+  useEffect(() => {
+    if (chatListRef.current) {
+      setTimeout(() => {
+         if (chatListRef.current) {
+           chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+         }
+      }, 0);
+    }
+  }, [chatMessages, isChatLoading]);
+  // --- Fin Scroll Effect ---
 
-  return (
-    <Box
+  const handleChatToggle = () => {
+    setChatOpen(!chatOpen)
+    if (chatOpen) setChatError(''); // Reset error on close
+  }
+
+  // --- Logique d'envoi de message Chatbot ---
+  const handleSendMessage = async (event) => {
+    if (event && event.preventDefault) {
+        event.preventDefault();
+    }
+
+    if (!userInput.trim() || isChatLoading) return;
+
+    const newUserMessage = { sender: 'user', text: userInput };
+    const updatedMessages = [...chatMessages, newUserMessage];
+
+    setChatMessages(updatedMessages);
+    setUserInput('');
+    setIsChatLoading(true);
+    setChatError('');
+
+    const botResponseText = await callGeminiAPI(updatedMessages);
+
+    setIsChatLoading(false);
+
+    if (botResponseText.startsWith("Une erreur est survenue") || botResponseText.startsWith("Désolé")) {
+        setChatError(botResponseText);
+    } else {
+        const newBotMessage = { sender: 'bot', text: botResponseText };
+        setChatMessages(prev => [...prev, newBotMessage]);
+    }
+  };
+
+  // --- Handler pour la touche Entrée ---
+  const handleInputKeyPress = (event) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      handleSendMessage();
+    }
+  };
+  // --- Fin Handler Entrée ---
+
+  const LandingPage = () => (
+     <Box
       sx={{
         background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-        minHeight: "calc(100vh - 64px)",
-        position: "relative",
-        overflow: "hidden",
+        minHeight: "100vh",
+        py: 8,
       }}
     >
-      {/* Decorative Elements */}
-      <Box
-        sx={{
-          position: "absolute",
-          top: -100,
-          right: -100,
-          width: 400,
-          height: 400,
-          background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-      <Box
-        sx={{
-          position: "absolute",
-          bottom: -150,
-          left: -150,
-          width: 500,
-          height: 500,
-          background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.08)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
-
-      <Container maxWidth="lg" sx={{ position: "relative", zIndex: 1, py: 8 }}>
-        {/* Hero Section */}
-        <Fade in timeout={800}>
-          <Box sx={{ textAlign: "center", mb: 10 }}>
-            <Typography
-              variant="h1"
-              sx={{
-                fontWeight: 800,
-                fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 2,
-                letterSpacing: "-2px",
-              }}
-            >
-              L'Avenir de la
-              <br />
-              Planification Culinaire
-            </Typography>
-            <Typography
-              variant="h5"
-              color="text.secondary"
-              sx={{
-                mb: 4,
-                maxWidth: "600px",
-                mx: "auto",
-                fontWeight: 400,
-                lineHeight: 1.6,
-              }}
-            >
-              Révolutionnez votre façon de planifier, cuisiner et partager vos repas avec une technologie de pointe
-            </Typography>
-
-            <Stack direction={{ xs: "column", sm: "row" }} spacing={3} justifyContent="center" sx={{ mb: 6 }}>
-              <Button
-                variant="contained"
-                size="large"
-                startIcon={<PlayArrowIcon />}
-                onClick={() => navigate("/signup")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                  boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.4)}`,
-                  "&:hover": {
-                    transform: "translateY(-3px)",
-                    boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.5)}`,
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Commencer Gratuitement
-              </Button>
-              <Button
-                variant="outlined"
-                size="large"
-                startIcon={<ArrowForwardIcon />}
-                onClick={() => navigate("/login")}
-                sx={{
-                  py: 2,
-                  px: 4,
-                  borderRadius: 4,
-                  fontSize: "1.1rem",
-                  fontWeight: 600,
-                  borderWidth: 2,
-                  borderColor: alpha(theme.palette.primary.main, 0.3),
-                  "&:hover": {
-                    borderWidth: 2,
-                    borderColor: theme.palette.primary.main,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    transform: "translateY(-2px)",
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                Se Connecter
-              </Button>
-            </Stack>
-
-            {/* Benefits Pills */}
-            <Stack direction="row" spacing={2} justifyContent="center" sx={{ flexWrap: "wrap", gap: 2 }}>
-              {benefits.map((benefit, index) => (
-                <Zoom in timeout={1000 + index * 100} key={benefit}>
-                  <Chip
-                    icon={<CheckCircleIcon />}
-                    label={benefit}
-                    sx={{
-                      backgroundColor: alpha(theme.palette.success.main, 0.1),
-                      color: theme.palette.success.main,
-                      fontWeight: 500,
-                      borderRadius: 3,
-                      "& .MuiChip-icon": {
-                        color: theme.palette.success.main,
-                      },
-                    }}
-                  />
-                </Zoom>
-              ))}
-            </Stack>
-          </Box>
-        </Fade>
-
-        {/* Features Section */}
-        <Box sx={{ mb: 10 }}>
+      <Container maxWidth="lg">
+        <Box sx={{ textAlign: "center", mb: 8 }}>
           <Typography
-            variant="h3"
-            align="center"
+            variant="h1"
             sx={{
-              fontWeight: 700,
+              fontWeight: 800,
+              fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+              backgroundClip: "text",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
               mb: 2,
-              color: theme.palette.text.primary,
             }}
           >
-            Fonctionnalités Révolutionnaires
+            Planifiez vos repas en famille facilement
           </Typography>
-          <Typography variant="h6" align="center" color="text.secondary" sx={{ mb: 6, maxWidth: "600px", mx: "auto" }}>
-            Découvrez comment Meal Planner 2025 transforme votre expérience culinaire
+          <Typography variant="h5" color="text.secondary" sx={{ mb: 4 }}>
+            Organisez vos repas, gérez vos recettes et simplifiez vos courses avec notre application intuitive.
           </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="center">
+            <Button
+              variant="contained"
+              size="large"
+              href="/signup"
+              sx={{
+                py: 2,
+                px: 4,
+                borderRadius: 3,
+                fontSize: "1.1rem",
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+              }}
+            >
+              S'inscrire
+            </Button>
+            <Button
+              variant="outlined"
+              size="large"
+              href="/login"
+              sx={{
+                py: 2,
+                px: 4,
+                borderRadius: 3,
+                fontSize: "1.1rem",
+                borderColor: theme.palette.primary.main,
+                color: theme.palette.primary.main,
+              }}
+            >
+              Se connecter
+            </Button>
+          </Stack>
+        </Box>
 
+        <Box sx={{ mb: 8 }}>
+          <Typography variant="h4" align="center" sx={{ mb: 4, fontWeight: 700 }}>
+            Fonctionnalités clés
+          </Typography>
           <Grid container spacing={4}>
-            {features.map((feature, index) => (
-              <Grid item xs={12} sm={6} md={3} key={feature.title}>
-                <Zoom in timeout={1200 + index * 150}>
-                  <Card
-                    elevation={0}
-                    sx={{
-                      height: "100%",
-                      borderRadius: 6,
-                      background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(feature.color, 0.02)} 100%)`,
-                      border: `1px solid ${alpha(feature.color, 0.1)}`,
-                      transition: "all 0.3s ease",
-                      "&:hover": {
-                        transform: "translateY(-8px)",
-                        boxShadow: `0 20px 60px ${alpha(feature.color, 0.2)}`,
-                        border: `1px solid ${alpha(feature.color, 0.3)}`,
-                      },
-                    }}
-                  >
-                    <CardContent sx={{ p: 4, textAlign: "center" }}>
-                      <Avatar
-                        sx={{
-                          width: 80,
-                          height: 80,
-                          background: `linear-gradient(135deg, ${feature.color} 0%, ${alpha(feature.color, 0.8)} 100%)`,
-                          mb: 3,
-                          mx: "auto",
-                          fontSize: "2rem",
+            {[
+              {
+                title: "Planification hebdomadaire",
+                description: "Organisez vos repas pour la semaine en quelques clics.",
+                image: "/planning-repas.png",
+              },
+              {
+                title: "Gestion des recettes",
+                description: "Créez, modifiez et partagez vos recettes familiales.",
+                image: "/gestion-recettes.png",
+              },
+              {
+                title: "Liste de courses automatique",
+                description: "Générez votre liste de courses en un clic.",
+                image: "/marche.png",
+              },
+              {
+                title: "Collaboration familiale",
+                description: "Partagez et collaborez avec les membres de votre famille.",
+                image: "/colab-famille.png",
+              },
+            ].map((feature, index) => (
+              <Grid item xs={12} sm={6} md={3} key={index}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 4,
+                    border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                    textAlign: "center",
+                    minHeight: 300,
+                  }}
+                >
+                  <CardContent>
+                    <Box
+                      sx={{
+                        height: 200,
+                        overflow: "hidden",
+                        borderRadius: 8,
+                        marginBottom: 16,
+                      }}
+                    >
+                      <img
+                        src={feature.image}
+                        alt={feature.title}
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
                         }}
-                      >
-                        {feature.icon}
-                      </Avatar>
-                      <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-                        {feature.title}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                        {feature.description}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Zoom>
+                      />
+                    </Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                      {feature.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {feature.description}
+                    </Typography>
+                  </CardContent>
+                </Card>
               </Grid>
             ))}
           </Grid>
         </Box>
 
-        {/* CTA Section */}
-        <Fade in timeout={2000}>
-          <Card
-            elevation={0}
+        <Box sx={{ mb: 8, textAlign: "center" }}>
+          <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
+            Ils nous font confiance
+          </Typography>
+          <Grid container spacing={4} justifyContent="center">
+            {[
+              { name: "Famille Dupont", quote: "Une application indispensable pour notre organisation familiale !" },
+              { name: "Marie L.", quote: "Facile à utiliser et très pratique pour gérer les repas." },
+              { name: "Jean P.", quote: "La liste de courses automatique est un vrai gain de temps." },
+            ].map((testimonial, index) => (
+              <Grid item xs={12} sm={4} key={index}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    borderRadius: 4,
+                    border: `1px solid ${alpha(theme.palette.success.main, 0.1)}`,
+                    p: 3,
+                  }}
+                >
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    "{testimonial.quote}"
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    - {testimonial.name}
+                  </Typography>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+
+        <Box sx={{ textAlign: "center", mb: 8 }}>
+          <Typography variant="h4" sx={{ mb: 2, fontWeight: 700 }}>
+            Prêt à simplifier votre vie ?
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            href="/signup"
             sx={{
-              borderRadius: 6,
-              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-              color: "white",
-              textAlign: "center",
-              p: 6,
-              position: "relative",
-              overflow: "hidden",
+              py: 2,
+              px: 4,
+              borderRadius: 3,
+              fontSize: "1.1rem",
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             }}
           >
-            <Box
-              sx={{
-                position: "absolute",
-                top: -50,
-                right: -50,
-                width: 200,
-                height: 200,
-                background: alpha(theme.palette.common.white, 0.1),
-                borderRadius: "50%",
-              }}
-            />
-            <Typography variant="h4" sx={{ fontWeight: 700, mb: 2 }}>
-              Prêt à Révolutionner Vos Repas ?
-            </Typography>
-            <Typography variant="h6" sx={{ mb: 4, opacity: 0.9 }}>
-              Rejoignez des milliers de familles qui ont déjà transformé leur cuisine
-            </Typography>
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={<StarsIcon />}
-              onClick={() => navigate("/signup")}
-              sx={{
-                py: 2,
-                px: 4,
-                borderRadius: 4,
-                fontSize: "1.1rem",
-                fontWeight: 600,
-                backgroundColor: theme.palette.common.white,
-                color: theme.palette.primary.main,
-                "&:hover": {
-                  backgroundColor: alpha(theme.palette.common.white, 0.9),
-                  transform: "scale(1.05)",
-                },
-                transition: "all 0.3s ease",
-              }}
-            >
-              Commencer Maintenant
-            </Button>
-          </Card>
-        </Fade>
+            Commencer maintenant
+          </Button>
+        </Box>
       </Container>
     </Box>
   )
-}
 
-// Dashboard pour utilisateurs connectés
-function UserDashboard() {
-  const { userData } = useAuth()
-  const theme = useTheme()
-  const navigate = useNavigate()
-  const [stats, setStats] = useState({
-    totalRecipes: 0,
-    plannedMeals: 0,
-    familyMembers: 0,
-    loading: true,
-  })
-  const [recentRecipes, setRecentRecipes] = useState([])
-  const [upcomingMeals, setUpcomingMeals] = useState([])
+  const Dashboard = () => {
+    // State pour le générateur
+    const [startDate, setStartDate] = useState(null)
+    const [endDate, setEndDate] = useState(null)
+    const [selectedCategories, setSelectedCategories] = useState(["breakfast", "lunch", "dinner"])
+    const [loadingGenerator, setLoadingGenerator] = useState(false)
+    const [generatorError, setGeneratorError] = useState("")
+    const [generatorSuccess, setGeneratorSuccess] = useState("")
+    const [dialogOpen, setDialogOpen] = useState(false)
+    const [generatedPlan, setGeneratedPlan] = useState([])
+    
+    // Nouvelles variables d'état pour les fonctionnalités avancées
+    const [availableRecipes, setAvailableRecipes] = useState([])
+    const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false)
+    const [showSuccess, setShowSuccess] = useState(false)
+    const [isSaving, setIsSaving] = useState(false)
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!userData?.familyId) return
+    // Récupération des recettes disponibles (familiales et publiques)
+    useEffect(() => {
+      const fetchRecipes = async () => {
+        if (!userData?.familyId) return;
+        
+        try {
+          setLoadingGenerator(true);
+          
+          const recipesRef = collection(db, "recipes");
+          const familyRecipesQuery = query(
+            recipesRef, 
+            where("familyId", "==", userData.familyId),
+            orderBy("createdAt", "desc")
+          );
+          const publicRecipesQuery = query(
+            recipesRef, 
+            where("visibility", "==", "public"),
+            orderBy("createdAt", "desc")
+          );
+          
+          const [familySnapshot, publicSnapshot] = await Promise.all([
+            getDocs(familyRecipesQuery),
+            getDocs(publicRecipesQuery)
+          ]);
+          
+          const familyRecipes = familySnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            isFamilyRecipe: true,
+          }));
+          
+          const publicRecipes = publicSnapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            isFamilyRecipe: false,
+          }));
+          
+          // Combinaison des recettes avec priorité aux recettes familiales
+          const combinedRecipesMap = new Map();
+          familyRecipes.forEach((recipe) => combinedRecipesMap.set(recipe.id, recipe));
+          publicRecipes.forEach((recipe) => {
+            if (!combinedRecipesMap.has(recipe.id)) {
+              combinedRecipesMap.set(recipe.id, recipe);
+            }
+          });
+          
+          const combinedRecipes = Array.from(combinedRecipesMap.values()).sort((a, b) => {
+            if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1;
+            if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1;
+            const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
+            const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(0);
+            return dateB - dateA;
+          });
+          
+          setAvailableRecipes(combinedRecipes);
+          console.log(`Récupération de ${combinedRecipes.length} recettes pour la planification.`);
+          
+        } catch (error) {
+          console.error("Erreur lors de la récupération des recettes:", error);
+          setGeneratorError("Erreur lors de la récupération des recettes. Veuillez réessayer.");
+        } finally {
+          setLoadingGenerator(false);
+        }
+      };
+      
+      fetchRecipes();
+    }, [userData?.familyId]);
+
+    // Fonction améliorée pour générer un planning aléatoire
+    const generateMealPlan = () => {
+      if (!startDate || !endDate || selectedCategories.length === 0) {
+        setGeneratorError("Veuillez sélectionner les dates et au moins une catégorie de repas.")
+        return
+      }
+
+      if (startDate > endDate) {
+        setGeneratorError("La date de début doit être antérieure à la date de fin.")
+        return
+      }
+
+      setLoadingGenerator(true)
+      setGeneratorError("")
+      setGeneratorSuccess("")
 
       try {
-        // Fetch recipes count
-        const recipesQuery = query(collection(db, "recipes"), where("familyId", "==", userData.familyId))
-        const recipesSnapshot = await getDocs(recipesQuery)
+        // Utilisation des recettes disponibles au lieu de fetchRecipes
+        if (availableRecipes.length === 0) {
+          setGeneratorError("Aucune recette disponible pour générer un planning.")
+          setLoadingGenerator(false)
+          return
+        }
 
-        // Fetch recent recipes
-        const recentRecipesQuery = query(
-          collection(db, "recipes"),
-          where("familyId", "==", userData.familyId),
-          where("createdAt", "!=", null),
-          orderBy("createdAt", "desc"),
-          limit(3)
-        )
-        const recentRecipesSnapshot = await getDocs(recentRecipesQuery)
-        const recentRecipesData = recentRecipesSnapshot.docs.map((doc) => {
-          const data = doc.data()
-          console.log("Recipe ID:", doc.id, "createdAt:", data.createdAt)
-          return {
-            id: doc.id,
-            ...data,
-          }
+        const days = eachDayOfInterval({ start: startDate, end: endDate })
+        const plan = []
+
+        days.forEach((day) => {
+          selectedCategories.forEach((category) => {
+            // Sélection aléatoire d'une recette
+            const randomRecipe = availableRecipes[Math.floor(Math.random() * availableRecipes.length)]
+            plan.push({
+              date: day,
+              category,
+              recipeId: randomRecipe.id,
+              recipeName: randomRecipe.name,
+              recipeImage: randomRecipe.imageUrl || null,
+            })
+          })
         })
 
-        // Fetch family members count
-        const familyMembersQuery = query(collection(db, "users"), where("familyId", "==", userData.familyId))
-        const familyMembersSnapshot = await getDocs(familyMembersQuery)
-
-        setStats({
-          totalRecipes: recipesSnapshot.size,
-          plannedMeals: 0, // TODO: Calculate from weekly plans
-          familyMembers: familyMembersSnapshot.size,
-          loading: false,
-        })
-        setRecentRecipes(recentRecipesData)
+        setGeneratedPlan(plan)
+        setDialogOpen(true)
+        setGeneratorSuccess("Planning généré avec succès !")
       } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-        setStats((prev) => ({ ...prev, loading: false }))
+        console.error("Error generating meal plan:", error)
+        setGeneratorError("Une erreur est survenue lors de la génération du planning.")
+      } finally {
+        setLoadingGenerator(false)
       }
     }
 
-    fetchDashboardData()
-  }, [userData?.familyId])
+    // Fonction améliorée pour générer un planning aléatoire avec options
+    const handleRandomPlanning = (type) => {
+      setRandomPlanningDialogOpen(false);
+      setLoadingGenerator(true);
+      setGeneratorError("");
+      setGeneratorSuccess("");
 
-  const quickActions = [
-    {
-      title: "Planifier la Semaine",
-      description: "Organisez vos repas",
-      icon: <CalendarIcon />,
-      color: theme.palette.primary.main,
-      path: "/planner",
-    },
-    {
-      title: "Ajouter une Recette",
-      description: "Nouvelle création",
-      icon: <AddIcon />,
-      color: theme.palette.secondary.main,
-      path: "/recipes",
-    },
-    {
-      title: "Liste de Courses",
-      description: "Préparez vos achats",
-      icon: <ShoppingCartIcon />,
-      color: theme.palette.success.main,
-      path: "/shopping-list",
-    },
-    {
-      title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
-      description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
-      icon: userData?.familyRole === "Admin" ? <AdminIcon /> : <GroupIcon />,
-      color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
-      path: "/family",
-    },
-  ]
+      try {
+        if (!startDate || !endDate || selectedCategories.length === 0) {
+          setGeneratorError("Veuillez sélectionner les dates et au moins une catégorie de repas.");
+          setLoadingGenerator(false);
+          return;
+        }
 
-  const formatDate = (timestamp) => {
-    if (!timestamp) return ""
+        // Filtrer les recettes selon le type (familial ou public)
+        const filteredRecipes = type === "family"
+          ? availableRecipes.filter((r) => r.isFamilyRecipe)
+          : availableRecipes.filter((r) => r.visibility === "public");
 
-    try {
-      let date
+        if (filteredRecipes.length === 0) {
+          setGeneratorError(`Aucune recette ${type === "family" ? "familiale" : "publique"} disponible.`);
+          setLoadingGenerator(false);
+          return;
+        }
 
-      if (timestamp.toDate && typeof timestamp.toDate === "function") {
-        date = timestamp.toDate()
-      } else if (timestamp._seconds && typeof timestamp._seconds === "number") {
-        date = new Date(timestamp._seconds * 1000)
-      } else if (typeof timestamp === "string" || typeof timestamp === "number") {
-        date = new Date(timestamp)
-      } else {
-        console.warn("Invalid timestamp format:", timestamp)
-        return ""
+        const days = eachDayOfInterval({ start: startDate, end: endDate });
+        const plan = [];
+
+        days.forEach((day) => {
+          selectedCategories.forEach((category) => {
+            // Sélection aléatoire d'une recette filtrée
+            const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)];
+            plan.push({
+              date: day,
+              category,
+              recipeId: randomRecipe.id,
+              recipeName: randomRecipe.name,
+              recipeImage: randomRecipe.imageUrl || null,
+            });
+          });
+        });
+
+        setGeneratedPlan(plan);
+        setDialogOpen(true);
+        setGeneratorSuccess("Planning généré avec succès !");
+      } catch (error) {
+        console.error("Erreur lors de la génération du planning aléatoire:", error);
+        setGeneratorError("Une erreur est survenue lors de la génération du planning.");
+      } finally {
+        setLoadingGenerator(false);
+      }
+    };
+
+    // Fonction améliorée pour exporter en PDF
+    const exportToPDF = () => {
+      if (!generatedPlan || generatedPlan.length === 0) {
+        setGeneratorError("Aucun planning à exporter.")
+        return
       }
 
-      if (isNaN(date.getTime())) {
-        console.warn("Invalid date created from timestamp:", timestamp)
-        return ""
+      const content = []
+      content.push({ text: "Planning de Repas Familial", style: "header", alignment: "center" })
+      content.push({
+        text: `Période du ${format(startDate, "d MMMM yyyy", { locale: fr })} au ${format(endDate, "d MMMM yyyy", { locale: fr })}`,
+        style: "subheader",
+        alignment: "center",
+        margin: [0, 0, 0, 20],
+      })
+
+      // Regrouper les repas par jour
+      const days = eachDayOfInterval({ start: startDate, end: endDate })
+      days.forEach((day) => {
+        // Format plus complet pour le nom du jour
+        const dayName = format(day, "EEEE d MMMM", { locale: fr })
+        const dayMeals = generatedPlan.filter((item) => format(item.date, "yyyy-MM-dd") === format(day, "yyyy-MM-dd"))
+        
+        content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] })
+        
+        const dayContent = []
+        selectedCategories.forEach((category) => {
+          const meal = dayMeals.find((m) => m.category === category)
+          const recipeName = meal ? meal.recipeName : "Aucun repas planifié"
+          dayContent.push([MEAL_CATEGORIES.find((cat) => cat.value === category)?.label, recipeName])
+        })
+        
+        content.push({
+          layout: "lightHorizontalLines",
+          table: { headerRows: 0, widths: ["30%", "*"], body: dayContent },
+          margin: [0, 0, 0, 10],
+        })
+      })
+
+      // Ajouter la liste des recettes utilisées
+      const usedRecipes = new Set()
+      generatedPlan.forEach((item) => {
+        if (item.recipeName) {
+          usedRecipes.add(item.recipeName)
+        }
+      })
+
+      if (usedRecipes.size > 0) {
+        content.push({ text: "Recettes utilisées cette semaine", style: "sectionHeader", margin: [0, 20, 0, 10] })
+        content.push({ ul: Array.from(usedRecipes).sort(), margin: [0, 0, 0, 10] })
       }
 
-      if (isToday(date)) return "Aujourd'hui"
-      if (isTomorrow(date)) return "Demain"
-      return format(date, "d MMM", { locale: fr })
-    } catch (error) {
-      console.error("Error formatting date:", error, "Timestamp:", timestamp)
-      return ""
+      const docDefinition = {
+        content,
+        styles: {
+          header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
+          subheader: { fontSize: 14, color: "gray", italics: true },
+          dayHeader: { fontSize: 14, bold: true, color: theme.palette.primary.main, margin: [0, 15, 0, 5] },
+          sectionHeader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] },
+        },
+        defaultStyle: {
+          fontSize: 10,
+        }
+      }
+
+      try {
+        const pdfFileName = `planning_repas_${format(startDate, "yyyy-MM-dd")}_to_${format(endDate, "yyyy-MM-dd")}.pdf`
+        pdfMake.createPdf(docDefinition).download(pdfFileName)
+        setGeneratorSuccess("PDF généré avec succès !")
+        
+        // Afficher une notification temporaire
+        setShowSuccess(true)
+        setTimeout(() => setShowSuccess(false), 2000)
+      } catch (error) {
+        console.error("Error generating PDF: ", error)
+        setGeneratorError("Erreur lors de la génération du PDF.")
+      }
     }
-  }
 
-  return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Fade in timeout={600}>
-        <Box>
-          {/* Welcome Header */}
-          <Box sx={{ mb: 4 }}>
+    // Fonction améliorée pour ajouter au planning hebdomadaire
+    const addToWeeklyPlanner = async () => {
+      if (!userData?.familyId) {
+        setGeneratorError("Vous devez faire partie d'une famille pour ajouter au planning hebdomadaire.");
+        return;
+      }
+      
+      setIsSaving(true);
+      setLoadingGenerator(true);
+      
+      try {
+        // Utiliser la date de début pour déterminer la semaine
+        const weekId = getWeekId(startDate);
+        const planDocRef = doc(db, "families", userData.familyId, "weeklyPlans", weekId);
+        
+        // Créer la structure de données compatible avec WeeklyPlannerPage
+        const planData = {
+          familyId: userData.familyId,
+          startDate: Timestamp.fromDate(startOfWeek(startDate, { weekStartsOn: 1 })),
+          endDate: Timestamp.fromDate(endOfWeek(startDate, { weekStartsOn: 1 })),
+          days: orderedDays.reduce((acc, day) => {
+            acc[day] = { breakfast: null, lunch: null, dinner: null };
+            return acc;
+          }, {}),
+          createdAt: serverTimestamp(),
+          lastUpdatedAt: serverTimestamp(),
+        };
+        
+        // Remplir le planning avec les recettes générées
+        generatedPlan.forEach((item) => {
+          const date = new Date(item.date);
+          let dayIndex = getDay(date);
+          // Convertir l'index du jour (0=dimanche) en clé du jour (0=lundi dans orderedDays)
+          dayIndex = dayIndex === 0 ? 6 : dayIndex - 1;
+          const dayKey = orderedDays[dayIndex];
+          
+          if (planData.days[dayKey] && selectedCategories.includes(item.category)) {
+            planData.days[dayKey][item.category] = item.recipeId;
+          }
+        });
+        
+        console.log("Données à sauvegarder dans weeklyPlans:", planData);
+        await setDoc(planDocRef, planData, { merge: true });
+        
+        setGeneratorSuccess("Planning ajouté au WeeklyPlanner avec succès !");
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
+        setDialogOpen(false);
+      } catch (err) {
+        console.error("Error adding to weekly planner:", err);
+        setGeneratorError("Erreur lors de l'ajout au planning hebdomadaire.");
+      } finally {
+        setIsSaving(false);
+        setLoadingGenerator(false);
+      }
+    };
+
+    const QuickActions = () => {
+      const quickActions = [
+        {
+          title: "Planifier la Semaine",
+          description: "Organisez vos repas",
+          icon: <CalendarIcon />,
+          color: theme.palette.primary.main,
+          path: "/planner",
+        },
+        {
+          title: "Ajouter une Recette",
+          description: "Nouvelle création",
+          icon: <AddIcon />,
+          color: theme.palette.secondary.main,
+          path: "/recipes",
+        },
+        {
+          title: "Liste de Courses",
+          description: "Préparez vos achats",
+          icon: <ShoppingCartIcon />,
+          color: theme.palette.success.main,
+          path: "/shopping-list",
+        },
+        {
+          title: userData?.familyRole === "Admin" ? "Gérer la Famille" : "Ma Famille",
+          description: userData?.familyRole === "Admin" ? "Administration" : "Voir les membres",
+          icon: userData?.familyRole === "Admin" ? <AdminPanelSettingsIcon /> : <GroupIcon />,
+          color: userData?.familyRole === "Admin" ? theme.palette.error.main : theme.palette.warning.main,
+          path: "/family",
+        },
+      ]
+
+      return (
+        <Card
+          elevation={0}
+          sx={{
+            borderRadius: 4,
+            background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+            height: "100%",
+          }}
+        >
+          <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
             <Typography
-              variant="h3"
+              variant="h6"
               sx={{
-                fontWeight: 700,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                backgroundClip: "text",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                mb: 1,
+                mb: 2,
+                fontWeight: 600,
+                fontSize: { xs: "1rem", sm: "1.25rem" },
               }}
             >
-              Bonjour, {userData?.displayName || "Chef"} ! 👋
+              Actions Rapides
             </Typography>
-            <Typography variant="h6" color="text.secondary">
-              Prêt à planifier de délicieux repas aujourd'hui ?
-            </Typography>
-          </Box>
+            <Stack spacing={2}>
+              {quickActions.map((action, index) => (
+                <Button
+                  key={index}
+                  variant="outlined"
+                  startIcon={action.icon}
+                  fullWidth
+                  sx={{
+                    borderRadius: 3,
+                    py: 1.5,
+                    fontSize: { xs: "0.85rem", sm: "0.9rem" },
+                    borderColor: alpha(action.color, 0.5),
+                    color: action.color,
+                    textAlign: "left",
+                    justifyContent: "flex-start",
+                    "&:hover": {
+                      backgroundColor: alpha(action.color, 0.1),
+                      borderColor: action.color,
+                    },
+                  }}
+                  onClick={() => window.location.href = action.path}
+                >
+                  <Box>
+                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                      {action.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {action.description}
+                    </Typography>
+                  </Box>
+                </Button>
+              ))}
+            </Stack>
+          </CardContent>
+        </Card>
+      )
+    }
 
-          <Grid container spacing={4}>
-            {/* Stats Cards */}
-            <Grid item xs={12}>
-              <Grid container spacing={3}>
-                {[
-                  {
-                    label: "Recettes",
-                    value: stats.totalRecipes,
-                    icon: <RestaurantIcon />,
-                    color: theme.palette.primary.main,
-                  },
-                  {
-                    label: "Repas Planifiés",
-                    value: stats.plannedMeals,
-                    icon: <CalendarIcon />,
-                    color: theme.palette.secondary.main,
-                  },
-                  {
-                    label: "Membres Famille",
-                    value: stats.familyMembers,
-                    icon: <GroupIcon />,
-                    color: theme.palette.success.main,
-                  },
-                  {
-                    label: "Rôle",
-                    value: userData?.familyRole || "Membre",
-                    icon: <DashboardIcon />,
-                    color: theme.palette.warning.main,
-                  },
-                ].map((stat, index) => (
-                  <Grid item xs={6} sm={3} key={stat.label}>
-                    <Zoom in timeout={800 + index * 100}>
-                      <Card
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(stat.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(stat.color, 0.1)}`,
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(stat.color, 0.15)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3, textAlign: "center" }}>
-                          <Avatar
-                            sx={{
-                              width: 48,
-                              height: 48,
-                              background: `linear-gradient(135deg, ${stat.color} 0%, ${alpha(stat.color, 0.8)} 100%)`,
-                              mb: 2,
-                              mx: "auto",
-                            }}
-                          >
-                            {stat.icon}
-                          </Avatar>
-                          <Typography variant="h4" sx={{ fontWeight: 700, mb: 0.5 }}>
-                            {stats.loading ? <LinearProgress sx={{ width: 40, mx: "auto" }} /> : stat.value}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {stat.label}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Quick Actions */}
-            <Grid item xs={12} md={8}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Actions Rapides
-              </Typography>
-              <Grid container spacing={3}>
-                {quickActions.map((action, index) => (
-                  <Grid item xs={12} sm={6} key={action.title}>
-                    <Zoom in timeout={1000 + index * 100}>
-                      <Card
-                        component={RouterLink}
-                        to={action.path}
-                        elevation={0}
-                        sx={{
-                          borderRadius: 4,
-                          background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(action.color, 0.02)} 100%)`,
-                          border: `1px solid ${alpha(action.color, 0.1)}`,
-                          textDecoration: "none",
-                          transition: "all 0.3s ease",
-                          "&:hover": {
-                            transform: "translateY(-4px)",
-                            boxShadow: `0 12px 40px ${alpha(action.color, 0.2)}`,
-                            border: `1px solid ${alpha(action.color, 0.3)}`,
-                          },
-                        }}
-                      >
-                        <CardContent sx={{ p: 3 }}>
-                          <Stack direction="row" spacing={2} alignItems="center">
-                            <Avatar
-                              sx={{
-                                width: 56,
-                                height: 56,
-                                background: `linear-gradient(135deg, ${action.color} 0%, ${alpha(action.color, 0.8)} 100%)`,
-                              }}
-                            >
-                              {action.icon}
-                            </Avatar>
-                            <Box>
-                              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
-                                {action.title}
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary">
-                                {action.description}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </CardContent>
-                      </Card>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Grid>
-
-            {/* Recent Activity */}
-            <Grid item xs={12} md={4}>
-              <Typography variant="h5" sx={{ fontWeight: 600, mb: 3 }}>
-                Activité Récente
-              </Typography>
-              <Card
-                elevation={0}
+    return (
+      <Box
+        sx={{
+          minHeight: "100vh",
+          background: `linear-gradient(135deg, ${alpha(theme.palette.background.default, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          py: { xs: 2, sm: 4 },
+        }}
+      >
+        <Container maxWidth="xl">
+          <Fade in timeout={600} mountOnEnter unmountOnExit>
+            <Box>
+              <Typography
+                variant="h2"
                 sx={{
-                  borderRadius: 4,
-                  background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-                  border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                  height: "fit-content",
+                  fontWeight: 800,
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                  backgroundClip: "text",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  mb: 4,
+                  textAlign: "center",
+                  fontSize: { xs: "2rem", sm: "3rem" },
                 }}
               >
-                <CardContent sx={{ p: 3 }}>
-                  {recentRecipes.length > 0 ? (
-                    <Stack spacing={2}>
-                      {recentRecipes.map((recipe, index) => (
-                        <Fade in timeout={1200 + index * 100} key={recipe.id}>
-                          <Box
+                Bienvenue, {userData?.displayName || "Utilisateur"}
+              </Typography>
+
+              {/* Affichage des erreurs/succès */}
+              {generatorError && (
+                <Alert
+                  severity="error"
+                  sx={{ mb: 3, borderRadius: 4 }}
+                  onClose={() => setGeneratorError("")}
+                >
+                  {generatorError}
+                </Alert>
+              )}
+              {generatorSuccess && (
+                <Alert
+                  severity="success"
+                  sx={{ mb: 3, borderRadius: 4 }}
+                  onClose={() => setGeneratorSuccess("")}
+                >
+                  {generatorSuccess}
+                </Alert>
+              )}
+              
+              {/* Notification temporaire de succès */}
+              <Snackbar
+                open={showSuccess}
+                autoHideDuration={2000}
+                onClose={() => setShowSuccess(false)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+              >
+                <Alert severity="success" sx={{ width: '100%', borderRadius: 2 }}>
+                  Opération réussie !
+                </Alert>
+              </Snackbar>
+
+              <Grid container spacing={3} alignItems="stretch">
+                {/* Section Générateur de Planning */}
+                <Grid item xs={12} md={8}>
+                  <Card
+                    elevation={0}
+                    sx={{
+                      borderRadius: 4,
+                      background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                      border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                      height: "100%",
+                    }}
+                  >
+                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                      <Typography
+                        variant="h5"
+                        sx={{
+                          mb: 3,
+                          fontWeight: 600,
+                          fontSize: { xs: "1.25rem", sm: "1.5rem" },
+                        }}
+                      >
+                        Générer un Planning de Repas Aléatoire
+                      </Typography>
+                      
+                      {/* Informations sur les recettes disponibles */}
+                      <Box sx={{ mb: 2 }}>
+                        <Chip
+                          icon={<AutoAwesomeIcon />}
+                          label={`${availableRecipes.length} recettes disponibles`}
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 3,
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            "& .MuiChip-icon": { color: theme.palette.primary.main },
+                            mr: 1,
+                            mb: 1,
+                          }}
+                        />
+                        <Chip
+                          label={`${availableRecipes.filter(r => r.isFamilyRecipe).length} recettes familiales`}
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 3,
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            mr: 1,
+                            mb: 1,
+                          }}
+                        />
+                        <Chip
+                          label={`${availableRecipes.filter(r => r.visibility === "public").length} recettes publiques`}
+                          variant="outlined"
+                          sx={{
+                            borderRadius: 3,
+                            fontSize: { xs: "0.75rem", sm: "0.875rem" },
+                            mb: 1,
+                          }}
+                        />
+                      </Box>
+                      
+                      <Grid container spacing={2}>
+                        <Grid item xs={12} sm={6}>
+                          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+                            <DatePicker
+                              label="Date de début"
+                              value={startDate}
+                              onChange={(newValue) => setStartDate(newValue)}
+                              slotProps={{
+                                textField: {
+                                  fullWidth: true,
+                                  sx: { "& .MuiOutlinedInput-root": { borderRadius: 3 } },
+                                },
+                              }}
+                              minDate={new Date()}
+                            />
+                          </LocalizationProvider>
+                        </Grid>
+                        <Grid item xs={12} sm={6}>
+                          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+                            <DatePicker
+                              label="Date de fin"
+                              value={endDate}
+                              onChange={(newValue) => setEndDate(newValue)}
+                              slotProps={{
+                                textField: {
+                                  fullWidth: true,
+                                  sx: { "& .MuiOutlinedInput-root": { borderRadius: 3 } },
+                                },
+                              }}
+                              minDate={startDate || new Date()}
+                            />
+                          </LocalizationProvider>
+                        </Grid>
+                        <Grid item xs={12}>
+                          <FormControl fullWidth sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}>
+                            <InputLabel id="meal-categories-label">Catégories de repas</InputLabel>
+                            <Select
+                              labelId="meal-categories-label"
+                              multiple
+                              value={selectedCategories}
+                              onChange={(e) => setSelectedCategories(e.target.value)}
+                              label="Catégories de repas"
+                              renderValue={(selected) =>
+                                selected
+                                  .map((value) => MEAL_CATEGORIES.find((cat) => cat.value === value)?.label)
+                                  .join(", ")
+                              }
+                            >
+                              {MEAL_CATEGORIES.map((category) => (
+                                <MenuItem key={category.value} value={category.value}>
+                                  {category.label}
+                                </MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
+                        </Grid>
+                        <Grid item xs={12}>
+                          <Button
+                            variant="contained"
+                            startIcon={<AutoAwesomeIcon />}
+                            onClick={() => setRandomPlanningDialogOpen(true)}
+                            disabled={loadingGenerator || isSaving || availableRecipes.length === 0}
+                            fullWidth
                             sx={{
-                              p: 2,
                               borderRadius: 3,
-                              backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                              py: 1.5,
+                              fontSize: { xs: "0.9rem", sm: "1rem" },
+                              background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.secondary.dark} 100%)`,
+                              boxShadow: `0 4px 20px ${alpha(theme.palette.secondary.main, 0.3)}`,
+                              "&:hover": {
+                                transform: "translateY(-2px)",
+                                boxShadow: `0 6px 25px ${alpha(theme.palette.secondary.main, 0.4)}`,
+                              },
+                              transition: "all 0.3s ease",
                             }}
                           >
-                            <Stack direction="row" spacing={2} alignItems="center">
-                              <Avatar
-                                src={recipe.photoURL}
-                                sx={{
-                                  width: 40,
-                                  height: 40,
-                                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                                }}
-                              >
-                                <RestaurantIcon />
-                              </Avatar>
-                              <Box sx={{ flexGrow: 1 }}>
-                                <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
-                                  {recipe.name}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  {formatDate(recipe.createdAt)}
-                                </Typography>
-                              </Box>
-                            </Stack>
-                          </Box>
-                        </Fade>
-                      ))}
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="outlined"
-                        fullWidth
-                        sx={{ borderRadius: 3, mt: 2 }}
-                      >
-                        Voir Toutes les Recettes
-                      </Button>
-                    </Stack>
-                  ) : (
-                    <Box sx={{ textAlign: "center", py: 4 }}>
-                      <RestaurantIcon sx={{ fontSize: "3rem", color: theme.palette.text.disabled, mb: 2 }} />
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Aucune recette récente
-                      </Typography>
-                      <Button
-                        component={RouterLink}
-                        to="/recipes"
-                        variant="contained"
-                        startIcon={<AddIcon />}
-                        sx={{ borderRadius: 3 }}
-                      >
-                        Ajouter une Recette
-                      </Button>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+                            {loadingGenerator ? <CircularProgress size={20} color="inherit" /> : "Générer un Planning Aléatoire"}
+                          </Button>
+                        </Grid>
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Grid>
+
+                {/* Section Actions Rapides */}
+                <Grid item xs={12} md={4}>
+                  <QuickActions />
+                </Grid>
+              </Grid>
+
+              {/* Bouton Chat Flottant */}
+              <Fab
+                color="primary"
+                onClick={handleChatToggle}
+                sx={{ position: "fixed", bottom: 24, right: 24, zIndex: 1300 }}
+              >
+                {chatOpen ? <CloseIcon /> : <ChatIcon />}
+              </Fab>
+
+              {/* Dialogue de confirmation/action après génération */}
+              <Dialog
+                open={dialogOpen}
+                onClose={() => setDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+              >
+                <DialogTitle>Planning Généré</DialogTitle>
+                <DialogContent>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    Votre planning aléatoire a été généré avec succès. Que souhaitez-vous faire ?
+                  </Typography>
+                  <Stack spacing={2}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PictureAsPdfIcon />}
+                      onClick={exportToPDF}
+                      disabled={loadingGenerator || isSaving}
+                      fullWidth
+                      sx={{ borderRadius: 3, py: 1.5 }}
+                    >
+                      Exporter en PDF
+                    </Button>
+                    <Button
+                      variant="contained"
+                      startIcon={<SaveIcon />}
+                      onClick={addToWeeklyPlanner}
+                      disabled={loadingGenerator || isSaving || !userData?.familyId}
+                      fullWidth
+                      sx={{ borderRadius: 3, py: 1.5 }}
+                    >
+                      {isSaving ? <CircularProgress size={20} color="inherit" /> : "Ajouter au Planning Hebdomadaire"}
+                    </Button>
+                  </Stack>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setDialogOpen(false)} disabled={loadingGenerator || isSaving}>
+                    Fermer
+                  </Button>
+                </DialogActions>
+              </Dialog>
+              
+              {/* Dialogue pour le choix du type de planning aléatoire */}
+              <Dialog
+                open={randomPlanningDialogOpen}
+                onClose={() => setRandomPlanningDialogOpen(false)}
+                maxWidth="xs"
+                fullWidth
+              >
+                <DialogTitle>Type de Planning Aléatoire</DialogTitle>
+                <DialogContent>
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    Choisissez le type de recettes à utiliser pour votre planning aléatoire :
+                  </Typography>
+                  <Stack spacing={2} sx={{ mt: 2 }}>
+                    <Button
+                      variant="contained"
+                      onClick={() => handleRandomPlanning("family")}
+                      disabled={loadingGenerator || availableRecipes.filter(r => r.isFamilyRecipe).length === 0}
+                      fullWidth
+                      sx={{ borderRadius: 3, py: 1.5 }}
+                    >
+                      Recettes Familiales Uniquement
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={() => handleRandomPlanning("public")}
+                      disabled={loadingGenerator || availableRecipes.filter(r => r.visibility === "public").length === 0}
+                      fullWidth
+                      sx={{ borderRadius: 3, py: 1.5 }}
+                    >
+                      Recettes Publiques Uniquement
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      onClick={generateMealPlan}
+                      disabled={loadingGenerator || availableRecipes.length === 0}
+                      fullWidth
+                      sx={{ borderRadius: 3, py: 1.5 }}
+                    >
+                      Toutes les Recettes
+                    </Button>
+                  </Stack>
+                </DialogContent>
+                <DialogActions>
+                  <Button onClick={() => setRandomPlanningDialogOpen(false)} disabled={loadingGenerator}>
+                    Annuler
+                  </Button>
+                </DialogActions>
+              </Dialog>
+            </Box>
+          </Fade>
+        </Container>
+      </Box>
+    )
+  }
+
+  // Interface de chat
+  const ChatInterface = () => (
+    <Box
+      sx={{
+        position: "fixed",
+        bottom: 90,
+        right: 24,
+        width: { xs: "90%", sm: 400 },
+        maxWidth: "90vw",
+        height: { xs: "60vh", sm: 500 },
+        maxHeight: "60vh",
+        backgroundColor: "background.paper",
+        borderRadius: 4,
+        boxShadow: 24,
+        zIndex: 1200,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
+      }}
+    >
+      <Box
+        sx={{
+          p: 2,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          backgroundColor: alpha(theme.palette.primary.main, 0.05),
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          <SmartToyIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
+          <Typography variant="h6" sx={{ fontWeight: 600 }}>
+            Assistant Culinaire
+          </Typography>
         </Box>
-      </Fade>
-    </Container>
+        <IconButton onClick={handleChatToggle} size="small">
+          <CloseIcon fontSize="small" />
+        </IconButton>
+      </Box>
+
+      <List
+        ref={chatListRef}
+        sx={{
+          flex: 1,
+          overflowY: "auto",
+          p: 2,
+          backgroundColor: alpha(theme.palette.background.default, 0.5),
+        }}
+      >
+        {chatMessages.map((msg, index) => (
+          <ListItem
+            key={index}
+            sx={{
+              flexDirection: msg.sender === "user" ? "row-reverse" : "row",
+              alignItems: "flex-start",
+              mb: 1,
+              px: 0,
+            }}
+          >
+            <Avatar
+              sx={{
+                bgcolor: msg.sender === "user" ? theme.palette.primary.main : theme.palette.secondary.main,
+                width: 32,
+                height: 32,
+                mx: 1,
+              }}
+            >
+              {msg.sender === "user" ? <AccountCircleIcon /> : <SmartToyIcon />}
+            </Avatar>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                maxWidth: "75%",
+                backgroundColor: msg.sender === "user" ? alpha(theme.palette.primary.main, 0.1) : alpha(theme.palette.secondary.main, 0.1),
+                border: `1px solid ${alpha(msg.sender === "user" ? theme.palette.primary.main : theme.palette.secondary.main, 0.2)}`,
+              }}
+            >
+              <Typography variant="body2">{msg.text}</Typography>
+            </Paper>
+          </ListItem>
+        ))}
+        {isChatLoading && (
+          <ListItem sx={{ flexDirection: "row", alignItems: "flex-start", mb: 1, px: 0 }}>
+            <Avatar
+              sx={{
+                bgcolor: theme.palette.secondary.main,
+                width: 32,
+                height: 32,
+                mx: 1,
+              }}
+            >
+              <SmartToyIcon />
+            </Avatar>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 1.5,
+                borderRadius: 2,
+                maxWidth: "75%",
+                backgroundColor: alpha(theme.palette.secondary.main, 0.1),
+                border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
+              }}
+            >
+              <Skeleton variant="text" width={60} />
+              <Skeleton variant="text" width={120} />
+              <Skeleton variant="text" width={90} />
+            </Paper>
+          </ListItem>
+        )}
+        {chatError && (
+          <Alert severity="error" sx={{ mt: 1, mb: 1 }}>
+            {chatError}
+          </Alert>
+        )}
+      </List>
+
+      <Box
+        component="form"
+        onSubmit={handleSendMessage}
+        sx={{
+          p: 2,
+          borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          backgroundColor: alpha(theme.palette.background.paper, 0.8),
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        <TextField
+          fullWidth
+          placeholder="Posez une question sur vos repas..."
+          value={userInput}
+          onChange={(e) => setUserInput(e.target.value)}
+          onKeyPress={handleInputKeyPress}
+          disabled={isChatLoading}
+          variant="outlined"
+          size="small"
+          sx={{
+            mr: 1,
+            "& .MuiOutlinedInput-root": {
+              borderRadius: 3,
+            },
+          }}
+        />
+        <IconButton
+          color="primary"
+          onClick={handleSendMessage}
+          disabled={!userInput.trim() || isChatLoading}
+          sx={{
+            backgroundColor: alpha(theme.palette.primary.main, 0.1),
+            "&:hover": {
+              backgroundColor: alpha(theme.palette.primary.main, 0.2),
+            },
+          }}
+        >
+          <SendIcon />
+        </IconButton>
+      </Box>
+    </Box>
   )
-}
 
-// Composant principal
-export default function HomePage() {
-  const { currentUser } = useAuth()
-
-  return currentUser ? <UserDashboard /> : <LandingPage />
+  return (
+    <ErrorBoundary>
+      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+        {authLoading ? (
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              height: "100vh",
+            }}
+          >
+            <CircularProgress />
+          </Box>
+        ) : currentUser ? (
+          <Dashboard />
+        ) : (
+          <LandingPage />
+        )}
+        {chatOpen && <ChatInterface />}
+      </LocalizationProvider>
+    </ErrorBoundary>
+  )
 }
