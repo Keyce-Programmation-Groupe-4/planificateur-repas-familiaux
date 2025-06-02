@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef, Component, useCallback } from "react" // Ajout de useCallback
+import { useState, useEffect, useRef, Component, useCallback } from "react"
 import {
   Typography,
   Container,
@@ -33,10 +33,10 @@ import {
   DialogContent,
   DialogActions,
   useMediaQuery,
-  Tooltip, // Ajout pour les tooltips
-  Zoom, // Ajout pour les animations
-  Chip, // Ajout pour les puces
-  Snackbar, // Ajout pour les notifications
+  Tooltip,
+  Zoom,
+  Chip,
+  Snackbar,
 } from "@mui/material"
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
@@ -48,96 +48,20 @@ import SaveIcon from "@mui/icons-material/Save"
 import ShoppingCartIcon from "@mui/icons-material/ShoppingCart"
 import GroupIcon from "@mui/icons-material/Group"
 import AdminPanelSettingsIcon from "@mui/icons-material/AdminPanelSettings"
-import ChatIcon from "@mui/icons-material/Chat"
-import SendIcon from "@mui/icons-material/Send"
-import CloseIcon from "@mui/icons-material/Close"
-import SmartToyIcon from '@mui/icons-material/SmartToy'
-import AccountCircleIcon from '@mui/icons-material/AccountCircle'
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome' // Ajout pour l'icône de génération aléatoire
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import ChatIcon from '@mui/icons-material/Chat'
+import CloseIcon from '@mui/icons-material/Close'
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
-import { collection, query, where, getDocs, doc, setDoc, Timestamp, orderBy, serverTimestamp } from "firebase/firestore" // Ajout de orderBy et serverTimestamp
-import { format, eachDayOfInterval, getDay, startOfWeek, endOfWeek, isValid } from "date-fns" // Ajout de isValid
+import { collection, query, where, getDocs, doc, getDoc, setDoc, Timestamp, orderBy, serverTimestamp } from "firebase/firestore"
+import { format, eachDayOfInterval, getDay, startOfWeek, endOfWeek, isValid, differenceInYears } from "date-fns"
 import { fr } from "date-fns/locale"
 import { generateRandomPlan } from "../utils/plannerUtils"
 import pdfMake from "pdfmake/build/pdfmake"
 import pdfFonts from "pdfmake/build/vfs_fonts"
+import Chatbot from "./Chatbot" // Importation du composant Chatbot
 
 pdfMake.vfs = pdfFonts.vfs
-
-// --- Début de l'intégration Gemini --- 
-const GEMINI_API_KEY = "AIzaSyDfu0Q9IKDvQu5ewtsG7xnh43iebNDDuyU"; 
-const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-
-// Fonction pour appeler l'API Gemini (avec historique structuré)
-const callGeminiAPI = async (messages) => {
-  const formattedContents = messages.map(msg => ({
-    role: msg.sender === 'user' ? 'user' : 'model',
-    parts: [{ text: msg.text }]
-  }));
-
-  console.log("Appel de l'API Gemini avec l'historique:", formattedContents);
-
-  try {
-    const requestBody = {
-      contents: formattedContents,
-      generationConfig: {
-        maxOutputTokens: 300,
-      },
-    };
-    console.log("Corps de la requête Gemini:", JSON.stringify(requestBody, null, 2));
-
-    const response = await fetch(GEMINI_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(requestBody)
-    });
-
-    console.log("Réponse brute de l'API Gemini:", response);
-
-    if (!response.ok) {
-      let errorData = { message: `Erreur HTTP: ${response.status} ${response.statusText}` };
-      try {
-        errorData = await response.json();
-        console.error("Erreur API Gemini (données JSON):", errorData);
-      } catch (jsonError) {
-        const errorText = await response.text();
-        console.error("Erreur API Gemini (données texte):", errorText);
-        errorData.message += ` - ${errorText}`;
-      }
-      throw new Error(errorData?.error?.message || errorData.message || `Erreur API: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log("Données reçues de l'API Gemini:", data);
-
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    const finishReason = data?.candidates?.[0]?.finishReason;
-
-    if (!text) {
-        if (finishReason && finishReason !== "STOP") {
-            console.warn(`Réponse Gemini terminée prématurément: ${finishReason}`);
-            return `Désolé, la génération de la réponse a été interrompue (${finishReason}). Veuillez réessayer ou reformuler.`;
-        }
-        const safetyRatings = data?.promptFeedback?.safetyRatings || data?.candidates?.[0]?.safetyRatings;
-        if (safetyRatings?.some(rating => rating.blocked || rating.probability === 'HIGH')) {
-            console.warn("Réponse Gemini bloquée pour des raisons de sécurité:", safetyRatings);
-            return "Désolé, je ne peux pas répondre à cette demande pour des raisons de sécurité.";
-        }
-        console.error("Structure de réponse inattendue de Gemini:", data);
-        return "Désolé, je n'ai pas pu extraire la réponse (structure inattendue).";
-    }
-
-    return text;
-
-  } catch (error) {
-    console.error("Erreur détaillée lors de l'appel à l'API Gemini:", error);
-    return `Une erreur est survenue lors de la communication avec l'assistant: ${error.message}`;
-  }
-};
-// --- Fin de l'intégration Gemini ---
 
 const MEAL_CATEGORIES = [
   { value: "breakfast", label: "Petit-déjeuner" },
@@ -199,73 +123,55 @@ export default function HomePage() {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"))
 
-  // --- State pour le Chatbot Gemini ---
+  // --- State pour les données de la famille ---
+  const [familyData, setFamilyData] = useState(null)
+  const [familyMembers, setFamilyMembers] = useState([])
+  const [loadingFamily, setLoadingFamily] = useState(false)
+
+  // --- State pour le chatbot ---
   const [chatOpen, setChatOpen] = useState(false)
-  const [chatMessages, setChatMessages] = useState([
-    { sender: 'bot', text: 'Bonjour ! Comment puis-je vous aider avec vos plans de repas aujourd\'hui ?' }
-  ]);
-  const [userInput, setUserInput] = useState('');
-  const [isChatLoading, setIsChatLoading] = useState(false);
-  const [chatError, setChatError] = useState('');
-  const chatListRef = useRef(null); // Ref for scrolling
-  // --- Fin State Chatbot ---
 
-  // --- Scroll to bottom effect ---
+  // --- Récupération des données de la famille ---
   useEffect(() => {
-    if (chatListRef.current) {
-      setTimeout(() => {
-         if (chatListRef.current) {
-           chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-         }
-      }, 0);
+    const fetchFamilyData = async () => {
+      if (!userData?.familyId || loadingFamily) return;
+      
+      setLoadingFamily(true);
+      try {
+        // Récupérer les données de la famille
+        const familyDocRef = doc(db, "families", userData.familyId);
+        const familySnap = await getDoc(familyDocRef);
+        
+        if (familySnap.exists()) {
+          const fetchedFamilyData = { id: familySnap.id, ...familySnap.data() };
+          setFamilyData(fetchedFamilyData);
+          
+          // Récupérer les données des membres de la famille
+          if (fetchedFamilyData.memberUids && fetchedFamilyData.memberUids.length > 0) {
+            const memberPromises = fetchedFamilyData.memberUids.map((uid) => 
+              getDoc(doc(db, "users", uid))
+            );
+            const memberDocs = await Promise.all(memberPromises);
+            const members = memberDocs
+              .map((docSnap) => (docSnap.exists() ? { uid: docSnap.id, ...docSnap.data() } : null))
+              .filter(Boolean);
+            setFamilyMembers(members);
+          }
+        }
+      } catch (err) {
+        console.error("Erreur lors de la récupération des données de la famille:", err);
+      } finally {
+        setLoadingFamily(false);
+      }
+    };
+    
+    if (userData?.familyId && !authLoading) {
+      fetchFamilyData();
     }
-  }, [chatMessages, isChatLoading]);
-  // --- Fin Scroll Effect ---
-
-  const handleChatToggle = () => {
-    setChatOpen(!chatOpen)
-    if (chatOpen) setChatError(''); // Reset error on close
-  }
-
-  // --- Logique d'envoi de message Chatbot ---
-  const handleSendMessage = async (event) => {
-    if (event && event.preventDefault) {
-        event.preventDefault();
-    }
-
-    if (!userInput.trim() || isChatLoading) return;
-
-    const newUserMessage = { sender: 'user', text: userInput };
-    const updatedMessages = [...chatMessages, newUserMessage];
-
-    setChatMessages(updatedMessages);
-    setUserInput('');
-    setIsChatLoading(true);
-    setChatError('');
-
-    const botResponseText = await callGeminiAPI(updatedMessages);
-
-    setIsChatLoading(false);
-
-    if (botResponseText.startsWith("Une erreur est survenue") || botResponseText.startsWith("Désolé")) {
-        setChatError(botResponseText);
-    } else {
-        const newBotMessage = { sender: 'bot', text: botResponseText };
-        setChatMessages(prev => [...prev, newBotMessage]);
-    }
-  };
-
-  // --- Handler pour la touche Entrée ---
-  const handleInputKeyPress = (event) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      handleSendMessage();
-    }
-  };
-  // --- Fin Handler Entrée ---
+  }, [userData, authLoading]);
 
   const LandingPage = () => (
-     <Box
+    <Box
       sx={{
         background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
         minHeight: "100vh",
@@ -864,6 +770,11 @@ export default function HomePage() {
       )
     }
 
+    // Fonction pour basculer l'état du chatbot
+    const handleChatToggle = () => {
+      setChatOpen(!chatOpen)
+    }
+
     return (
       <Box
         sx={{
@@ -1081,6 +992,15 @@ export default function HomePage() {
                 {chatOpen ? <CloseIcon /> : <ChatIcon />}
               </Fab>
 
+              {/* Composant Chatbot */}
+              <Chatbot
+                userData={userData}
+                familyData={familyData}
+                familyMembers={familyMembers}
+                isOpen={chatOpen}
+                onClose={handleChatToggle}
+              />
+
               {/* Dialogue de confirmation/action après génération */}
               <Dialog
                 open={dialogOpen}
@@ -1124,6 +1044,8 @@ export default function HomePage() {
               </Dialog>
               
               {/* Dialogue pour le choix du type de planning aléatoire */}
+
+
               <Dialog
                 open={randomPlanningDialogOpen}
                 onClose={() => setRandomPlanningDialogOpen(false)}
@@ -1178,170 +1100,6 @@ export default function HomePage() {
     )
   }
 
-  // Interface de chat
-  const ChatInterface = () => (
-    <Box
-      sx={{
-        position: "fixed",
-        bottom: 90,
-        right: 24,
-        width: { xs: "90%", sm: 400 },
-        maxWidth: "90vw",
-        height: { xs: "60vh", sm: 500 },
-        maxHeight: "60vh",
-        backgroundColor: "background.paper",
-        borderRadius: 4,
-        boxShadow: 24,
-        zIndex: 1200,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
-      }}
-    >
-      <Box
-        sx={{
-          p: 2,
-          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-          backgroundColor: alpha(theme.palette.primary.main, 0.05),
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Box sx={{ display: "flex", alignItems: "center" }}>
-          <SmartToyIcon sx={{ mr: 1, color: theme.palette.primary.main }} />
-          <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            Assistant Culinaire
-          </Typography>
-        </Box>
-        <IconButton onClick={handleChatToggle} size="small">
-          <CloseIcon fontSize="small" />
-        </IconButton>
-      </Box>
-
-      <List
-        ref={chatListRef}
-        sx={{
-          flex: 1,
-          overflowY: "auto",
-          p: 2,
-          backgroundColor: alpha(theme.palette.background.default, 0.5),
-        }}
-      >
-        {chatMessages.map((msg, index) => (
-          <ListItem
-            key={index}
-            sx={{
-              flexDirection: msg.sender === "user" ? "row-reverse" : "row",
-              alignItems: "flex-start",
-              mb: 1,
-              px: 0,
-            }}
-          >
-            <Avatar
-              sx={{
-                bgcolor: msg.sender === "user" ? theme.palette.primary.main : theme.palette.secondary.main,
-                width: 32,
-                height: 32,
-                mx: 1,
-              }}
-            >
-              {msg.sender === "user" ? <AccountCircleIcon /> : <SmartToyIcon />}
-            </Avatar>
-            <Paper
-              elevation={0}
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                maxWidth: "75%",
-                backgroundColor: msg.sender === "user" ? alpha(theme.palette.primary.main, 0.1) : alpha(theme.palette.secondary.main, 0.1),
-                border: `1px solid ${alpha(msg.sender === "user" ? theme.palette.primary.main : theme.palette.secondary.main, 0.2)}`,
-              }}
-            >
-              <Typography variant="body2">{msg.text}</Typography>
-            </Paper>
-          </ListItem>
-        ))}
-        {isChatLoading && (
-          <ListItem sx={{ flexDirection: "row", alignItems: "flex-start", mb: 1, px: 0 }}>
-            <Avatar
-              sx={{
-                bgcolor: theme.palette.secondary.main,
-                width: 32,
-                height: 32,
-                mx: 1,
-              }}
-            >
-              <SmartToyIcon />
-            </Avatar>
-            <Paper
-              elevation={0}
-              sx={{
-                p: 1.5,
-                borderRadius: 2,
-                maxWidth: "75%",
-                backgroundColor: alpha(theme.palette.secondary.main, 0.1),
-                border: `1px solid ${alpha(theme.palette.secondary.main, 0.2)}`,
-              }}
-            >
-              <Skeleton variant="text" width={60} />
-              <Skeleton variant="text" width={120} />
-              <Skeleton variant="text" width={90} />
-            </Paper>
-          </ListItem>
-        )}
-        {chatError && (
-          <Alert severity="error" sx={{ mt: 1, mb: 1 }}>
-            {chatError}
-          </Alert>
-        )}
-      </List>
-
-      <Box
-        component="form"
-        onSubmit={handleSendMessage}
-        sx={{
-          p: 2,
-          borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-          backgroundColor: alpha(theme.palette.background.paper, 0.8),
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        <TextField
-          fullWidth
-          placeholder="Posez une question sur vos repas..."
-          value={userInput}
-          onChange={(e) => setUserInput(e.target.value)}
-          onKeyPress={handleInputKeyPress}
-          disabled={isChatLoading}
-          variant="outlined"
-          size="small"
-          sx={{
-            mr: 1,
-            "& .MuiOutlinedInput-root": {
-              borderRadius: 3,
-            },
-          }}
-        />
-        <IconButton
-          color="primary"
-          onClick={handleSendMessage}
-          disabled={!userInput.trim() || isChatLoading}
-          sx={{
-            backgroundColor: alpha(theme.palette.primary.main, 0.1),
-            "&:hover": {
-              backgroundColor: alpha(theme.palette.primary.main, 0.2),
-            },
-          }}
-        >
-          <SendIcon />
-        </IconButton>
-      </Box>
-    </Box>
-  )
-
   return (
     <ErrorBoundary>
       <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
@@ -1361,7 +1119,6 @@ export default function HomePage() {
         ) : (
           <LandingPage />
         )}
-        {chatOpen && <ChatInterface />}
       </LocalizationProvider>
     </ErrorBoundary>
   )
