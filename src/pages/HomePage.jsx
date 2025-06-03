@@ -54,12 +54,12 @@ import CloseIcon from '@mui/icons-material/Close'
 import { useAuth } from "../contexts/AuthContext"
 import { db } from "../firebaseConfig"
 import { collection, query, where, getDocs, doc, getDoc, setDoc, Timestamp, orderBy, serverTimestamp } from "firebase/firestore"
-import { format, eachDayOfInterval, getDay, startOfWeek, endOfWeek, isValid, differenceInYears } from "date-fns"
+import { format, eachDayOfInterval, getDay, startOfWeek, endOfWeek, isValid, differenceInYears, addWeeks, startOfDay } from "date-fns"
 import { fr } from "date-fns/locale"
 import { generateRandomPlan } from "../utils/plannerUtils"
 import pdfMake from "pdfmake/build/pdfmake"
 import pdfFonts from "pdfmake/build/vfs_fonts"
-import Chatbot from "./Chatbot" // Importation du composant Chatbot
+import Chatbot from "./Chatbot"
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -93,6 +93,18 @@ const getWeekId = (date) => {
   const firstThursday = new Date(thursday.getFullYear(), 0, 4);
   const weekNumber = Math.ceil(1 + (thursday - firstThursday) / (7 * 24 * 60 * 60 * 1000));
   return `${year}-W${String(weekNumber).padStart(2, "0")}`;
+};
+
+// Fonction pour obtenir toutes les semaines entre deux dates
+const getWeeksBetween = (start, end) => {
+  const weeks = [];
+  let current = startOfWeek(start, { weekStartsOn: 1 });
+  const endWeek = startOfWeek(end, { weekStartsOn: 1 });
+  while (current <= endWeek) {
+    weeks.push(current);
+    current = addWeeks(current, 1);
+  }
+  return weeks;
 };
 
 class ErrorBoundary extends Component {
@@ -138,7 +150,6 @@ export default function HomePage() {
       
       setLoadingFamily(true);
       try {
-        // Récupérer les données de la famille
         const familyDocRef = doc(db, "families", userData.familyId);
         const familySnap = await getDoc(familyDocRef);
         
@@ -146,7 +157,6 @@ export default function HomePage() {
           const fetchedFamilyData = { id: familySnap.id, ...familySnap.data() };
           setFamilyData(fetchedFamilyData);
           
-          // Récupérer les données des membres de la famille
           if (fetchedFamilyData.memberUids && fetchedFamilyData.memberUids.length > 0) {
             const memberPromises = fetchedFamilyData.memberUids.map((uid) => 
               getDoc(doc(db, "users", uid))
@@ -354,7 +364,6 @@ export default function HomePage() {
   )
 
   const Dashboard = () => {
-    // State pour le générateur
     const [startDate, setStartDate] = useState(null)
     const [endDate, setEndDate] = useState(null)
     const [selectedCategories, setSelectedCategories] = useState(["breakfast", "lunch", "dinner"])
@@ -363,14 +372,11 @@ export default function HomePage() {
     const [generatorSuccess, setGeneratorSuccess] = useState("")
     const [dialogOpen, setDialogOpen] = useState(false)
     const [generatedPlan, setGeneratedPlan] = useState([])
-    
-    // Nouvelles variables d'état pour les fonctionnalités avancées
     const [availableRecipes, setAvailableRecipes] = useState([])
     const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false)
     const [showSuccess, setShowSuccess] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
 
-    // Récupération des recettes disponibles (familiales et publiques)
     useEffect(() => {
       const fetchRecipes = async () => {
         if (!userData?.familyId) return;
@@ -407,7 +413,6 @@ export default function HomePage() {
             isFamilyRecipe: false,
           }));
           
-          // Combinaison des recettes avec priorité aux recettes familiales
           const combinedRecipesMap = new Map();
           familyRecipes.forEach((recipe) => combinedRecipesMap.set(recipe.id, recipe));
           publicRecipes.forEach((recipe) => {
@@ -438,7 +443,6 @@ export default function HomePage() {
       fetchRecipes();
     }, [userData?.familyId]);
 
-    // Fonction améliorée pour générer un planning aléatoire
     const generateMealPlan = () => {
       if (!startDate || !endDate || selectedCategories.length === 0) {
         setGeneratorError("Veuillez sélectionner les dates et au moins une catégorie de repas.")
@@ -455,33 +459,37 @@ export default function HomePage() {
       setGeneratorSuccess("")
 
       try {
-        // Utilisation des recettes disponibles au lieu de fetchRecipes
         if (availableRecipes.length === 0) {
           setGeneratorError("Aucune recette disponible pour générer un planning.")
           setLoadingGenerator(false)
           return
         }
 
-        const days = eachDayOfInterval({ start: startDate, end: endDate })
-        const plan = []
+        const weeks = getWeeksBetween(startDate, endDate);
+        const plan = [];
 
-        days.forEach((day) => {
-          selectedCategories.forEach((category) => {
-            // Sélection aléatoire d'une recette
-            const randomRecipe = availableRecipes[Math.floor(Math.random() * availableRecipes.length)]
-            plan.push({
-              date: day,
-              category,
-              recipeId: randomRecipe.id,
-              recipeName: randomRecipe.name,
-              recipeImage: randomRecipe.imageUrl || null,
+        weeks.forEach((weekStart) => {
+          const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+          const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+          days.forEach((day) => {
+            selectedCategories.forEach((category) => {
+              const randomRecipe = availableRecipes[Math.floor(Math.random() * availableRecipes.length)]
+              plan.push({
+                date: day,
+                category,
+                recipeId: randomRecipe.id,
+                recipeName: randomRecipe.name,
+                recipeImage: randomRecipe.imageUrl || null,
+                weekId: getWeekId(day),
+              })
             })
           })
         })
 
         setGeneratedPlan(plan)
         setDialogOpen(true)
-        setGeneratorSuccess("Planning généré avec succès !")
+        setGeneratorSuccess("Planning généré avec succès pour toutes les semaines sélectionnées !")
       } catch (error) {
         console.error("Error generating meal plan:", error)
         setGeneratorError("Une erreur est survenue lors de la génération du planning.")
@@ -490,7 +498,6 @@ export default function HomePage() {
       }
     }
 
-    // Fonction améliorée pour générer un planning aléatoire avec options
     const handleRandomPlanning = (type) => {
       setRandomPlanningDialogOpen(false);
       setLoadingGenerator(true);
@@ -504,7 +511,6 @@ export default function HomePage() {
           return;
         }
 
-        // Filtrer les recettes selon le type (familial ou public)
         const filteredRecipes = type === "family"
           ? availableRecipes.filter((r) => r.isFamilyRecipe)
           : availableRecipes.filter((r) => r.visibility === "public");
@@ -515,26 +521,31 @@ export default function HomePage() {
           return;
         }
 
-        const days = eachDayOfInterval({ start: startDate, end: endDate });
+        const weeks = getWeeksBetween(startDate, endDate);
         const plan = [];
 
-        days.forEach((day) => {
-          selectedCategories.forEach((category) => {
-            // Sélection aléatoire d'une recette filtrée
-            const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)];
-            plan.push({
-              date: day,
-              category,
-              recipeId: randomRecipe.id,
-              recipeName: randomRecipe.name,
-              recipeImage: randomRecipe.imageUrl || null,
-            });
-          });
+        weeks.forEach((weekStart) => {
+          const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+          const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+          days.forEach((day) => {
+            selectedCategories.forEach((category) => {
+              const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)];
+              plan.push({
+                date: day,
+                category,
+                recipeId: randomRecipe.id,
+                recipeName: randomRecipe.name,
+                recipeImage: randomRecipe.imageUrl || null,
+                weekId: getWeekId(day),
+              })
+            })
+          })
         });
 
         setGeneratedPlan(plan);
         setDialogOpen(true);
-        setGeneratorSuccess("Planning généré avec succès !");
+        setGeneratorSuccess("Planning généré avec succès pour toutes les semaines sélectionnées !");
       } catch (error) {
         console.error("Erreur lors de la génération du planning aléatoire:", error);
         setGeneratorError("Une erreur est survenue lors de la génération du planning.");
@@ -543,7 +554,6 @@ export default function HomePage() {
       }
     };
 
-    // Fonction améliorée pour exporter en PDF
     const exportToPDF = () => {
       if (!generatedPlan || generatedPlan.length === 0) {
         setGeneratorError("Aucun planning à exporter.")
@@ -559,40 +569,44 @@ export default function HomePage() {
         margin: [0, 0, 0, 20],
       })
 
-      // Regrouper les repas par jour
-      const days = eachDayOfInterval({ start: startDate, end: endDate })
-      days.forEach((day) => {
-        // Format plus complet pour le nom du jour
-        const dayName = format(day, "EEEE d MMMM", { locale: fr })
-        const dayMeals = generatedPlan.filter((item) => format(item.date, "yyyy-MM-dd") === format(day, "yyyy-MM-dd"))
-        
-        content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] })
-        
-        const dayContent = []
-        selectedCategories.forEach((category) => {
-          const meal = dayMeals.find((m) => m.category === category)
-          const recipeName = meal ? meal.recipeName : "Aucun repas planifié"
-          dayContent.push([MEAL_CATEGORIES.find((cat) => cat.value === category)?.label, recipeName])
-        })
-        
-        content.push({
-          layout: "lightHorizontalLines",
-          table: { headerRows: 0, widths: ["30%", "*"], body: dayContent },
-          margin: [0, 0, 0, 10],
-        })
-      })
+      const weeks = getWeeksBetween(startDate, endDate);
+      weeks.forEach((weekStart) => {
+        const weekEnd = endOfWeek(weekStart, { weekStartsOn: 1 });
+        const weekId = getWeekId(weekStart);
+        content.push({ text: `Semaine ${weekId}`, style: "weekHeader", margin: [0, 20, 0, 10] });
 
-      // Ajouter la liste des recettes utilisées
-      const usedRecipes = new Set()
+        const days = eachDayOfInterval({ start: weekStart, end: weekEnd });
+        days.forEach((day) => {
+          const dayName = format(day, "EEEE d MMMM", { locale: fr });
+          const dayMeals = generatedPlan.filter((item) => format(item.date, "yyyy-MM-dd") === format(day, "yyyy-MM-dd"));
+          
+          content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] });
+          
+          const dayContent = [];
+          selectedCategories.forEach((category) => {
+            const meal = dayMeals.find((m) => m.category === category);
+            const recipeName = meal ? meal.recipeName : "Aucun repas planifié";
+            dayContent.push([MEAL_CATEGORIES.find((cat) => cat.value === category)?.label, recipeName]);
+          });
+          
+          content.push({
+            layout: "lightHorizontalLines",
+            table: { headerRows: 0, widths: ["30%", "*"], body: dayContent },
+            margin: [0, 0, 0, 10],
+          });
+        });
+      });
+
+      const usedRecipes = new Set();
       generatedPlan.forEach((item) => {
         if (item.recipeName) {
-          usedRecipes.add(item.recipeName)
+          usedRecipes.add(item.recipeName);
         }
-      })
+      });
 
       if (usedRecipes.size > 0) {
-        content.push({ text: "Recettes utilisées cette semaine", style: "sectionHeader", margin: [0, 20, 0, 10] })
-        content.push({ ul: Array.from(usedRecipes).sort(), margin: [0, 0, 0, 10] })
+        content.push({ text: "Recettes utilisées", style: "sectionHeader", margin: [0, 20, 0, 10] });
+        content.push({ ul: Array.from(usedRecipes).sort(), margin: [0, 0, 0, 10] });
       }
 
       const docDefinition = {
@@ -600,29 +614,27 @@ export default function HomePage() {
         styles: {
           header: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
           subheader: { fontSize: 14, color: "gray", italics: true },
+          weekHeader: { fontSize: 16, bold: true, margin: [0, 10, 0, 5] },
           dayHeader: { fontSize: 14, bold: true, color: theme.palette.primary.main, margin: [0, 15, 0, 5] },
           sectionHeader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] },
         },
         defaultStyle: {
           fontSize: 10,
-        }
-      }
+        },
+      };
 
       try {
-        const pdfFileName = `planning_repas_${format(startDate, "yyyy-MM-dd")}_to_${format(endDate, "yyyy-MM-dd")}.pdf`
-        pdfMake.createPdf(docDefinition).download(pdfFileName)
-        setGeneratorSuccess("PDF généré avec succès !")
-        
-        // Afficher une notification temporaire
-        setShowSuccess(true)
-        setTimeout(() => setShowSuccess(false), 2000)
+        const pdfFileName = `planning_repas_${format(startDate, "yyyy-MM-dd")}_to_${format(endDate, "yyyy-MM-dd")}.pdf`;
+        pdfMake.createPdf(docDefinition).download(pdfFileName);
+        setGeneratorSuccess("PDF généré avec succès !");
+        setShowSuccess(true);
+        setTimeout(() => setShowSuccess(false), 2000);
       } catch (error) {
-        console.error("Error generating PDF: ", error)
-        setGeneratorError("Erreur lors de la génération du PDF.")
+        console.error("Error generating PDF: ", error);
+        setGeneratorError("Erreur lors de la génération du PDF.");
       }
-    }
+    };
 
-    // Fonction améliorée pour ajouter au planning hebdomadaire
     const addToWeeklyPlanner = async () => {
       if (!userData?.familyId) {
         setGeneratorError("Vous devez faire partie d'une famille pour ajouter au planning hebdomadaire.");
@@ -633,40 +645,42 @@ export default function HomePage() {
       setLoadingGenerator(true);
       
       try {
-        // Utiliser la date de début pour déterminer la semaine
-        const weekId = getWeekId(startDate);
-        const planDocRef = doc(db, "families", userData.familyId, "weeklyPlans", weekId);
-        
-        // Créer la structure de données compatible avec WeeklyPlannerPage
-        const planData = {
-          familyId: userData.familyId,
-          startDate: Timestamp.fromDate(startOfWeek(startDate, { weekStartsOn: 1 })),
-          endDate: Timestamp.fromDate(endOfWeek(startDate, { weekStartsOn: 1 })),
-          days: orderedDays.reduce((acc, day) => {
-            acc[day] = { breakfast: null, lunch: null, dinner: null };
-            return acc;
-          }, {}),
-          createdAt: serverTimestamp(),
-          lastUpdatedAt: serverTimestamp(),
-        };
-        
-        // Remplir le planning avec les recettes générées
-        generatedPlan.forEach((item) => {
-          const date = new Date(item.date);
-          let dayIndex = getDay(date);
-          // Convertir l'index du jour (0=dimanche) en clé du jour (0=lundi dans orderedDays)
-          dayIndex = dayIndex === 0 ? 6 : dayIndex - 1;
-          const dayKey = orderedDays[dayIndex];
+        const weeks = getWeeksBetween(startDate, endDate);
+        const planPromises = weeks.map(async (weekStart) => {
+          const weekId = getWeekId(weekStart);
+          const planDocRef = doc(db, "families", userData.familyId, "weeklyPlans", weekId);
           
-          if (planData.days[dayKey] && selectedCategories.includes(item.category)) {
-            planData.days[dayKey][item.category] = item.recipeId;
-          }
+          const planData = {
+            familyId: userData.familyId,
+            startDate: Timestamp.fromDate(startOfWeek(weekStart, { weekStartsOn: 1 })),
+            endDate: Timestamp.fromDate(endOfWeek(weekStart, { weekStartsOn: 1 })),
+            days: orderedDays.reduce((acc, day) => {
+              acc[day] = { breakfast: null, lunch: null, dinner: null };
+              return acc;
+            }, {}),
+            createdAt: serverTimestamp(),
+            lastUpdatedAt: serverTimestamp(),
+          };
+          
+          const weekMeals = generatedPlan.filter((item) => item.weekId === weekId);
+          weekMeals.forEach((item) => {
+            const date = new Date(item.date);
+            let dayIndex = getDay(date);
+            dayIndex = dayIndex === 0 ? 6 : dayIndex - 1;
+            const dayKey = orderedDays[dayIndex];
+            
+            if (planData.days[dayKey] && selectedCategories.includes(item.category)) {
+              planData.days[dayKey][item.category] = item.recipeId;
+            }
+          });
+          
+          console.log(`Données à sauvegarder pour la semaine ${weekId}:`, planData);
+          await setDoc(planDocRef, planData, { merge: true });
         });
         
-        console.log("Données à sauvegarder dans weeklyPlans:", planData);
-        await setDoc(planDocRef, planData, { merge: true });
+        await Promise.all(planPromises);
         
-        setGeneratorSuccess("Planning ajouté au WeeklyPlanner avec succès !");
+        setGeneratorSuccess("Planning ajouté au WeeklyPlanner pour toutes les semaines sélectionnées !");
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 2000);
         setDialogOpen(false);
@@ -770,7 +784,6 @@ export default function HomePage() {
       )
     }
 
-    // Fonction pour basculer l'état du chatbot
     const handleChatToggle = () => {
       setChatOpen(!chatOpen)
     }
@@ -802,7 +815,6 @@ export default function HomePage() {
                 Bienvenue, {userData?.displayName || "Utilisateur"}
               </Typography>
 
-              {/* Affichage des erreurs/succès */}
               {generatorError && (
                 <Alert
                   severity="error"
@@ -822,7 +834,6 @@ export default function HomePage() {
                 </Alert>
               )}
               
-              {/* Notification temporaire de succès */}
               <Snackbar
                 open={showSuccess}
                 autoHideDuration={2000}
@@ -835,7 +846,6 @@ export default function HomePage() {
               </Snackbar>
 
               <Grid container spacing={3} alignItems="stretch">
-                {/* Section Générateur de Planning */}
                 <Grid item xs={12} md={8}>
                   <Card
                     elevation={0}
@@ -858,7 +868,6 @@ export default function HomePage() {
                         Générer un Planning de Repas Aléatoire
                       </Typography>
                       
-                      {/* Informations sur les recettes disponibles */}
                       <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         <Chip
                           icon={<AutoAwesomeIcon />}
@@ -972,13 +981,11 @@ export default function HomePage() {
                   </Card>
                 </Grid>
 
-                {/* Section Actions Rapides */}
                 <Grid item xs={12} md={4}>
                   <QuickActions />
                 </Grid>
               </Grid>
 
-              {/* Bouton Chat Flottant */}
               <Fab
                 color="primary"
                 onClick={handleChatToggle}
@@ -987,7 +994,6 @@ export default function HomePage() {
                 {chatOpen ? <CloseIcon /> : <ChatIcon />}
               </Fab>
 
-              {/* Composant Chatbot */}
               <Chatbot
                 userData={userData}
                 familyData={familyData}
@@ -996,7 +1002,6 @@ export default function HomePage() {
                 onClose={handleChatToggle}
               />
 
-              {/* Dialogue de confirmation/action après génération */}
               <Dialog
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
@@ -1007,7 +1012,7 @@ export default function HomePage() {
                 <DialogTitle>Planning Généré</DialogTitle>
                 <DialogContent>
                   <Typography variant="body1" sx={{ mb: 2 }}>
-                    Votre planning aléatoire a été généré avec succès. Que souhaitez-vous faire ?
+                    Votre planning aléatoire a été généré avec succès pour toutes les semaines sélectionnées. Que souhaitez-vous faire ?
                   </Typography>
                   <Stack spacing={2}>
                     <Button
@@ -1039,7 +1044,6 @@ export default function HomePage() {
                 </DialogActions>
               </Dialog>
               
-              {/* Dialogue pour le choix du type de planning aléatoire */}
               <Dialog
                 open={randomPlanningDialogOpen}
                 onClose={() => setRandomPlanningDialogOpen(false)}
