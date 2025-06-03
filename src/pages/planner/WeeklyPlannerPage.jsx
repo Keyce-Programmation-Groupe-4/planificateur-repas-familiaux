@@ -1,5 +1,3 @@
-"use client"
-
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -31,7 +29,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  useMediaQuery, // Importation pour gérer la responsivité
+  Badge,
 } from "@mui/material";
 import {
   ShoppingCart as ShoppingCartIcon,
@@ -44,6 +42,8 @@ import {
   Share,
   PictureAsPdf,
   NotificationsActive as NotifyIcon,
+  Warning as WarningIcon,
+  Info as InfoIcon,
 } from "@mui/icons-material";
 import { DragDropContext } from "@hello-pangea/dnd";
 import { useSwipeable } from "react-swipeable";
@@ -107,19 +107,61 @@ const dayNames = {
   sunday: "Dimanche",
 };
 
-const isTimestampLike = (value) => {
-  return value && typeof value === "object" && value.hasOwnProperty("seconds") && value.hasOwnProperty("nanoseconds");
+const mealTypeNames = {
+  breakfast: "Petit-déjeuner",
+  lunch: "Déjeuner",
+  dinner: "Dîner",
 };
 
-function WeeklyPlannerPage() {
+const isTimestampLike = (obj) => {
+  return obj && typeof obj === "object" && "seconds" in obj && "nanoseconds" in obj;
+};
+
+// --- Nouvelle fonction pour vérifier les allergènes ---
+const checkForAllergens = (recipe, familyMembers) => {
+  if (!recipe || !recipe.ingredients || !familyMembers || familyMembers.length === 0) {
+    return { hasAllergens: false, allergicMembers: [] };
+  }
+
+  const recipeIngredients = recipe.ingredients.map(ing => ing.name.toLowerCase());
+  const allergicMembers = [];
+
+  familyMembers.forEach(member => {
+    if (member.dietaryPreferences?.allergies && member.dietaryPreferences.allergies.length > 0) {
+      const memberAllergies = member.dietaryPreferences.allergies.map(allergy => allergy.toLowerCase());
+      
+      // Vérifier si un des ingrédients de la recette correspond à une allergie du membre
+      const allergenFound = recipeIngredients.some(ingredient => 
+        memberAllergies.some(allergy => 
+          ingredient.includes(allergy) || allergy.includes(ingredient)
+        )
+      );
+      
+      if (allergenFound) {
+        allergicMembers.push({
+          name: member.displayName || member.personalInfo?.firstName || "Membre",
+          allergies: member.dietaryPreferences.allergies
+        });
+      }
+    }
+  });
+
+  return {
+    hasAllergens: allergicMembers.length > 0,
+    allergicMembers
+  };
+};
+
+export default function WeeklyPlannerPage() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { currentUser, userData, loading: authLoading } = useAuth();
   const familyId = userData?.familyId;
   const isFamilyAdmin = userData?.familyRole === "Admin";
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm")); // Vérifie si l'écran est mobile
 
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
+  const weekId = getWeekId(currentWeekStart);
+
   const [weeklyPlanData, setWeeklyPlanData] = useState(null);
   const [availableRecipesForPlanning, setAvailableRecipesForPlanning] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -127,79 +169,69 @@ function WeeklyPlannerPage() {
   const [isNotifying, setIsNotifying] = useState(false);
   const [error, setError] = useState(null);
   const [showSuccess, setShowSuccess] = useState(false);
-  const [notificationResult, setNotificationResult] = useState({ open: false, message: "", severity: "info" });
+
   const [modalOpen, setModalOpen] = useState(false);
   const [targetSlotInfo, setTargetSlotInfo] = useState(null);
   const [anchorEl, setAnchorEl] = useState(null);
-  const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false);
-  const [clearPlanningDialogOpen, setClearPlanningDialogOpen] = useState(false);
   const menuOpen = Boolean(anchorEl);
 
-  const swipeHandlers = useSwipeable({
-    onSwipedLeft: () => {
-      if (!isLoading && !isSaving && !isNotifying) {
-        handleNextWeek();
-      }
-    },
-    onSwipedRight: () => {
-      if (!isLoading && !isSaving && !isNotifying) {
-        handlePreviousWeek();
-      }
-    },
-    trackMouse: true,
-    preventScrollOnSwipe: true,
-    delta: 10,
+  const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false);
+  const [clearPlanningDialogOpen, setClearPlanningDialogOpen] = useState(false);
+  const [notificationResult, setNotificationResult] = useState({ open: false, message: "", severity: "info" });
+  
+  // --- Nouvel état pour les membres de la famille ---
+  const [familyMembers, setFamilyMembers] = useState([]);
+  
+  // --- Nouvel état pour les alertes d'allergènes ---
+  const [allergenAlerts, setAllergenAlerts] = useState({});
+  
+  // --- Nouvel état pour le dialogue d'information sur les allergènes ---
+  const [allergenInfoDialog, setAllergenInfoDialog] = useState({
+    open: false,
+    recipe: null,
+    allergicMembers: []
   });
 
-  const weekId = getWeekId(currentWeekStart);
+  // --- Swipe Handlers ---
+  const swipeHandlers = useSwipeable({
+    onSwipedLeft: () => handleNextWeek(),
+    onSwipedRight: () => handlePreviousWeek(),
+    preventDefaultTouchmoveEvent: true,
+    trackMouse: false,
+  });
 
   // --- Data Fetching ---
   useEffect(() => {
+    if (authLoading || !familyId) return;
+
     const fetchData = async () => {
-      if (!familyId) {
-        if (!authLoading) {
-          setIsLoading(false);
-        }
-        console.warn("Waiting for familyId...");
-        return;
-      }
       setIsLoading(true);
       setError(null);
-      setWeeklyPlanData(null);
-      setAvailableRecipesForPlanning([]);
-
-      console.log(`Fetching data for family ${familyId}, week: ${weekId}`);
+      console.log(`Fetching data for week: ${weekId}`);
 
       try {
-        const recipesRef = collection(db, "recipes");
-        const familyRecipesQuery = query(recipesRef, where("familyId", "==", familyId), orderBy("createdAt", "desc"));
-        const publicRecipesQuery = query(recipesRef, where("visibility", "==", "public"), orderBy("createdAt", "desc"));
-
-        const [familySnapshot, publicSnapshot] = await Promise.all([
-          getDocs(familyRecipesQuery),
-          getDocs(publicRecipesQuery),
-        ]);
-
-        const familyRecipes = familySnapshot.docs.map((doc) => ({
+        // Récupérer les recettes familiales
+        const familyRecipesRef = collection(db, "recipes");
+        const familyRecipesQuery = query(familyRecipesRef, where("familyId", "==", familyId));
+        const familyRecipesSnap = await getDocs(familyRecipesQuery);
+        const familyRecipes = familyRecipesSnap.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
           isFamilyRecipe: true,
         }));
-        const publicRecipes = publicSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          isFamilyRecipe: false,
-        }));
+        console.log(`Fetched ${familyRecipes.length} family recipes.`);
 
-        const combinedRecipesMap = new Map();
-        familyRecipes.forEach((recipe) => combinedRecipesMap.set(recipe.id, recipe));
-        publicRecipes.forEach((recipe) => {
-          if (!combinedRecipesMap.has(recipe.id)) {
-            combinedRecipesMap.set(recipe.id, recipe);
-          }
-        });
+        // Récupérer les recettes publiques
+        const publicRecipesRef = collection(db, "recipes");
+        const publicRecipesQuery = query(publicRecipesRef, where("visibility", "==", "public"));
+        const publicRecipesSnap = await getDocs(publicRecipesQuery);
+        const publicRecipes = publicRecipesSnap.docs
+          .map((doc) => ({ id: doc.id, ...doc.data(), isFamilyRecipe: false }))
+          .filter((recipe) => recipe.familyId !== familyId); // Exclure les recettes déjà dans la famille
+        console.log(`Fetched ${publicRecipes.length} public recipes.`);
 
-        const combinedRecipes = Array.from(combinedRecipesMap.values()).sort((a, b) => {
+        // Combiner et trier les recettes
+        const combinedRecipes = [...familyRecipes, ...publicRecipes].sort((a, b) => {
           if (a.isFamilyRecipe && !b.isFamilyRecipe) return -1;
           if (!a.isFamilyRecipe && b.isFamilyRecipe) return 1;
           const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(0);
@@ -209,6 +241,23 @@ function WeeklyPlannerPage() {
 
         setAvailableRecipesForPlanning(combinedRecipes);
         console.log(`Fetched and combined ${combinedRecipes.length} recipes for planning.`);
+
+        // Récupérer les membres de la famille
+        const familyDocRef = doc(db, "families", familyId);
+        const familySnap = await getDoc(familyDocRef);
+        
+        if (familySnap.exists()) {
+          const fetchedFamilyData = familySnap.data();
+          if (fetchedFamilyData.memberUids && fetchedFamilyData.memberUids.length > 0) {
+            const memberPromises = fetchedFamilyData.memberUids.map((uid) => getDoc(doc(db, "users", uid)));
+            const memberDocs = await Promise.all(memberPromises);
+            const members = memberDocs
+              .map((docSnap) => (docSnap.exists() ? { uid: docSnap.id, ...docSnap.data() } : null))
+              .filter(Boolean);
+            setFamilyMembers(members);
+            console.log(`Fetched ${members.length} family members.`);
+          }
+        }
 
         const planDocRef = doc(db, "families", familyId, "weeklyPlans", weekId);
         const planDocSnap = await getDoc(planDocRef);
@@ -232,6 +281,33 @@ function WeeklyPlannerPage() {
       fetchData();
     }
   }, [weekId, familyId, authLoading]);
+
+  // --- Effet pour vérifier les allergènes dans le planning ---
+  useEffect(() => {
+    if (!weeklyPlanData || !weeklyPlanData.days || !familyMembers.length || !availableRecipesForPlanning.length) {
+      return;
+    }
+
+    const alerts = {};
+
+    // Parcourir tous les jours et repas du planning
+    Object.entries(weeklyPlanData.days).forEach(([day, meals]) => {
+      Object.entries(meals).forEach(([mealType, recipeId]) => {
+        if (recipeId) {
+          const recipe = availableRecipesForPlanning.find(r => r.id === recipeId);
+          if (recipe) {
+            const allergenCheck = checkForAllergens(recipe, familyMembers);
+            if (allergenCheck.hasAllergens) {
+              alerts[`${day}-${mealType}`] = allergenCheck;
+            }
+          }
+        }
+      });
+    });
+
+    setAllergenAlerts(alerts);
+    console.log("Allergen alerts updated:", alerts);
+  }, [weeklyPlanData, familyMembers, availableRecipesForPlanning]);
 
   // --- Function to create default plan structure ---
   const createDefaultPlan = (currentFamilyId, weekStartDate, useServerTimestamps = true) => {
@@ -328,9 +404,7 @@ function WeeklyPlannerPage() {
           );
           console.log("Ensured endDate is Timestamp instance");
         }
-      } catch (dateError 
-   
-) {
+      } catch (dateError) {
         console.error("Error processing dates before saving:", dateError);
         setError(`Erreur interne lors de la préparation des dates : ${dateError.message}`);
         setIsSaving(false);
@@ -399,29 +473,105 @@ function WeeklyPlannerPage() {
       margin: [0, 0, 0, 20],
     });
 
+    // Ajouter une section pour les alertes d'allergènes
+    const allergenWarnings = [];
+    
     orderedDays.forEach((dayKey) => {
       const dayName = dayNames[dayKey];
       const dayMeals = weeklyPlanData.days[dayKey];
       content.push({ text: dayName, style: "dayHeader", margin: [0, 15, 0, 5] });
       const dayContent = [];
+      
+      // Petit-déjeuner
       const breakfast = dayMeals.breakfast
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.breakfast)?.name || "Recette inconnue"
         : "Aucun repas planifié";
-      dayContent.push(["Petit-déjeuner", breakfast]);
+      
+      // Vérifier les allergènes pour le petit-déjeuner
+      let breakfastText = breakfast;
+      if (allergenAlerts[`${dayKey}-breakfast`]) {
+        breakfastText = `${breakfast} ⚠️`;
+        const recipe = availableRecipesForPlanning.find((r) => r.id === dayMeals.breakfast);
+        const alert = allergenAlerts[`${dayKey}-breakfast`];
+        allergenWarnings.push({
+          day: dayName,
+          meal: "Petit-déjeuner",
+          recipe: recipe?.name || "Recette inconnue",
+          members: alert.allergicMembers.map(m => `${m.name} (${m.allergies.join(', ')})`).join(', ')
+        });
+      }
+      dayContent.push(["Petit-déjeuner", breakfastText]);
+      
+      // Déjeuner
       const lunch = dayMeals.lunch
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.lunch)?.name || "Recette inconnue"
         : "Aucun repas planifié";
-      dayContent.push(["Déjeuner", lunch]);
+      
+      // Vérifier les allergènes pour le déjeuner
+      let lunchText = lunch;
+      if (allergenAlerts[`${dayKey}-lunch`]) {
+        lunchText = `${lunch} ⚠️`;
+        const recipe = availableRecipesForPlanning.find((r) => r.id === dayMeals.lunch);
+        const alert = allergenAlerts[`${dayKey}-lunch`];
+        allergenWarnings.push({
+          day: dayName,
+          meal: "Déjeuner",
+          recipe: recipe?.name || "Recette inconnue",
+          members: alert.allergicMembers.map(m => `${m.name} (${m.allergies.join(', ')})`).join(', ')
+        });
+      }
+      dayContent.push(["Déjeuner", lunchText]);
+      
+      // Dîner
       const dinner = dayMeals.dinner
         ? availableRecipesForPlanning.find((r) => r.id === dayMeals.dinner)?.name || "Recette inconnue"
         : "Aucun repas planifié";
-      dayContent.push(["Dîner", dinner]);
+      
+      // Vérifier les allergènes pour le dîner
+      let dinnerText = dinner;
+      if (allergenAlerts[`${dayKey}-dinner`]) {
+        dinnerText = `${dinner} ⚠️`;
+        const recipe = availableRecipesForPlanning.find((r) => r.id === dayMeals.dinner);
+        const alert = allergenAlerts[`${dayKey}-dinner`];
+        allergenWarnings.push({
+          day: dayName,
+          meal: "Dîner",
+          recipe: recipe?.name || "Recette inconnue",
+          members: alert.allergicMembers.map(m => `${m.name} (${m.allergies.join(', ')})`).join(', ')
+        });
+      }
+      dayContent.push(["Dîner", dinnerText]);
+      
       content.push({
         layout: "lightHorizontalLines",
         table: { headerRows: 0, widths: ["30%", "*"], body: dayContent },
         margin: [0, 0, 0, 10],
       });
     });
+
+    // Ajouter la section des alertes d'allergènes si nécessaire
+    if (allergenWarnings.length > 0) {
+      content.push({ text: "⚠️ Alertes d'allergènes", style: "warningHeader", margin: [0, 20, 0, 10] });
+      
+      const warningTableBody = [
+        [{ text: "Jour", style: "tableHeader" }, { text: "Repas", style: "tableHeader" }, 
+         { text: "Recette", style: "tableHeader" }, { text: "Membres concernés", style: "tableHeader" }]
+      ];
+      
+      allergenWarnings.forEach(warning => {
+        warningTableBody.push([warning.day, warning.meal, warning.recipe, warning.members]);
+      });
+      
+      content.push({
+        layout: "lightHorizontalLines",
+        table: { 
+          headerRows: 1, 
+          widths: ["15%", "20%", "25%", "40%"], 
+          body: warningTableBody 
+        },
+        margin: [0, 0, 0, 20],
+      });
+    }
 
     const usedRecipes = new Set();
     Object.values(weeklyPlanData.days).forEach((day) => {
@@ -445,6 +595,8 @@ function WeeklyPlannerPage() {
         subheader: { fontSize: 14, color: "gray", italics: true },
         dayHeader: { fontSize: 14, bold: true, color: theme.palette.primary.main, margin: [0, 15, 0, 5] },
         sectionHeader: { fontSize: 12, bold: true, margin: [0, 10, 0, 5] },
+        warningHeader: { fontSize: 14, bold: true, color: "red", margin: [0, 15, 0, 5] },
+        tableHeader: { fontSize: 11, bold: true, color: theme.palette.primary.main }
       },
     };
 
@@ -601,531 +753,390 @@ function WeeklyPlannerPage() {
   const handleGoToShoppingList = () => {
     navigate(`/shopping-list?week=${weekId}`);
   };
-
-  // --- Random Planning Functionality ---
-  const handleRandomPlanning = (type) => {
-    setRandomPlanningDialogOpen(false);
-    if (!weeklyPlanData || isSaving || isNotifying) return;
-
-    const filteredRecipes = type === "family"
-      ? availableRecipesForPlanning.filter((r) => r.isFamilyRecipe)
-      : availableRecipesForPlanning.filter((r) => r.visibility === "public");
-
-    if (filteredRecipes.length === 0) {
-      setError(`Aucune recette ${type === "family" ? "familiale" : "publique"} disponible.`);
-      return;
+  
+  // --- Gestionnaire pour ouvrir le dialogue d'information sur les allergènes ---
+  const handleOpenAllergenInfo = (day, mealType) => {
+    const alertKey = `${day}-${mealType}`;
+    if (allergenAlerts[alertKey]) {
+      const recipeId = weeklyPlanData.days[day][mealType];
+      const recipe = availableRecipesForPlanning.find(r => r.id === recipeId);
+      
+      setAllergenInfoDialog({
+        open: true,
+        recipe,
+        allergicMembers: allergenAlerts[alertKey].allergicMembers
+      });
     }
-
-    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
-    orderedDays.forEach((day) => {
-      ["breakfast", "lunch", "dinner"].forEach((mealType) => {
-        const randomRecipe = filteredRecipes[Math.floor(Math.random() * filteredRecipes.length)];
-        updatedPlan.days[day][mealType] = randomRecipe.id;
-      });
+  };
+  
+  // --- Gestionnaire pour fermer le dialogue d'information sur les allergènes ---
+  const handleCloseAllergenInfo = () => {
+    setAllergenInfoDialog({
+      open: false,
+      recipe: null,
+      allergicMembers: []
     });
-
-    setWeeklyPlanData(updatedPlan);
-    savePlan(updatedPlan, false);
   };
 
-  // --- Clear Planning Functionality ---
-  const handleClearPlanning = () => {
+  // --- Random Planning Generation ---
+  const handleGenerateRandomPlanning = async () => {
+    if (!familyId || isLoading || isSaving || isNotifying) return;
+
+    setRandomPlanningDialogOpen(false);
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      // Créer un nouveau plan vide
+      const newPlan = createDefaultPlan(familyId, currentWeekStart, false);
+
+      // Filtrer les recettes disponibles (uniquement familiales ou toutes)
+      const eligibleRecipes = availableRecipesForPlanning.filter((recipe) => recipe.isFamilyRecipe);
+
+      if (eligibleRecipes.length === 0) {
+        throw new Error("Aucune recette disponible pour générer un planning aléatoire.");
+      }
+
+      // Pour chaque jour et type de repas, assigner une recette aléatoire
+      orderedDays.forEach((day) => {
+        ["breakfast", "lunch", "dinner"].forEach((mealType) => {
+          // 70% de chance d'assigner une recette
+          if (Math.random() < 0.7) {
+            const randomIndex = Math.floor(Math.random() * eligibleRecipes.length);
+            newPlan.days[day][mealType] = eligibleRecipes[randomIndex].id;
+          }
+        });
+      });
+
+      // Sauvegarder le nouveau plan
+      await savePlan(newPlan, true);
+      setWeeklyPlanData(newPlan);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 2000);
+    } catch (err) {
+      console.error("Error generating random planning:", err);
+      setError(`Erreur lors de la génération du planning aléatoire: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // --- Clear Planning ---
+  const handleClearPlanning = async () => {
+    if (!familyId || isLoading || isSaving || isNotifying) return;
+
     setClearPlanningDialogOpen(false);
-    if (!weeklyPlanData || isSaving || isNotifying) return;
+    setIsSaving(true);
+    setError(null);
 
-    const updatedPlan = JSON.parse(JSON.stringify(weeklyPlanData));
-    orderedDays.forEach((day) => {
-      ["breakfast", "lunch", "dinner"].forEach((mealType) => {
-        updatedPlan.days[day][mealType] = null;
-      });
-    });
-
-    setWeeklyPlanData(updatedPlan);
-    savePlan(updatedPlan, false);
+    try {
+      // Créer un nouveau plan vide
+      const newPlan = createDefaultPlan(familyId, currentWeekStart, false);
+      
+      // Sauvegarder le nouveau plan
+      await savePlan(newPlan, true);
+      setWeeklyPlanData(newPlan);
+      setShowSuccess(true);
+      setTimeout(() => setShowSuccess(false), 2000);
+    } catch (err) {
+      console.error("Error clearing planning:", err);
+      setError(`Erreur lors de la réinitialisation du planning: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // --- Enhanced Skeleton Rendering ---
-  const renderSkeletons = () => (
-    <Grid container spacing={{ xs: 1, sm: 2, md: 3 }} justifyContent="center">
-      {orderedDays.map((day, index) => (
-        <Grid item xs={12} sm={6} md={4} lg={3} key={day}>
-          <Fade in timeout={300 + index * 100}>
-            <Paper
-              elevation={0}
-              sx={{
-                p: { xs: 1.5, sm: 2, md: 3 },
-                borderRadius: 4,
-                border: `1px solid ${theme.palette.divider}`,
-                height: "100%",
-                minHeight: { xs: "300px", sm: "400px", md: "450px" },
-                background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-              }}
-            >
-              <Skeleton
-                variant="text"
-                width="60%"
-                sx={{
-                  mb: { xs: 2, sm: 3 },
-                  mx: "auto",
-                  height: { xs: "2rem", sm: "2.5rem" },
-                  borderRadius: 2,
-                }}
-              />
-              <Stack spacing={{ xs: 1.5, sm: 2, md: 2.5 }}>
-                <Skeleton variant="rounded" height={{ xs: 80, sm: 100, md: 120 }} sx={{ borderRadius: 4 }} />
-                <Skeleton variant="rounded" height={{ xs: 80, sm: 100, md: 120 }} sx={{ borderRadius: 4 }} />
-                <Skeleton variant="rounded" height={{ xs: 80, sm: 100, md: 120 }} sx={{ borderRadius: 4 }} />
-              </Stack>
-            </Paper>
-          </Fade>
-        </Grid>
-      ))}
-    </Grid>
-  );
-
-  const combinedLoading = authLoading || isLoading;
-  const totalRecipes = availableRecipesForPlanning.length;
-  const plannedMeals = weeklyPlanData
-    ? Object.values(weeklyPlanData.days || {}).reduce(
-        (count, day) => count + Object.values(day).filter((meal) => meal !== null).length,
-        0,
-      )
-    : 0;
-
-  if (authLoading) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
-        <ButtonCircularProgress />
-      </Box>
-    );
-  }
-
-  if (!familyId && !authLoading) {
-    return (
-      <Container maxWidth="sm" sx={{ textAlign: "center", mt: { xs: 4, sm: 6, md: 8 } }}>
-        <Alert severity="warning" sx={{ mb: 2, borderRadius: 3 }}>
-          Vous devez rejoindre ou créer une famille pour utiliser le planificateur.
-        </Alert>
-        <Button
-          variant="contained"
-          onClick={() => navigate("/family")}
-          sx={{
-            borderRadius: 3,
-            px: { xs: 2, sm: 3 },
-            py: 1,
-            fontSize: { xs: "0.875rem", sm: "1rem" },
-          }}
-        >
-          Gérer ma Famille
-        </Button>
-      </Container>
-    );
-  }
-
+  // --- Render ---
   return (
-    <DragDropContext onDragEnd={onDragEnd}>
-      <Box
-        {...swipeHandlers}
-        sx={{
-          py: { xs: 2, sm: 3, md: 4 },
-          px: { xs: 1, sm: 2, md: 3 },
-          background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
-          minHeight: "100vh",
-          position: "relative",
-          overflowX: "hidden",
-          "&::before": {
-            content: '""',
-            position: "absolute",
-            top: 8,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "50px",
-            height: "4px",
-            background: `linear-gradient(90deg, ${alpha(theme.palette.primary.main, 0.3)} 0%, ${alpha(theme.palette.secondary.main, 0.3)} 100%)`,
-            borderRadius: "2px",
-            display: { xs: "block", sm: "none" },
-          },
-        }}
-      >
-        <Box
-          sx={{
-            position: "absolute",
-            top: 0,
-            right: 0,
-            width: { xs: "150px", sm: "200px", md: "300px" },
-            height: { xs: "150px", sm: "200px", md: "300px" },
-            background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.1)} 0%, transparent 70%)`,
-            borderRadius: "50%",
-            zIndex: 0,
-            pointerEvents: "none",
-            display: { xs: "none", sm: "block" },
-          }}
-        />
-        <Container maxWidth="xl" sx={{ position: "relative", zIndex: 1 }}>
-          <Fade in timeout={600}>
-            <Box sx={{ textAlign: "center", mb: { xs: 2, sm: 3, md: 4 } }}>
-              <Typography
-                variant="h3"
-                component="h1"
-                sx={{
-                  fontWeight: 700,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  backgroundClip: "text",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  mb: 1,
-                  fontSize: { xs: "1.5rem", sm: "2rem", md: "2.5rem", lg: "3rem" },
-                }}
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }} {...swipeHandlers}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+        <Typography variant="h4" component="h1" sx={{ fontWeight: "bold" }}>
+          Planning Hebdomadaire
+        </Typography>
+        <Stack direction="row" spacing={1}>
+          <Tooltip title="Générer liste de courses">
+            <span>
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<ShoppingCartIcon />}
+                onClick={handleGoToShoppingList}
+                disabled={isLoading || isSaving || isNotifying}
               >
-                Planificateur de Repas
-              </Typography>
-              <Typography
-                variant="h6"
-                color="text.secondary"
-                sx={{
-                  fontWeight: 400,
-                  maxWidth: { xs: "90%", sm: "600px" },
-                  mx: "auto",
-                  fontSize: { xs: "0.875rem", sm: "1rem", md: "1.125rem" },
-                }}
-              >
-                Organisez vos repas de la semaine avec élégance
-              </Typography>
-            </Box>
-          </Fade>
-          <Zoom in timeout={800}>
-            <Paper
-              elevation={0}
-              sx={{
-                p: { xs: 1.5, sm: 2, md: 3 },
-                borderRadius: 4,
-                background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-                border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-                backdropFilter: "blur(10px)",
-                mb: { xs: 2, sm: 3 },
-              }}
+                Liste de courses
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title="Plus d'options">
+            <IconButton
+              onClick={handleMenuClick}
+              color="primary"
+              disabled={isLoading || isSaving || isNotifying}
             >
-              <Stack
-                direction={{ xs: "column", sm: "row" }}
-                spacing={{ xs: 1, sm: 2, md: 3 }}
-                alignItems="center"
-                justifyContent="space-between"
-              >
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={{ xs: 1, sm: 2 }}
-                  alignItems="center"
-                  sx={{ width: { xs: "100%", sm: "auto" } }}
-                >
-                  <Chip
-                    icon={<AutoAwesomeIcon />}
-                    label={`${totalRecipes} recettes`}
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 3,
-                      fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                      "& .MuiChip-icon": { color: theme.palette.primary.main },
-                    }}
-                  />
-                  <Chip
-                    label={`${plannedMeals}/21 repas planifiés`}
-                    variant="outlined"
-                    sx={{
-                      borderRadius: 3,
-                      fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                    }}
-                  />
-                </Stack>
-                <WeekNavigator
-                  currentWeekStart={currentWeekStart}
-                  onPreviousWeek={handlePreviousWeek}
-                  onNextWeek={handleNextWeek}
-                  onGoToToday={handleGoToToday}
-                  isLoading={combinedLoading || isSaving || isNotifying}
-                />
-                <Stack
-                  direction={{ xs: "column", sm: "row" }}
-                  spacing={{ xs: 1, sm: 2 }}
-                  sx={{ width: { xs: "100%", sm: "auto" } }}
-                >
-                  <Tooltip title="Aller à aujourd'hui">
-                    <IconButton
-                      onClick={handleGoToToday}
-                      disabled={combinedLoading || isSaving || isNotifying}
-                      sx={{
-                        backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                        "&:hover": {
-                          backgroundColor: alpha(theme.palette.primary.main, 0.2),
-                          transform: "scale(1.05)",
-                        },
-                        transition: "all 0.2s ease",
-                        p: { xs: 0.5, sm: 1 },
-                      }}
-                    >
-                      <TodayIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Tooltip title="Options">
-                    <IconButton
-                      onClick={handleMenuClick}
-                      disabled={combinedLoading || isSaving || isNotifying}
-                      sx={{
-                        backgroundColor: alpha(theme.palette.secondary.main, 0.1),
-                        "&:hover": {
-                          backgroundColor: alpha(theme.palette.secondary.main, 0.2),
-                          transform: "scale(1.05)",
-                        },
-                        transition: "all 0.2s ease",
-                        p: { xs: 0.5, sm: 1 },
-                      }}
-                    >
-                      <MoreVert fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                  <Button
-                    variant="contained"
-                    startIcon={<ShoppingCartIcon />}
-                    onClick={handleGoToShoppingList}
-                    disabled={combinedLoading || isSaving || isNotifying || !weeklyPlanData || weeklyPlanData.isLocal}
-                    sx={{
-                      borderRadius: 3,
-                      px: { xs: 2, sm: 3 },
-                      py: { xs: 0.5, sm: 1 },
-                      fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                      background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                      boxShadow: `0 4px 20px ${alpha(theme.palette.primary.main, 0.3)}`,
-                      "&:hover": {
-                        transform: "translateY(-2px)",
-                        boxShadow: `0 6px 25px ${alpha(theme.palette.primary.main, 0.4)}`,
-                      },
-                      transition: "all 0.3s ease",
-                      width: { xs: "100%", sm: "auto" },
-                    }}
-                  >
-                    Liste de Courses
-                  </Button>
-                </Stack>
-              </Stack>
-            </Paper>
-          </Zoom>
-          {(combinedLoading || isSaving || isNotifying) && (
-            <Fade in>
-              <Box sx={{ mb: { xs: 1, sm: 2, md: 3 } }}>
-                <LinearProgress
-                  sx={{
-                    borderRadius: 2,
-                    height: 6,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                    "& .MuiLinearProgress-bar": {
-                      background: `linear-gradient(90deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                    },
-                  }}
-                />
-              </Box>
-            </Fade>
+              <MoreVert />
+            </IconButton>
+          </Tooltip>
+        </Stack>
+        <Menu anchorEl={anchorEl} open={menuOpen} onClose={handleMenuClose}>
+          <MenuItem onClick={handleRefresh}>
+            <ListItemIcon>
+              <AutoAwesomeIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Rafraîchir</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleUncheckAll}>
+            <ListItemIcon>
+              <PlaylistAddCheck fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Générer planning aléatoire</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleClearChecked}>
+            <ListItemIcon>
+              <DeleteSweep fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Réinitialiser planning</ListItemText>
+          </MenuItem>
+          <Divider />
+          <MenuItem onClick={handleExportPdf}>
+            <ListItemIcon>
+              <PictureAsPdf fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Exporter en PDF</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handlePrint}>
+            <ListItemIcon>
+              <Print fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Imprimer</ListItemText>
+          </MenuItem>
+          <MenuItem onClick={handleShare}>
+            <ListItemIcon>
+              <Share fontSize="small" />
+            </ListItemIcon>
+            <ListItemText>Partager</ListItemText>
+          </MenuItem>
+          {isFamilyAdmin && (
+            <MenuItem onClick={handleNotifyFamily} disabled={isNotifying}>
+              <ListItemIcon>
+                {isNotifying ? <ButtonCircularProgress size={20} /> : <NotifyIcon fontSize="small" />}
+              </ListItemIcon>
+              <ListItemText>Notifier la famille</ListItemText>
+            </MenuItem>
           )}
-          {showSuccess && (
-            <Snackbar
-              open={showSuccess}
-              autoHideDuration={2000}
-              onClose={() => setShowSuccess(false)}
-              anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-            >
-              <Alert onClose={() => setShowSuccess(false)} severity="success" sx={{ width: "100%", borderRadius: 3 }}>
-                Planning sauvegardé !
-              </Alert>
-            </Snackbar>
-          )}
-          {error && (
-            <Fade in>
-              <Alert
-                severity="error"
-                sx={{
-                  mb: { xs: 1, sm: 2, md: 3 },
-                  borderRadius: 3,
-                  fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                  "& .MuiAlert-icon": { fontSize: { xs: "1rem", sm: "1.5rem" } },
-                }}
-              >
-                {error}
-              </Alert>
-            </Fade>
-          )}
-          {combinedLoading ? (
-            renderSkeletons()
-          ) : weeklyPlanData ? (
-            <Fade in timeout={1000}>
-              <Grid container spacing={{ xs: 1, sm: 2, md: 3, lg: 3 }} justifyContent="center">
-                {orderedDays.map((dayKey, index) => (
-                  <Grid
-                    item
-                    xs={12}
-                    sm={6}
-                    md={4}
-                    lg={3}
-                    xl={2}
-                    key={dayKey}
-                    sx={{ minWidth: { xs: "280px", sm: "300px" } }}
-                  >
-                    <Zoom in timeout={400 + index * 100}>
-                      <Box>
-                        <DayColumn
-                          dayKey={dayKey}
-                          dayName={dayNames[dayKey]}
-                          date={
-                            new Date(
-                              currentWeekStart.getFullYear(),
-                              currentWeekStart.getMonth(),
-                              currentWeekStart.getDate() + orderedDays.indexOf(dayKey),
-                            )
-                          }
-                          meals={weeklyPlanData.days[dayKey]}
-                          recipes={availableRecipesForPlanning.reduce((acc, recipe) => {
-                            acc[recipe.id] = recipe;
-                            return acc;
-                          }, {})}
-                          onOpenModal={handleOpenModal}
-                          onDeleteRecipe={handleDeleteRecipeFromSlot}
-                          currentDate={new Date()}
-                          weekStartDate={currentWeekStart}
-                        />
-                      </Box>
-                    </Zoom>
-                  </Grid>
-                ))}
-              </Grid>
-            </Fade>
-          ) : (
-            !error && (
-              <Fade in>
-                <Box sx={{ textAlign: "center", mt: { xs: 4, sm: 6, md: 8 } }}>
-                  <Typography
-                    variant="h5"
-                    color="text.secondary"
-                    sx={{ mb: 2, fontSize: { xs: "1.25rem", sm: "1.5rem" } }}
-                  >
-                    Aucun planning trouvé pour cette semaine
-                  </Typography>
-                  <Typography
-                    variant="body1"
-                    color="text.secondary"
-                    sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}
-                  >
-                    Commencez à planifier vos repas en ajoutant des recettes
-                  </Typography>
-                </Box>
-              </Fade>
-            )
-          )}
-          <Menu
-            id="options-menu"
-            anchorEl={anchorEl}
-            open={menuOpen}
-            onClose={handleMenuClose}
-            PaperProps={{
-              sx: {
-                minWidth: "200px",
-                borderRadius: 3,
-                boxShadow: `0 4px 20px ${alpha(theme.palette.grey[500], 0.2)}`,
-              },
-            }}
-          >
-            <MenuItem onClick={handleExportPdf} disabled={combinedLoading || !weeklyPlanData || isNotifying}>
-              <ListItemIcon>
-                <PictureAsPdf fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Exporter en PDF</ListItemText>
-            </MenuItem>
-            {isFamilyAdmin && (
-              <MenuItem onClick={handleNotifyFamily} disabled={combinedLoading || isSaving || isNotifying || !weeklyPlanData}>
-                <ListItemIcon>
-                  {isNotifying ? <ButtonCircularProgress size={16} /> : <NotifyIcon fontSize="small" />}
-                </ListItemIcon>
-                <ListItemText>{isNotifying ? "Envoi en cours..." : "Notifier la Famille"}</ListItemText>
-              </MenuItem>
-            )}
-            <Divider />
-            <MenuItem onClick={handleUncheckAll} disabled={combinedLoading || !weeklyPlanData || isNotifying}>
-              <ListItemIcon>
-                <PlaylistAddCheck fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Planning aléatoire</ListItemText>
-            </MenuItem>
-            <MenuItem onClick={handleClearChecked} disabled={combinedLoading || !weeklyPlanData || isNotifying}>
-              <ListItemIcon>
-                <DeleteSweep fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Réinitialiser le planning</ListItemText>
-            </MenuItem>
-            <Divider />
-            <MenuItem onClick={handlePrint} disabled>
-              <ListItemIcon>
-                <Print fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Imprimer</ListItemText>
-            </MenuItem>
-            <MenuItem onClick={handleShare} disabled>
-              <ListItemIcon>
-                <Share fontSize="small" />
-              </ListItemIcon>
-              <ListItemText>Partager</ListItemText>
-            </MenuItem>
-          </Menu>
-          <RecipeSelectionModal
-            open={modalOpen}
-            onClose={handleCloseModal}
-            onRecipeSelect={handleRecipeSelected}
-            availableRecipes={availableRecipesForPlanning}
-            targetSlotInfo={targetSlotInfo}
-          />
-          <Snackbar
-            open={notificationResult.open}
-            autoHideDuration={6000}
-            onClose={(event, reason) => {
-              if (reason === "clickaway") return;
-              setNotificationResult({ ...notificationResult, open: false });
-            }}
-            anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-          >
-            <Alert
-              onClose={() => setNotificationResult({ ...notificationResult, open: false })}
-              severity={notificationResult.severity}
-              sx={{ width: "100%", borderRadius: 3, fontSize: { xs: "0.75rem", sm: "0.875rem" } }}
-            >
-              {notificationResult.message}
-            </Alert>
-          </Snackbar>
-          {/* Random Planning Dialog */}
-          <Dialog open={randomPlanningDialogOpen} onClose={() => setRandomPlanningDialogOpen(false)} fullScreen={isMobile}>
-            <DialogTitle>Choisir le type de recettes</DialogTitle>
-            <DialogContent>
-              <Typography>Veuillez choisir le type de recettes pour le planning aléatoire :</Typography>
-            </DialogContent>
-            <DialogActions>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ width: "100%" }}>
-                <Button fullWidth={isMobile} onClick={() => handleRandomPlanning("family")}>Recettes familiales</Button>
-                <Button fullWidth={isMobile} onClick={() => handleRandomPlanning("public")}>Recettes publiques</Button>
-                <Button fullWidth={isMobile} onClick={() => setRandomPlanningDialogOpen(false)}>Annuler</Button>
-              </Stack>
-            </DialogActions>
-          </Dialog>
-          {/* Clear Planning Dialog */}
-          <Dialog open={clearPlanningDialogOpen} onClose={() => setClearPlanningDialogOpen(false)} fullScreen={isMobile}>
-            <DialogTitle>Confirmer la suppression</DialogTitle>
-            <DialogContent>
-              <Typography>Êtes-vous sûr de vouloir réinitialiser tout le planning de la semaine ?</Typography>
-            </DialogContent>
-            <DialogActions>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ width: "100%" }}>
-                <Button fullWidth={isMobile} onClick={() => setClearPlanningDialogOpen(false)}>Annuler</Button>
-                <Button fullWidth={isMobile} onClick={handleClearPlanning} color="error">Confirmer</Button>
-              </Stack>
-            </DialogActions>
-          </Dialog>
-        </Container>
+        </Menu>
       </Box>
-    </DragDropContext>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+      )}
+
+      <WeekNavigator
+        currentWeekStart={currentWeekStart}
+        onPreviousWeek={handlePreviousWeek}
+        onNextWeek={handleNextWeek}
+        onGoToToday={handleGoToToday}
+        disabled={isLoading || isSaving || isNotifying}
+      />
+
+      {isLoading ? (
+        <Box sx={{ mt: 2 }}>
+          <LinearProgress />
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            {orderedDays.map((day) => (
+              <Grid item xs={12} sm={6} md={4} lg={true} key={day}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    height: "100%",
+                    borderRadius: 2,
+                    border: `1px solid ${theme.palette.divider}`,
+                  }}
+                >
+                  <Typography variant="h6" sx={{ mb: 2 }}>
+                    <Skeleton width="60%" />
+                  </Typography>
+                  <Skeleton variant="rectangular" height={60} sx={{ mb: 2, borderRadius: 1 }} />
+                  <Skeleton variant="rectangular" height={60} sx={{ mb: 2, borderRadius: 1 }} />
+                  <Skeleton variant="rectangular" height={60} sx={{ borderRadius: 1 }} />
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+      ) : (
+        <DragDropContext onDragEnd={onDragEnd}>
+          <Grid container spacing={2}>
+            {orderedDays.map((day) => (
+              <Grid item xs={12} sm={6} md={4} lg={true} key={day}>
+                <DayColumn
+                  day={day}
+                  dayName={dayNames[day]}
+                  meals={weeklyPlanData?.days[day] || { breakfast: null, lunch: null, dinner: null }}
+                  recipes={availableRecipesForPlanning}
+                  onOpenModal={handleOpenModal}
+                  onDeleteRecipe={handleDeleteRecipeFromSlot}
+                  disabled={isSaving || isNotifying}
+                  allergenAlerts={allergenAlerts}
+                  onOpenAllergenInfo={handleOpenAllergenInfo}
+                />
+              </Grid>
+            ))}
+          </Grid>
+        </DragDropContext>
+      )}
+
+      <RecipeSelectionModal
+        open={modalOpen}
+        onClose={handleCloseModal}
+        recipes={availableRecipesForPlanning}
+        onRecipeSelected={handleRecipeSelected}
+        targetSlotInfo={targetSlotInfo}
+        dayNames={dayNames}
+        mealTypeNames={mealTypeNames}
+      />
+
+      <Dialog open={randomPlanningDialogOpen} onClose={() => setRandomPlanningDialogOpen(false)}>
+        <DialogTitle>Générer un planning aléatoire</DialogTitle>
+        <DialogContent>
+          <DialogContent>
+            <Typography>
+              Voulez-vous générer un planning aléatoire pour cette semaine ? Cela remplacera votre planning actuel.
+            </Typography>
+          </DialogContent>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRandomPlanningDialogOpen(false)}>Annuler</Button>
+          <Button
+            onClick={handleGenerateRandomPlanning}
+            variant="contained"
+            color="primary"
+            disabled={isSaving}
+            startIcon={isSaving ? <ButtonCircularProgress size={20} /> : <AutoAwesomeIcon />}
+          >
+            Générer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={clearPlanningDialogOpen} onClose={() => setClearPlanningDialogOpen(false)}>
+        <DialogTitle>Réinitialiser le planning</DialogTitle>
+        <DialogContent>
+          <DialogContent>
+            <Typography>
+              Voulez-vous réinitialiser le planning de cette semaine ? Tous les repas seront supprimés.
+            </Typography>
+          </DialogContent>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setClearPlanningDialogOpen(false)}>Annuler</Button>
+          <Button
+            onClick={handleClearPlanning}
+            variant="contained"
+            color="error"
+            disabled={isSaving}
+            startIcon={isSaving ? <ButtonCircularProgress size={20} /> : <DeleteSweep />}
+          >
+            Réinitialiser
+          </Button>
+        </DialogActions>
+      </Dialog>
+      
+      {/* Dialogue d'information sur les allergènes */}
+      <Dialog 
+        open={allergenInfoDialog.open} 
+        onClose={handleCloseAllergenInfo}
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ bgcolor: theme.palette.error.light, color: theme.palette.error.contrastText }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <WarningIcon color="inherit" />
+            <Typography variant="h6">Alerte Allergène</Typography>
+          </Stack>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="h6" gutterBottom>
+              {allergenInfoDialog.recipe?.name || "Recette"}
+            </Typography>
+            
+            <Typography variant="body1" gutterBottom sx={{ mt: 2 }}>
+              Cette recette contient des ingrédients auxquels certains membres de la famille sont allergiques :
+            </Typography>
+            
+            <Box sx={{ mt: 2, mb: 2 }}>
+              {allergenInfoDialog.allergicMembers.map((member, index) => (
+                <Paper 
+                  key={index} 
+                  elevation={0} 
+                  sx={{ 
+                    p: 2, 
+                    mb: 1, 
+                    bgcolor: alpha(theme.palette.error.light, 0.1),
+                    border: `1px solid ${theme.palette.error.light}`,
+                    borderRadius: 2
+                  }}
+                >
+                  <Typography variant="subtitle1" gutterBottom>
+                    <strong>{member.name}</strong> est allergique à :
+                  </Typography>
+                  <Stack direction="row" spacing={1} flexWrap="wrap">
+                    {member.allergies.map((allergy, i) => (
+                      <Chip 
+                        key={i} 
+                        label={allergy} 
+                        color="error" 
+                        size="small" 
+                        sx={{ mb: 1 }}
+                      />
+                    ))}
+                  </Stack>
+                </Paper>
+              ))}
+            </Box>
+            
+            <Typography variant="body2" color="text.secondary">
+              Ingrédients de la recette :
+            </Typography>
+            <Box sx={{ mt: 1 }}>
+              {allergenInfoDialog.recipe?.ingredients?.map((ingredient, index) => (
+                <Chip 
+                  key={index} 
+                  label={`${ingredient.name} (${ingredient.quantity} ${ingredient.unit})`} 
+                  variant="outlined"
+                  size="small"
+                  sx={{ mr: 1, mb: 1 }}
+                />
+              ))}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseAllergenInfo} color="primary">
+            Fermer
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={showSuccess}
+        autoHideDuration={2000}
+        message="Planning sauvegardé avec succès !"
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      />
+
+      <Snackbar
+        open={notificationResult.open}
+        autoHideDuration={4000}
+        onClose={() => setNotificationResult({ ...notificationResult, open: false })}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity={notificationResult.severity} sx={{ width: "100%" }}>
+          {notificationResult.message}
+        </Alert>
+      </Snackbar>
+    </Container>
   );
 }
-
-export default WeeklyPlannerPage;
