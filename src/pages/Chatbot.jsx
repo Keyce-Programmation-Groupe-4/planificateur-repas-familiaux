@@ -15,7 +15,6 @@ import {
   Paper,
   List,
   ListItem,
-  ListItemText,
   Avatar,
   Skeleton,
   useMediaQuery,
@@ -25,9 +24,13 @@ import SendIcon from "@mui/icons-material/Send"
 import CloseIcon from "@mui/icons-material/Close"
 import SmartToyIcon from '@mui/icons-material/SmartToy'
 import AccountCircleIcon from '@mui/icons-material/AccountCircle'
-import MicIcon from '@mui/icons-material/Mic';
-import StopIcon from '@mui/icons-material/Stop';
+import MicIcon from '@mui/icons-material/Mic'
+import StopIcon from '@mui/icons-material/Stop'
 import { differenceInYears } from "date-fns"
+import ReactMarkdown from 'react-markdown' // Ajout de react-markdown
+import rehypeSanitize from 'rehype-sanitize' // Pour sécuriser le rendu Markdown
+import { githubLight } from '@uiw/codemirror-theme-github' // Pour styliser les blocs de code (optionnel)
+import CodeMirror from '@uiw/react-codemirror' // Pour rendre les blocs de code
 
 // --- Constantes et Fonctions Utilitaires pour le Chatbot ---
 const GEMINI_API_KEY = "AIzaSyDfu0Q9IKDvQu5ewtsG7xnh43iebNDDuyU"; // REMPLACEZ PAR VOTRE CLÉ API
@@ -135,7 +138,7 @@ const callGeminiAPI = async (messages, userContext = "") => {
   }
 };
 
-// --- Composant Chatbot --- 
+// --- Composant Chatbot ---
 export default function Chatbot({ userData, familyData, familyMembers, isOpen, onClose }) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -153,7 +156,6 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
   const [voiceError, setVoiceError] = useState('');
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const recognitionRef = useRef(null);
-  // --- Fin State Reconnaissance Vocale ---
 
   // --- Initialisation et Effets ---
   useEffect(() => {
@@ -169,16 +171,16 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
         setWelcomeMessageSet(true);
       }
     }
-  }, [userData, familyData, familyMembers, welcomeMessageSet, isOpen]); // Dépendance à isOpen pour regénérer si fermé/ouvert
+  }, [userData, familyData, familyMembers, welcomeMessageSet, isOpen]);
 
   useEffect(() => {
     // Scroll vers le bas quand les messages changent
     if (chatListRef.current) {
       setTimeout(() => {
-         if (chatListRef.current) {
-           chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
-         }
-      }, 100); // Léger délai pour assurer le rendu
+        if (chatListRef.current) {
+          chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+        }
+      }, 100);
     }
   }, [chatMessages, isChatLoading]);
 
@@ -225,7 +227,6 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
     }
     return () => { recognitionRef.current?.abort(); };
   }, []);
-  // --- Fin Initialisation Reconnaissance Vocale ---
 
   // --- Gestionnaires d'événements ---
   const handleSendMessage = useCallback(async () => {
@@ -238,7 +239,7 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
     setUserInput('');
     setIsChatLoading(true);
     setChatError('');
-    setVoiceError(''); // Clear voice error on send
+    setVoiceError('');
 
     try {
       const historyForAPI = updatedMessages.slice(welcomeMessageSet ? 1 : 0);
@@ -259,11 +260,10 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
     }
     if (isRecording) {
       recognitionRef.current?.stop();
-      // setIsRecording(false); // Géré par onend
       console.log('Arrêt manuel enregistrement.');
     } else {
       setVoiceError('');
-      setChatError(''); // Clear chat error too
+      setChatError('');
       try {
         recognitionRef.current?.start();
         setIsRecording(true);
@@ -278,14 +278,38 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
 
   const handleClose = () => {
     if (isRecording) {
-      recognitionRef.current?.stop(); // Stop recording if chat is closed
+      recognitionRef.current?.stop();
     }
     setChatError('');
     setVoiceError('');
-    onClose(); // Appeler la fonction de fermeture passée en prop
+    onClose();
   }
 
-  // --- Rendu du composant --- 
+  // --- Styles personnalisés pour Markdown ---
+  const markdownStyles = {
+    '& h1': { fontSize: '1.5rem', fontWeight: 500, margin: '0.5rem 0' },
+    '& h2': { fontSize: '1.25rem', fontWeight: 500, margin: '0.5rem 0' },
+    '& h3': { fontSize: '1rem', fontWeight: 500, margin: '0.5rem 0' },
+    '& p': { margin: '0.5rem 0', lineHeight: 1.5 },
+    '& ul, & ol': { margin: '0.5rem 0', paddingLeft: '1.5rem' },
+    '& li': { margin: '0.25rem 0' },
+    '& strong': { fontWeight: 700 },
+    '& em': { fontStyle: 'italic' },
+    '& code': {
+      backgroundColor: alpha(theme.palette.grey[200], 0.5),
+      padding: '0.2rem 0.4rem',
+      borderRadius: '4px',
+      fontFamily: 'monospace',
+    },
+    '& pre': {
+      backgroundColor: alpha(theme.palette.grey[200], 0.5),
+      padding: '0.5rem',
+      borderRadius: '4px',
+      overflowX: 'auto',
+    },
+  };
+
+  // --- Rendu du composant ---
   return (
     <Fade in={isOpen}>
       <Paper
@@ -334,7 +358,34 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
                 {msg.sender === 'user' ? <AccountCircleIcon fontSize="small" /> : <SmartToyIcon fontSize="small" />}
               </Avatar>
               <Paper elevation={1} sx={{ p: 1.5, borderRadius: '12px', bgcolor: msg.sender === 'user' ? alpha(theme.palette.secondary.light, 0.2) : alpha(theme.palette.primary.light, 0.2), maxWidth: '80%' }}>
-                <ListItemText primary={msg.text} sx={{ wordBreak: 'break-word' }} />
+                {msg.sender === 'bot' ? (
+                  <ReactMarkdown
+                    rehypePlugins={[rehypeSanitize]}
+                    components={{
+                      code({ node, inline, className, children, ...props }) {
+                        const match = /language-(\w+)/.exec(className || '');
+                        return !inline && match ? (
+                          <CodeMirror
+                            value={String(children).replace(/\n$/, '')}
+                            theme={githubLight}
+                            extensions={[match[1] ? { language: match[1] } : {}]}
+                            readOnly
+                            {...props}
+                          />
+                        ) : (
+                          <code className={className} {...props}>
+                            {children}
+                          </code>
+                        );
+                      }
+                    }}
+                    sx={markdownStyles}
+                  >
+                    {msg.text}
+                  </ReactMarkdown>
+                ) : (
+                  <Typography sx={{ wordBreak: 'break-word' }}>{msg.text}</Typography>
+                )}
               </Paper>
             </ListItem>
           ))}
@@ -362,7 +413,6 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
               disabled={isChatLoading}
               sx={{ flexGrow: 1 }}
             />
-            {/* Bouton Microphone */} 
             {isSpeechSupported && (
               <Tooltip title={isRecording ? "Arrêter l'enregistrement" : "Enregistrer note vocale"}>
                 <span>
@@ -377,7 +427,6 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
                 </span>
               </Tooltip>
             )}
-            {/* Bouton Envoyer */} 
             <Tooltip title="Envoyer">
               <span>
                 <IconButton
@@ -396,4 +445,3 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
     </Fade>
   );
 }
-
