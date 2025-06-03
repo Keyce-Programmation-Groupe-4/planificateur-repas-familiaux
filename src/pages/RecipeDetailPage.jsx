@@ -70,6 +70,8 @@ export default function RecipeDetailPage() {
 
   useEffect(() => {
     const fetchRecipe = async () => {
+      console.log("Fetching recipe details for ID:", recipeId);
+      console.log("Current user data:", userData);
       if (!recipeId || !userData?.familyId) {
         setError("Recette non trouvée ou accès non autorisé.")
         setLoading(false)

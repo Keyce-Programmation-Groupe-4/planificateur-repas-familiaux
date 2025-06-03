@@ -50,7 +50,7 @@ function App() {
             }
           />
           <Route
-            path="/recipes/:id"
+            path="/recipes/:recipeId"
             element={
               <ProtectedRoute>
                 <RecipeDetailPage />
@@ -66,7 +66,7 @@ function App() {
             }
           />
           <Route
-            path="/recipes/edit/:id"
+            path="/recipes/edit/:recipeId"
             element={
               <ProtectedRoute>
                 <RecipeFormPage />
