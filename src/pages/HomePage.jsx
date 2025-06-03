@@ -175,26 +175,26 @@ export default function HomePage() {
       sx={{
         background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
         minHeight: "100vh",
-        py: 8,
+        py: { xs: 4, sm: 8 },
       }}
     >
       <Container maxWidth="lg">
-        <Box sx={{ textAlign: "center", mb: 8 }}>
+        <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 8 } }}>
           <Typography
             variant="h1"
             sx={{
               fontWeight: 800,
-              fontSize: { xs: "2.5rem", sm: "3.5rem", md: "4.5rem" },
+              fontSize: { xs: "2rem", sm: "3rem", md: "4rem" },
               background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
               backgroundClip: "text",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
-              mb: 2,
+              mb: { xs: 1, sm: 2 },
             }}
           >
             Planifiez vos repas en famille facilement
           </Typography>
-          <Typography variant="h5" color="text.secondary" sx={{ mb: 4 }}>
+          <Typography variant="h5" color="text.secondary" sx={{ mb: { xs: 2, sm: 4 }, fontSize: { xs: "1rem", sm: "1.25rem" } }}>
             Organisez vos repas, gérez vos recettes et simplifiez vos courses avec notre application intuitive.
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2} justifyContent="center">
@@ -203,10 +203,10 @@ export default function HomePage() {
               size="large"
               href="/signup"
               sx={{
-                py: 2,
-                px: 4,
+                py: { xs: 1.5, sm: 2 },
+                px: { xs: 3, sm: 4 },
                 borderRadius: 3,
-                fontSize: "1.1rem",
+                fontSize: { xs: "0.9rem", sm: "1.1rem" },
                 background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
               }}
             >
@@ -217,10 +217,10 @@ export default function HomePage() {
               size="large"
               href="/login"
               sx={{
-                py: 2,
-                px: 4,
+                py: { xs: 1.5, sm: 2 },
+                px: { xs: 3, sm: 4 },
                 borderRadius: 3,
-                fontSize: "1.1rem",
+                fontSize: { xs: "0.9rem", sm: "1.1rem" },
                 borderColor: theme.palette.primary.main,
                 color: theme.palette.primary.main,
               }}
@@ -230,11 +230,11 @@ export default function HomePage() {
           </Stack>
         </Box>
 
-        <Box sx={{ mb: 8 }}>
-          <Typography variant="h4" align="center" sx={{ mb: 4, fontWeight: 700 }}>
+        <Box sx={{ mb: { xs: 4, sm: 8 } }}>
+          <Typography variant="h4" align="center" sx={{ mb: { xs: 2, sm: 4 }, fontWeight: 700, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
             Fonctionnalités clés
           </Typography>
-          <Grid container spacing={4}>
+          <Grid container spacing={{ xs: 2, sm: 4 }}>
             {[
               {
                 title: "Planification hebdomadaire",
@@ -264,16 +264,16 @@ export default function HomePage() {
                     borderRadius: 4,
                     border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
                     textAlign: "center",
-                    minHeight: 300,
+                    height: "100%",
                   }}
                 >
                   <CardContent>
                     <Box
                       sx={{
-                        height: 200,
+                        height: { xs: 150, sm: 200 },
                         overflow: "hidden",
                         borderRadius: 8,
-                        marginBottom: 16,
+                        marginBottom: { xs: 1, sm: 2 },
                       }}
                     >
                       <img
@@ -286,10 +286,10 @@ export default function HomePage() {
                         }}
                       />
                     </Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, mb: 1, fontSize: { xs: "1rem", sm: "1.25rem" } }}>
                       {feature.title}
                     </Typography>
-                    <Typography variant="body2" color="text.secondary">
+                    <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.8rem", sm: "0.9rem" } }}>
                       {feature.description}
                     </Typography>
                   </CardContent>
@@ -299,11 +299,11 @@ export default function HomePage() {
           </Grid>
         </Box>
 
-        <Box sx={{ mb: 8, textAlign: "center" }}>
-          <Typography variant="h4" sx={{ mb: 4, fontWeight: 700 }}>
+        <Box sx={{ mb: { xs: 4, sm: 8 }, textAlign: "center" }}>
+          <Typography variant="h4" sx={{ mb: { xs: 2, sm: 4 }, fontWeight: 700, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
             Ils nous font confiance
           </Typography>
-          <Grid container spacing={4} justifyContent="center">
+          <Grid container spacing={{ xs: 2, sm: 4 }} justifyContent="center">
             {[
               { name: "Famille Dupont", quote: "Une application indispensable pour notre organisation familiale !" },
               { name: "Marie L.", quote: "Facile à utiliser et très pratique pour gérer les repas." },
@@ -315,13 +315,13 @@ export default function HomePage() {
                   sx={{
                     borderRadius: 4,
                     border: `1px solid ${alpha(theme.palette.success.main, 0.1)}`,
-                    p: 3,
+                    p: { xs: 2, sm: 3 },
                   }}
                 >
-                  <Typography variant="body1" sx={{ mb: 2 }}>
+                  <Typography variant="body1" sx={{ mb: 2, fontSize: { xs: "0.9rem", sm: "1rem" } }}>
                     "{testimonial.quote}"
                   </Typography>
-                  <Typography variant="caption" color="text.secondary">
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                     - {testimonial.name}
                   </Typography>
                 </Card>
@@ -330,8 +330,8 @@ export default function HomePage() {
           </Grid>
         </Box>
 
-        <Box sx={{ textAlign: "center", mb: 8 }}>
-          <Typography variant="h4" sx={{ mb: 2, fontWeight: 700 }}>
+        <Box sx={{ textAlign: "center", mb: { xs: 4, sm: 8 } }}>
+          <Typography variant="h4" sx={{ mb: { xs: 1, sm: 2 }, fontWeight: 700, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
             Prêt à simplifier votre vie ?
           </Typography>
           <Button
@@ -339,10 +339,10 @@ export default function HomePage() {
             size="large"
             href="/signup"
             sx={{
-              py: 2,
-              px: 4,
+              py: { xs: 1.5, sm: 2 },
+              px: { xs: 3, sm: 4 },
               borderRadius: 3,
-              fontSize: "1.1rem",
+              fontSize: { xs: "0.9rem", sm: "1.1rem" },
               background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
             }}
           >
@@ -755,10 +755,10 @@ export default function HomePage() {
                   onClick={() => window.location.href = action.path}
                 >
                   <Box>
-                    <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                    <Typography variant="body1" sx={{ fontWeight: 500, fontSize: { xs: "0.9rem", sm: "1rem" } }}>
                       {action.title}
                     </Typography>
-                    <Typography variant="caption" color="text.secondary">
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                       {action.description}
                     </Typography>
                   </Box>
@@ -794,9 +794,9 @@ export default function HomePage() {
                   backgroundClip: "text",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
-                  mb: 4,
+                  mb: { xs: 2, sm: 4 },
                   textAlign: "center",
-                  fontSize: { xs: "2rem", sm: "3rem" },
+                  fontSize: { xs: "1.5rem", sm: "2rem", md: "3rem" },
                 }}
               >
                 Bienvenue, {userData?.displayName || "Utilisateur"}
@@ -859,7 +859,7 @@ export default function HomePage() {
                       </Typography>
                       
                       {/* Informations sur les recettes disponibles */}
-                      <Box sx={{ mb: 2 }}>
+                      <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         <Chip
                           icon={<AutoAwesomeIcon />}
                           label={`${availableRecipes.length} recettes disponibles`}
@@ -868,8 +868,6 @@ export default function HomePage() {
                             borderRadius: 3,
                             fontSize: { xs: "0.75rem", sm: "0.875rem" },
                             "& .MuiChip-icon": { color: theme.palette.primary.main },
-                            mr: 1,
-                            mb: 1,
                           }}
                         />
                         <Chip
@@ -878,8 +876,6 @@ export default function HomePage() {
                           sx={{
                             borderRadius: 3,
                             fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                            mr: 1,
-                            mb: 1,
                           }}
                         />
                         <Chip
@@ -888,7 +884,6 @@ export default function HomePage() {
                           sx={{
                             borderRadius: 3,
                             fontSize: { xs: "0.75rem", sm: "0.875rem" },
-                            mb: 1,
                           }}
                         />
                       </Box>
@@ -1007,6 +1002,7 @@ export default function HomePage() {
                 onClose={() => setDialogOpen(false)}
                 maxWidth="sm"
                 fullWidth
+                fullScreen={isMobile}
               >
                 <DialogTitle>Planning Généré</DialogTitle>
                 <DialogContent>
@@ -1044,13 +1040,12 @@ export default function HomePage() {
               </Dialog>
               
               {/* Dialogue pour le choix du type de planning aléatoire */}
-
-
               <Dialog
                 open={randomPlanningDialogOpen}
                 onClose={() => setRandomPlanningDialogOpen(false)}
                 maxWidth="xs"
                 fullWidth
+                fullScreen={isMobile}
               >
                 <DialogTitle>Type de Planning Aléatoire</DialogTitle>
                 <DialogContent>

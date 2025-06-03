@@ -31,6 +31,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  useMediaQuery, // Importation pour gérer la responsivité
 } from "@mui/material";
 import {
   ShoppingCart as ShoppingCartIcon,
@@ -116,6 +117,7 @@ function WeeklyPlannerPage() {
   const { currentUser, userData, loading: authLoading } = useAuth();
   const familyId = userData?.familyId;
   const isFamilyAdmin = userData?.familyRole === "Admin";
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm")); // Vérifie si l'écran est mobile
 
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
   const [weeklyPlanData, setWeeklyPlanData] = useState(null);
@@ -326,7 +328,9 @@ function WeeklyPlannerPage() {
           );
           console.log("Ensured endDate is Timestamp instance");
         }
-      } catch (dateError) {
+      } catch (dateError 
+   
+) {
         console.error("Error processing dates before saving:", dateError);
         setError(`Erreur interne lors de la préparation des dates : ${dateError.message}`);
         setIsSaving(false);
@@ -1092,26 +1096,30 @@ function WeeklyPlannerPage() {
             </Alert>
           </Snackbar>
           {/* Random Planning Dialog */}
-          <Dialog open={randomPlanningDialogOpen} onClose={() => setRandomPlanningDialogOpen(false)}>
+          <Dialog open={randomPlanningDialogOpen} onClose={() => setRandomPlanningDialogOpen(false)} fullScreen={isMobile}>
             <DialogTitle>Choisir le type de recettes</DialogTitle>
             <DialogContent>
               <Typography>Veuillez choisir le type de recettes pour le planning aléatoire :</Typography>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => handleRandomPlanning("family")}>Recettes familiales</Button>
-              <Button onClick={() => handleRandomPlanning("public")}>Recettes publiques</Button>
-              <Button onClick={() => setRandomPlanningDialogOpen(false)}>Annuler</Button>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ width: "100%" }}>
+                <Button fullWidth={isMobile} onClick={() => handleRandomPlanning("family")}>Recettes familiales</Button>
+                <Button fullWidth={isMobile} onClick={() => handleRandomPlanning("public")}>Recettes publiques</Button>
+                <Button fullWidth={isMobile} onClick={() => setRandomPlanningDialogOpen(false)}>Annuler</Button>
+              </Stack>
             </DialogActions>
           </Dialog>
           {/* Clear Planning Dialog */}
-          <Dialog open={clearPlanningDialogOpen} onClose={() => setClearPlanningDialogOpen(false)}>
+          <Dialog open={clearPlanningDialogOpen} onClose={() => setClearPlanningDialogOpen(false)} fullScreen={isMobile}>
             <DialogTitle>Confirmer la suppression</DialogTitle>
             <DialogContent>
               <Typography>Êtes-vous sûr de vouloir réinitialiser tout le planning de la semaine ?</Typography>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setClearPlanningDialogOpen(false)}>Annuler</Button>
-              <Button onClick={handleClearPlanning} color="error">Confirmer</Button>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ width: "100%" }}>
+                <Button fullWidth={isMobile} onClick={() => setClearPlanningDialogOpen(false)}>Annuler</Button>
+                <Button fullWidth={isMobile} onClick={handleClearPlanning} color="error">Confirmer</Button>
+              </Stack>
             </DialogActions>
           </Dialog>
         </Container>
