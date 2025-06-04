@@ -30,6 +30,7 @@ import {
 import { People as PeopleIcon, MoreVert as MoreVertIcon } from "@mui/icons-material"
 import { db } from "../../firebaseConfig" // Assuming firebaseConfig is correctly set up
 import { collection, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore"
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
 function AdminUserManagement() {
   const theme = useTheme()
@@ -182,27 +183,32 @@ function AdminUserManagement() {
 
   if (isLoading || actionLoading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: "center" }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>
-          {actionLoading ? "Traitement en cours..." : "Chargement des utilisateurs..."}
-        </Typography>
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, textAlign: "center" }}>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>
+            {actionLoading ? "Traitement en cours..." : "Chargement des utilisateurs..."}
+          </Typography>
+        </Container>
+      </AdminLayout>
     )
   }
 
   if (error && !isLoading) { // Show error only if not initial loading
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert>
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Alert severity="error">{error}</Alert>
+        </Container>
+      </AdminLayout>
     )
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, display: "flex", alignItems: "center" }}>
-        <PeopleIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+    <AdminLayout>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+        <Box sx={{ mb: 4, display: "flex", alignItems: "center" }}>
+          <PeopleIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Gestion des Utilisateurs
         </Typography>
@@ -320,7 +326,8 @@ function AdminUserManagement() {
         </Alert>
       </Snackbar>
 
-    </Container>
+      </Container>
+    </AdminLayout>
   )
 }
 

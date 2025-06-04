@@ -24,13 +24,13 @@ import {
   // DialogTitle, // Removed
   // DialogContent, // Removed
   // DialogActions, // Removed
-  Drawer,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  Toolbar,
+  // Drawer, // Removed: Handled by AdminLayout
+  // List, // Removed: Handled by AdminLayout
+  // ListItem, // Removed: Handled by AdminLayout
+  // ListItemButton, // Removed: Handled by AdminLayout
+  // ListItemIcon, // Removed: Handled by AdminLayout
+  // ListItemText, // Removed: Handled by AdminLayout
+  // Toolbar, // Removed: Handled by AdminLayout or not needed
 } from "@mui/material"
 import {
   AdminPanelSettings as AdminIcon,
@@ -40,18 +40,19 @@ import {
   // MoreVert as MoreVertIcon, // Removed
   // CheckCircle as ApproveIcon, // Removed
   // Cancel as RejectIcon, // Removed
-  Dashboard as DashboardIcon,
-  ListAlt as ListAltIcon,
+  // Dashboard as DashboardIcon, // Removed: Handled by AdminLayout
+  // ListAlt as ListAltIcon, // Removed: Handled by AdminLayout
   // Group as GroupIcon,
   // Fastfood as FastfoodIcon,
 } from "@mui/icons-material"
-import { Link as RouterLink } from "react-router-dom"
+// import { Link as RouterLink } from "react-router-dom" // Removed: Handled by AdminLayout if Link was only for Drawer
 import { db } from "../../firebaseConfig"
 import { collection, getDocs } from "firebase/firestore" // Removed doc, updateDoc, deleteDoc
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout import
 
 function AdminDashboard() {
   const theme = useTheme()
-  const drawerWidth = 240
+  // const drawerWidth = 240 // Removed: Handled by AdminLayout
 
   const [vendors, setVendors] = useState([]) // Still needed for stats
   const [deliveries, setDeliveries] = useState([]) // Assuming this is for a "Recent Deliveries" stat or similar
@@ -106,67 +107,16 @@ function AdminDashboard() {
     )
   }
 
-  const drawerItems = [
-    { text: "Dashboard", icon: <DashboardIcon />, path: "/admin" },
-    { text: "Users", icon: <PeopleIcon />, path: "/admin/users" },
-    { text: "Recipes", icon: <ListAltIcon />, path: "/admin/recipes" },
-    { text: "Ingredients", icon: <StoreIcon />, path: "/admin/ingredients" },
-    { text: "Vendors", icon: <StoreIcon />, path: "/admin/vendors" },
-    { text: "Deliveries", icon: <DeliveryIcon />, path: "/admin/deliveries" },
-    // { text: "Families", icon: <GroupIcon />, path: "/admin/families" },
-  ];
+  // const drawerItems = [...] // Removed: Handled by AdminLayout
 
   return (
-    <Box sx={{ display: "flex" }}>
-      <Drawer
-        sx={{
-          width: drawerWidth,
-          flexShrink: 0,
-          "& .MuiDrawer-paper": {
-            width: drawerWidth,
-            boxSizing: "border-box",
-          },
-        }}
-        variant="persistent"
-        anchor="left"
-        open={true} // Persistent drawer is always open
-      >
-        <Toolbar /> {/* For spacing below an AppBar, if any. Or just create space. */}
-        <Box sx={{ overflow: "auto" }}>
-          <List>
-            {drawerItems.map((item, index) => {
-              if (item.path) {
-                return (
-                  <ListItem key={item.text} disablePadding>
-                    <ListItemButton component={RouterLink} to={item.path}>
-                      <ListItemIcon>{item.icon}</ListItemIcon>
-                      <ListItemText primary={item.text} />
-                    </ListItemButton>
-                  </ListItem>
-                );
-              }
-              // Fallback for items without a path (though all should have one ideally)
-              return (
-                <ListItem button key={item.text}>
-                  <ListItemIcon>{item.icon}</ListItemIcon>
-                  <ListItemText primary={item.text} />
-                </ListItem>
-              );
-            })}
-          </List>
-        </Box>
-      </Drawer>
-      <Box
-        component="main"
-        sx={{ flexGrow: 1, bgcolor: "background.default", p: 3, width: { sm: `calc(100% - ${drawerWidth}px)` } }}
-      >
-        {/* This Toolbar is a spacer to push content down if you have a global AppBar */}
-        <Toolbar />
-        {/* Original Container content starts here, adjusted for new layout */}
-        <Container maxWidth="lg" sx={{ py: 0 }}> {/* Adjusted py, p is on Box now */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1, display: "flex", alignItems: "center" }}>
-              <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
+    <AdminLayout>
+      {/* Original Container content starts here, adjusted for new layout */}
+      {/* The main Box wrapper and Toolbar spacer are removed, AdminLayout handles structure */}
+      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}> {/* Adjusted padding */}
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1, display: "flex", alignItems: "center" }}>
+            <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
               Tableau de bord Admin
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -280,8 +230,7 @@ function AdminDashboard() {
           {/* Vendor list and related menu/dialogs are REMOVED from here */}
 
         </Container>
-      </Box>
-    </Box>
+    </AdminLayout>
   )
 }
 

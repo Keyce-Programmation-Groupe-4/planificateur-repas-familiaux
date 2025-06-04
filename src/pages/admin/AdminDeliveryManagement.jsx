@@ -34,6 +34,7 @@ import { LocalShipping as DeliveryIcon, MoreVert as MoreVertIcon, EditNote as Ed
 import { db } from "../../firebaseConfig"
 import { collection, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from "firebase/firestore" // Added doc, updateDoc, serverTimestamp
 import { format } from "date-fns" // For formatting dates
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
 function AdminDeliveryManagement() {
   const theme = useTheme();
@@ -239,26 +240,31 @@ function AdminDeliveryManagement() {
 
   if (isLoading && deliveryRequests.length === 0) {
     return (
-      <Container sx={{ py: 4, textAlign: "center" }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Chargement des demandes de livraison...</Typography>
-      </Container>
+      <AdminLayout>
+        <Container sx={{ py: { xs: 2, sm: 3 }, textAlign: "center" }}>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>Chargement des demandes de livraison...</Typography>
+        </Container>
+      </AdminLayout>
     );
   }
 
   // Error display remains, but Alert needs to be MuiAlert if Snackbar uses Alert
   if (error && !isLoading) { // Show general error if not loading and error exists
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert> {/* This should be MuiAlert or ensure no name conflict */}
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Alert severity="error">{error}</Alert> {/* This should be MuiAlert or ensure no name conflict */}
+        </Container>
+      </AdminLayout>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
+    <AdminLayout>
+      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
           <DeliveryIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           Gestion des Demandes de Livraison
         </Typography>
@@ -516,7 +522,8 @@ function AdminDeliveryManagement() {
         </Alert>
       </Snackbar>
 
-    </Container>
+      </Container>
+    </AdminLayout>
   )
 }
 
