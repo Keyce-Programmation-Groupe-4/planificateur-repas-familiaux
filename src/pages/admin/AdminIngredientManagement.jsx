@@ -24,7 +24,6 @@ import {
   TextField,
   Snackbar,
   Alert as MuiAlert, // Renaming Alert to MuiAlert to avoid conflict with Snackbar's Alert
-  Box,
   IconButton, // Added
   Menu, // Added
   MenuItem, // Added
