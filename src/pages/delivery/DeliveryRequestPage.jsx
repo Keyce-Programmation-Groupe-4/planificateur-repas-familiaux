@@ -42,6 +42,7 @@ function DeliveryRequestPage() {
   const [deliveryTime, setDeliveryTime] = useState("")
   const [selectedVendor, setSelectedVendor] = useState(null)
   const [availableVendors, setAvailableVendors] = useState([])
+  const [shoppingListCategories, setShoppingListCategories] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
@@ -60,11 +61,18 @@ function DeliveryRequestPage() {
       try {
         const listDocRef = doc(db, "families", familyId, "shoppingLists", shoppingListId)
         const docSnap = await getDoc(listDocRef)
-
+        let currentShoppingList = null
         if (docSnap.exists()) {
-          setShoppingList(docSnap.data())
+          currentShoppingList = docSnap.data()
+          setShoppingList(currentShoppingList)
+          // Extract categories
+          if (currentShoppingList && currentShoppingList.items) {
+            const categories = new Set(currentShoppingList.items.map(item => item.category).filter(Boolean))
+            setShoppingListCategories(Array.from(categories))
+          }
         } else {
           setError("Liste de courses introuvable.")
+          setShoppingListCategories([]) // Ensure it's an empty array if list not found
         }
 
         // Charger les vendeurs disponibles
@@ -77,7 +85,19 @@ function DeliveryRequestPage() {
           vendors.push({ id: doc.id, ...doc.data() })
         })
 
-        setAvailableVendors(vendors)
+        // Sort vendors after fetching them and after categories are set
+        // This will be re-run if shoppingListCategories changes, but vendors is stable after first fetch.
+        // Consider moving sorting to a point where both are definitely available.
+        // For now, let's assume categories are derived before this runs or it's handled by useEffect dependency.
+        // Actually, it's better to sort them right here or call a function that uses the state.
+
+        // Directly use the categories derived from currentShoppingList if available, otherwise from state.
+        const categoriesForSort = currentShoppingList && currentShoppingList.items
+          ? Array.from(new Set(currentShoppingList.items.map(item => item.category).filter(Boolean)))
+          : shoppingListCategories;
+
+        const sortedVendors = sortVendorsBySpecialtyMatch(vendors, categoriesForSort);
+        setAvailableVendors(sortedVendors)
 
         // Vérifier si un vendeur a été pré-sélectionné
         const preSelectedVendorId = sessionStorage.getItem("selectedVendorId")
@@ -98,7 +118,43 @@ function DeliveryRequestPage() {
     }
 
     fetchShoppingList()
+  // Add shoppingListCategories to dependency array if sorting relies on its state update,
+  // but it's safer to pass categories directly to sortVendorsBySpecialtyMatch if possible.
+  // For now, this setup implies fetchShoppingList completes fully, including category extraction and sorting.
   }, [familyId, shoppingListId])
+
+
+  const sortVendorsBySpecialtyMatch = (vendors, categories) => {
+    if (!categories || categories.length === 0) {
+      // No categories to match, so just sort by rating or name as a default
+      return vendors.sort((a, b) => (b.rating || 0) - (a.rating || 0) || a.name.localeCompare(b.name));
+    }
+
+    return vendors
+      .map(vendor => {
+        let matchScore = 0;
+        if (vendor.specialties && Array.isArray(vendor.specialties)) {
+          categories.forEach(category => {
+            if (vendor.specialties.includes(category)) {
+              matchScore++;
+            }
+          });
+        }
+        return { ...vendor, matchScore, isRecommendedMatch: matchScore > 0 };
+      })
+      .sort((a, b) => {
+        // Primary sort: matchScore descending
+        if (b.matchScore !== a.matchScore) {
+          return b.matchScore - a.matchScore;
+        }
+        // Secondary sort: rating descending
+        if ((b.rating || 0) !== (a.rating || 0)) {
+          return (b.rating || 0) - (a.rating || 0);
+        }
+        // Tertiary sort: name ascending
+        return a.name.localeCompare(b.name);
+      });
+  };
 
   const handleNext = () => {
     setActiveStep((prevStep) => prevStep + 1)
@@ -127,15 +183,22 @@ function DeliveryRequestPage() {
         familyId,
         shoppingListId,
         vendorId: selectedVendor.id,
-        status: "pending", // en attente
+        status: "pending_vendor_confirmation", // Updated status
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(), // Added for consistency
         deliveryAddress,
         deliveryInstructions,
         requestedDate: deliveryDate,
         requestedTime: deliveryTime,
-        totalCost: shoppingList.totalActualCost || 0,
+        initialOrderCost: shoppingList.totalActualCost || 0, // Renamed for clarity
         deliveryFee: selectedVendor.baseFee || 0,
-        statusHistory: [{ status: "pending", timestamp: serverTimestamp() }],
+        statusHistory: [
+          {
+            status: "pending_vendor_confirmation",
+            timestamp: serverTimestamp(),
+            changedBy: "user" // Assuming the user creates the request
+          }
+        ],
       }
 
       const deliveryRef = await addDoc(collection(db, "deliveryRequests"), deliveryRequest)

@@ -10,10 +10,11 @@ import {
   Rating,
   useTheme,
   alpha,
+  Tooltip, // Added for tooltip on recommendation
 } from "@mui/material"
-import { LocalShipping, Star, Category } from "@mui/icons-material"
+import { LocalShipping, Star, Category, Recommend as RecommendIcon } from "@mui/icons-material" // Added RecommendIcon
 
-function VendorCard({ vendor, onClick, selected = false }) {
+function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = false }) { // Added isRecommendedMatch prop
   const theme = useTheme()
 
   return (
@@ -45,8 +46,8 @@ function VendorCard({ vendor, onClick, selected = false }) {
             >
               {vendor.name?.charAt(0) || "V"}
             </Avatar>
-            <Box>
-              <Typography variant="h6" component="div" sx={{ fontWeight: 600 }}>
+            <Box sx={{ flexGrow: 1 }}> {/* Allow text to take space */}
+              <Typography variant="h6" component="div" sx={{ fontWeight: 600, lineHeight: 1.2 }}>
                 {vendor.name}
               </Typography>
               <Rating
@@ -57,6 +58,18 @@ function VendorCard({ vendor, onClick, selected = false }) {
                 emptyIcon={<Star style={{ opacity: 0.55 }} fontSize="inherit" />}
               />
             </Box>
+            {isRecommendedMatch && (
+              <Tooltip title="Ce vendeur correspond bien à votre liste!" arrow>
+                <Chip
+                  icon={<RecommendIcon />}
+                  label="Recommandé"
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  sx={{ ml: 1, alignSelf: 'flex-start', borderRadius: '8px', fontSize: '0.7rem' }}
+                />
+              </Tooltip>
+            )}
           </Box>
 
           <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2 }}>

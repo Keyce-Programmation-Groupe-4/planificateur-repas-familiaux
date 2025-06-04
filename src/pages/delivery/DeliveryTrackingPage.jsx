@@ -17,9 +17,38 @@ import {
   Chip,
   useTheme,
   alpha,
-  TextField,
+  TextField, // Already here
+  Dialog,      // For rejection reason
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
+  List,
+  ListItem,
+  ListItemText,
+  // ListItemIcon, // Not used yet, but good for visual cues
+  Divider,
+  Grid, // For layout within acceptance section
+  Stack, // For button layout
+  // IconButton, // If using icon buttons for rating for example
 } from "@mui/material"
-import { LocalShipping, ArrowBack, CheckCircle } from "@mui/icons-material"
+import {
+  LocalShipping,
+  ArrowBack,
+  CheckCircle,
+  HourglassEmpty,
+  ThumbUpAlt,
+  ThumbDownAlt,
+  Info,
+  // ErrorOutline, // Alternative icon for errors
+  PriceCheck,
+  SpeakerNotes,
+  ShoppingCartCheckout,
+  Cancel,
+  AssignmentTurnedIn,
+  Storefront,
+  ReceiptLong, // New icon for header
+} from "@mui/icons-material"
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { doc, getDoc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore"
@@ -40,6 +69,11 @@ function DeliveryTrackingPage() {
   const [rating, setRating] = useState(0)
   const [comment, setComment] = useState("")
   const [isSubmittingRating, setIsSubmittingRating] = useState(false)
+
+  // States for user confirmation flow
+  const [userRejectionReason, setUserRejectionReason] = useState("")
+  const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false) // For disabling buttons during Firestore updates
 
   useEffect(() => {
     if (!deliveryId) {
@@ -106,71 +140,102 @@ function DeliveryTrackingPage() {
   }, [deliveryId, familyId])
 
   const getStepFromStatus = (status) => {
+    // Adjusted steps for new flow
     switch (status) {
-      case "pending":
-        return 0
-      case "accepted":
-        return 1
-      case "shopping":
-        return 2
-      case "delivering":
-        return 3
-      case "delivered":
-        return 4
-      case "cancelled":
-        return -1
-      default:
-        return 0
+      case "pending_vendor_confirmation": return 0;
+      case "pending_user_acceptance": return 1;
+      case "confirmed": return 2;
+      case "shopping": return 3;
+      case "out_for_delivery": return 4; // Changed from delivering
+      case "delivered": return 5;
+      // Terminal states
+      case "cancelled_by_vendor": return -1;
+      case "cancelled_by_user": return -1;
+      case "cancelled": return -1; // Generic cancellation (e.g. original 'pending' cancelled by user)
+      default: return 0; // Default to first step if status is unknown
     }
   }
 
   const getStatusLabel = (status) => {
     switch (status) {
-      case "pending":
-        return "En attente"
-      case "accepted":
-        return "Acceptée"
-      case "shopping":
-        return "Achats en cours"
-      case "delivering":
-        return "En livraison"
-      case "delivered":
-        return "Livrée"
-      case "cancelled":
-        return "Annulée"
-      default:
-        return status
+      case "pending_vendor_confirmation": return "En attente de confirmation du vendeur";
+      case "pending_user_acceptance": return "En attente de votre approbation";
+      case "confirmed": return "Confirmée par vous";
+      case "shopping": return "Achats en cours";
+      case "out_for_delivery": return "En cours de livraison"; // Changed from delivering
+      case "delivered": return "Livrée";
+      case "cancelled_by_vendor": return "Annulée par le vendeur";
+      case "cancelled_by_user": return "Annulée par vous";
+      case "cancelled": return "Annulée"; // Keep this for backward compatibility if old "cancelled" statuses exist
+      default: return status; // Show raw status if not mapped
     }
   }
 
-  const handleCancelDelivery = async () => {
-    if (!deliveryId || !deliveryData) return
-
-    if (deliveryData.status !== "pending") {
-      alert("Vous ne pouvez annuler que les livraisons en attente.")
-      return
-    }
-
+  // Generic function to update delivery status and history
+  const updateDeliveryStatus = async (newStatus, extraData = {}) => {
+    if (!deliveryId || !deliveryData) return false;
+    setActionLoading(true); // Disable buttons
+    setError(null); // Clear previous errors
     try {
-      const deliveryRef = doc(db, "deliveryRequests", deliveryId)
+      const deliveryRef = doc(db, "deliveryRequests", deliveryId);
       await updateDoc(deliveryRef, {
-        status: "cancelled",
+        status: newStatus,
         statusHistory: [
           ...(deliveryData.statusHistory || []),
-          {
-            status: "cancelled",
-            timestamp: serverTimestamp(),
-            by: "customer",
-          },
+          { status: newStatus, timestamp: serverTimestamp(), changedBy: "user" }, // Assume 'user' for actions from this page
         ],
-      })
-
-      // La mise à jour sera reflétée via onSnapshot
+        ...extraData, // For things like rejection reasons or final costs
+        updatedAt: serverTimestamp(),
+      });
+      // Data will refresh via onSnapshot, no need to setDeliveryData here
+      return true;
     } catch (err) {
-      console.error("Erreur lors de l'annulation:", err)
-      alert("Erreur lors de l'annulation de la livraison.")
+      console.error(`Erreur lors de la mise à jour du statut à ${newStatus}:`, err);
+      setError(`Erreur lors de la mise à jour: ${err.message}`);
+      return false;
+    } finally {
+      setActionLoading(false); // Re-enable buttons
     }
+  };
+
+  const handleAcceptConfirmation = async () => {
+    // Optionally, could add userAcceptedAt: serverTimestamp() to extraData
+    await updateDeliveryStatus("confirmed");
+  };
+
+  const handleOpenRejectConfirmationDialog = () => {
+    setUserRejectionReason(""); // Clear previous reason before opening dialog
+    setRejectConfirmDialogOpen(true);
+  };
+
+  const handleRejectConfirmation = async () => {
+    if (!userRejectionReason.trim()) {
+        // This validation should ideally be handled by disabling the button or showing inline error in dialog
+        setError("La raison du rejet est obligatoire.");
+        return;
+    }
+    const success = await updateDeliveryStatus("cancelled_by_user", {
+      userRejectionReason: userRejectionReason.trim(),
+      // Optionally: cancelledAt: serverTimestamp()
+    });
+    if (success) {
+      setRejectConfirmDialogOpen(false); // Close dialog on successful rejection
+    }
+  };
+
+  // Renamed from handleCancelDelivery to be more specific
+  const handleCancelDeliveryBeforeVendorConfirmation = async () => {
+    if (!deliveryId || !deliveryData) return;
+
+    // Only allow cancellation if vendor hasn't confirmed yet
+    if (deliveryData.status !== "pending_vendor_confirmation") {
+      alert("Vous ne pouvez annuler que les demandes qui n'ont pas encore été traitées par le vendeur.");
+      return;
+    }
+    // Using the generic update function. 'cancelled_by_user' implies it was the user/customer.
+    await updateDeliveryStatus("cancelled_by_user" /*, { cancelledAt: serverTimestamp() } */);
   }
+
 
   const handleOpenRatingDialog = () => {
     if (deliveryData.status !== "delivered") {
@@ -238,15 +303,22 @@ function DeliveryTrackingPage() {
   }
 
   const activeStep = getStepFromStatus(deliveryData?.status)
-  const isCancelled = deliveryData?.status === "cancelled"
-  const isDelivered = deliveryData?.status === "delivered"
+  // More robust check for terminal states
+  const isTerminalStatus = deliveryData?.status?.startsWith("cancelled") || deliveryData?.status === "delivered";
+  const canCancelBeforeVendorAction = deliveryData?.status === "pending_vendor_confirmation";
+
+  // Cost related variables. Use finalOrderCost if available (after vendor confirmation)
+  const displayShoppingCost = deliveryData?.finalOrderCost !== undefined ? deliveryData.finalOrderCost - (deliveryData.deliveryFee || 0) : deliveryData?.initialOrderCost;
+  const costLabel = deliveryData?.finalOrderCost !== undefined ? "Coût confirmé des courses" : "Coût estimé des courses";
+  const totalOrderCost = (deliveryData?.finalOrderCost !== undefined ? deliveryData.finalOrderCost : (deliveryData?.initialOrderCost || 0) + (deliveryData?.deliveryFee || 0));
+
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
       <Paper
         elevation={0}
         sx={{
-          p: 3,
+          p: { xs: 2, sm: 3 }, // Responsive padding
           borderRadius: 4,
           background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
           border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
@@ -254,57 +326,140 @@ function DeliveryTrackingPage() {
         }}
       >
         <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-          <LocalShipping sx={{ mr: 2, color: theme.palette.secondary.main }} />
+          <ReceiptLong sx={{ mr: 2, color: theme.palette.secondary.main, fontSize: '2.5rem' }} />
           <Typography variant="h5" component="h1" sx={{ fontWeight: 600 }}>
-            Suivi de livraison
+            Suivi de Commande
           </Typography>
 
-          {isCancelled && <Chip label="Annulée" color="error" size="small" sx={{ ml: 2, borderRadius: 2 }} />}
-
-          {isDelivered && (
+          {deliveryData?.status?.startsWith("cancelled") && (
+            <Chip label={getStatusLabel(deliveryData.status)} color="error" size="small" sx={{ ml: 2, borderRadius: 2 }} />
+          )}
+          {deliveryData?.status === "delivered" && (
             <Chip label="Livrée" color="success" icon={<CheckCircle />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
+          )}
+           {deliveryData?.status === "confirmed" && (
+            <Chip label="Confirmée par vous" color="primary" icon={<AssignmentTurnedIn />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
           )}
         </Box>
 
-        {!isCancelled && (
+        {/* Stepper: Hide if status is terminal (cancelled or delivered) */}
+        {!isTerminalStatus && (
           <Stepper activeStep={activeStep} orientation="vertical" sx={{ mb: 4 }}>
             <Step>
-              <StepLabel>Demande en attente</StepLabel>
+              <StepLabel icon={<HourglassEmpty />}>En attente de confirmation du vendeur</StepLabel>
               <StepContent>
-                <Typography>Votre demande est en attente d'acceptation par un vendeur.</Typography>
+                <Typography>Le vendeur examine votre demande et confirmera la disponibilité et les prix des articles.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel>Demande acceptée</StepLabel>
+              <StepLabel icon={<PriceCheck />}>En attente de votre approbation</StepLabel>
               <StepContent>
-                <Typography>Un vendeur a accepté votre demande et se prépare à faire vos courses.</Typography>
+                <Typography>Le vendeur a mis à jour les articles. Veuillez vérifier les détails ci-dessous et accepter ou rejeter la proposition.</Typography>
+              </StepContent>
+            </Step>
+             <Step>
+              <StepLabel icon={<AssignmentTurnedIn />}>Commande confirmée</StepLabel>
+              <StepContent>
+                <Typography>Vous avez accepté la proposition. Le vendeur va commencer à préparer votre commande.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel>Achats en cours</StepLabel>
+              <StepLabel icon={<ShoppingCartCheckout />}>Achats en cours</StepLabel>
               <StepContent>
-                <Typography>Le vendeur est en train d'acheter vos produits au marché.</Typography>
+                <Typography>Le vendeur est en train d'acheter vos produits.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel>En livraison</StepLabel>
+              <StepLabel icon={<LocalShipping />}>En cours de livraison</StepLabel>
               <StepContent>
-                <Typography>Le vendeur est en route pour vous livrer vos courses.</Typography>
+                <Typography>Votre commande est en route.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel>Livraison terminée</StepLabel>
+              <StepLabel icon={<CheckCircle />}>Livraison terminée</StepLabel>
               <StepContent>
-                <Typography>Vos courses ont été livrées avec succès !</Typography>
+                <Typography>Vos courses ont été livrées !</Typography>
               </StepContent>
             </Step>
           </Stepper>
         )}
 
+        {/* Section for User Acceptance */}
+        {deliveryData?.status === "pending_user_acceptance" && (
+          <Paper elevation={2} sx={{ p: {xs:2, sm:3}, my:3, borderRadius:3, border: `1px solid ${theme.palette.info.main}`, background: alpha(theme.palette.info.light, 0.05) }}>
+            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', color: theme.palette.info.dark }}>
+              <Info sx={{mr:1}}/> Action Requise: Confirmez votre commande
+            </Typography>
+
+            <Typography variant="body1" sx={{mb:1}}>Le vendeur a confirmé les articles suivants. Veuillez vérifier les prix et la disponibilité.</Typography>
+
+            {deliveryData.vendorOverallNote && (
+                <Alert severity="info" icon={<SpeakerNotes />} sx={{ my: 2, borderRadius: 2, background: alpha(theme.palette.info.main, 0.1) }}>
+                    <strong>Note globale du vendeur:</strong> {deliveryData.vendorOverallNote}
+                </Alert>
+            )}
+
+            {deliveryData.vendorConfirmedItems && deliveryData.vendorConfirmedItems.length > 0 ? (
+              <List dense sx={{mb:2, background: alpha(theme.palette.background.default, 0.5), borderRadius: 2}}>
+                {deliveryData.vendorConfirmedItems.map(item => (
+                  <ListItem key={item.itemId} divider>
+                    <ListItemText
+                      primaryTypographyProps={{fontWeight: item.confirmedPrice !== item.originalPrice ? 'bold' : 'normal'}}
+                      primary={`${item.name} (x${item.quantity} ${item.unit || ''})`}
+                      secondary={
+                        <>
+                          Prix confirmé: {item.confirmedPrice.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })} / unité
+                          {item.confirmedPrice !== item.originalPrice &&
+                            <Chip
+                              label={`Prix original: ${item.originalPrice.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}`}
+                              size="small"
+                              color={item.confirmedPrice > item.originalPrice ? "warning" : "success"}
+                              variant="outlined"
+                              sx={{ml:1, fontSize:'0.75rem', fontWeight: 'medium'}}
+                            />
+                          }
+                          {item.vendorNote && <Typography variant="caption" display="block" sx={{mt:0.5, fontStyle: 'italic'}}>Note vendeur: {item.vendorNote}</Typography>}
+                        </>
+                      }
+                    />
+                  </ListItem>
+                ))}
+              </List>
+            ) : (
+              <Alert severity="warning" sx={{my: 2}}>Le vendeur n'a confirmé aucun article pour le moment.</Alert>
+            )}
+
+            <Typography variant="h6" sx={{mt:2, mb:1, fontWeight:'bold'}}>Coût Total Confirmé: {(deliveryData.finalOrderCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
+            <Typography variant="caption" display="block" sx={{mb:2}}>(Inclut les frais de livraison de {(deliveryData.deliveryFee || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })})</Typography>
+
+            <Stack direction={{xs: 'column', sm: 'row'}} spacing={2} justifyContent="flex-end">
+              <Button
+                variant="outlined"
+                color="error"
+                startIcon={<ThumbDownAlt />}
+                onClick={handleOpenRejectConfirmationDialog}
+                disabled={actionLoading}
+              >
+                Rejeter la Confirmation
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                startIcon={<ThumbUpAlt />}
+                onClick={handleAcceptConfirmation}
+                disabled={actionLoading || !deliveryData.vendorConfirmedItems || deliveryData.vendorConfirmedItems.length === 0} // Disable if no items confirmed
+              >
+                {actionLoading && deliveryData.status === "pending_user_acceptance" ? <CircularProgress size={24} color="inherit"/> : "Accepter et Confirmer"}
+              </Button>
+            </Stack>
+          </Paper>
+        )}
+
+
         {/* Informations détaillées */}
         <Box sx={{ mb: 4 }}>
           <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
-            Détails de la livraison
+            Détails de la Commande
           </Typography>
 
           <Paper sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: alpha(theme.palette.background.paper, 0.6) }}>
@@ -312,7 +467,9 @@ function DeliveryTrackingPage() {
               <Typography variant="subtitle2" color="text.secondary">
                 Statut actuel
               </Typography>
-              <Typography sx={{ fontWeight: 600 }}>{getStatusLabel(deliveryData?.status)}</Typography>
+              <Typography sx={{ fontWeight: 600, color: deliveryData?.status?.startsWith("cancelled") ? theme.palette.error.main : deliveryData?.status === "delivered" ? theme.palette.success.main : deliveryData?.status === "confirmed" ? theme.palette.primary.main : 'text.primary' }}>
+                {getStatusLabel(deliveryData?.status)}
+              </Typography>
             </Box>
 
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}>
@@ -341,49 +498,42 @@ function DeliveryTrackingPage() {
                 </Typography>
               </Box>
             )}
+            {deliveryData?.userRejectionReason && (
+                <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2, mt:1 }}>
+                    <Typography variant="subtitle2" color="text.secondary">Votre raison d'annulation/rejet:</Typography>
+                    <Typography sx={{ textAlign: "right", maxWidth: "60%", color: theme.palette.error.dark, fontStyle:'italic' }}>{deliveryData.userRejectionReason}</Typography>
+                </Box>
+            )}
+            {deliveryData?.vendorRejectionReason && (
+                <Box sx={{ display: "flex", justifyContent: "space-between", mb: 2, mt:1 }}>
+                    <Typography variant="subtitle2" color="text.secondary">Raison d'annulation du vendeur:</Typography>
+                    <Typography sx={{ textAlign: "right", maxWidth: "60%", color: theme.palette.error.dark, fontStyle:'italic' }}>{deliveryData.vendorRejectionReason}</Typography>
+                </Box>
+            )}
           </Paper>
 
           {/* Informations vendeur */}
           {vendorData && (
             <Paper sx={{ p: 2, mb: 2, borderRadius: 2, bgcolor: alpha(theme.palette.background.paper, 0.6) }}>
-              <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-                Votre vendeur
+              <Typography variant="subtitle1" sx={{ mb: 1, fontWeight: 600, display: 'flex', alignItems: 'center' }}>
+                <Storefront sx={{mr:1, color: theme.palette.secondary.dark}}/> Votre Vendeur
               </Typography>
-
-              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-                <Box sx={{ mr: 2 }}>
-                  <Typography variant="body1" sx={{ fontWeight: 600 }}>
-                    {vendorData.name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {vendorData.phone}
-                  </Typography>
-                </Box>
-              </Box>
-
-              {vendorData.rating && (
-                <Box sx={{ display: "flex", alignItems: "center" }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mr: 1 }}>
-                    Note:
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                    {vendorData.rating}/5 ({vendorData.totalRatings || 0} avis)
-                  </Typography>
-                </Box>
-              )}
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>{vendorData.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{vendorData.phone}</Typography>
+              {/* Future: Add vendor rating here more prominently if available */}
             </Paper>
           )}
 
           {/* Coûts */}
           <Paper sx={{ p: 2, borderRadius: 2, bgcolor: alpha(theme.palette.background.paper, 0.6) }}>
             <Typography variant="subtitle1" sx={{ mb: 2, fontWeight: 600 }}>
-              Récapitulatif des coûts
+              Récapitulatif des Coûts
             </Typography>
 
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
-              <Typography variant="body2">Coût des courses</Typography>
+              <Typography variant="body2">{costLabel}</Typography>
               <Typography variant="body2">
-                {(deliveryData?.totalCost || 0).toLocaleString("fr-FR", {
+                {(displayShoppingCost || 0).toLocaleString("fr-FR", {
                   style: "currency",
                   currency: "XAF",
                 })}
@@ -402,10 +552,10 @@ function DeliveryTrackingPage() {
 
             <Box sx={{ display: "flex", justifyContent: "space-between", pt: 1, borderTop: 1, borderColor: "divider" }}>
               <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                Total
+                Total à Payer
               </Typography>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
-                {((deliveryData?.totalCost || 0) + (deliveryData?.deliveryFee || 0)).toLocaleString("fr-FR", {
+                {totalOrderCost.toLocaleString("fr-FR", {
                   style: "currency",
                   currency: "XAF",
                 })}
@@ -415,95 +565,96 @@ function DeliveryTrackingPage() {
         </Box>
 
         {/* Actions */}
-        <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-          <Button startIcon={<ArrowBack />} onClick={() => navigate("/deliveries")} variant="outlined">
-            Retour à mes livraisons
+        <Stack direction="row" spacing={2} justifyContent="flex-start" sx={{mt:3, flexWrap:"wrap"}}>
+          <Button startIcon={<ArrowBack />} onClick={() => navigate(userData?.roles?.includes('vendor') ? "/vendor/dashboard" : "/deliveries")} variant="outlined">
+            Retour
           </Button>
 
-          {deliveryData?.status === "pending" && (
-            <Button variant="outlined" color="error" onClick={handleCancelDelivery}>
-              Annuler la livraison
+          {canCancelBeforeVendorAction && (
+            <Button variant="outlined" color="error" startIcon={<Cancel/>} onClick={handleCancelDeliveryBeforeVendorConfirmation} disabled={actionLoading}>
+              Annuler la Demande
             </Button>
           )}
 
-          {isDelivered && !deliveryData?.hasRating && (
+          {deliveryData?.status === "delivered" && !deliveryData?.hasRating && (
             <Button variant="contained" onClick={handleOpenRatingDialog}>
               Noter le vendeur
             </Button>
           )}
-        </Box>
+        </Stack>
       </Paper>
 
-      {/* Dialog pour noter le vendeur */}
-      {ratingDialogOpen && (
-        <Paper
-          sx={{
-            position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            p: 3,
-            zIndex: 1300,
-            minWidth: 300,
-            borderRadius: 3,
-          }}
-        >
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Noter votre vendeur
-          </Typography>
-
-          <Box sx={{ mb: 2 }}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
-              Note (1-5 étoiles)
-            </Typography>
-            <Box sx={{ display: "flex", gap: 1 }}>
-              {[1, 2, 3, 4, 5].map((star) => (
-                <Button
-                  key={star}
-                  variant={rating >= star ? "contained" : "outlined"}
-                  size="small"
-                  onClick={() => setRating(star)}
-                  sx={{ minWidth: 40 }}
-                >
-                  ★
-                </Button>
-              ))}
-            </Box>
-          </Box>
-
+      {/* User Rejection Confirmation Dialog */}
+      <Dialog open={rejectConfirmDialogOpen} onClose={() => {if(!actionLoading) setRejectConfirmDialogOpen(false)}}>
+        <DialogTitle>Rejeter la Confirmation du Vendeur</DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{mb:2}}>
+            Si vous rejetez, la commande sera annulée. Veuillez indiquer la raison de votre rejet.
+            Cela aidera le vendeur à comprendre votre décision.
+          </DialogContentText>
           <TextField
+            autoFocus
+            margin="dense"
+            id="userRejectionReason"
+            label="Raison du rejet (obligatoire)"
+            type="text"
             fullWidth
-            label="Commentaire (optionnel)"
             multiline
             rows={3}
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            sx={{ mb: 2 }}
+            variant="outlined"
+            value={userRejectionReason}
+            onChange={(e) => setUserRejectionReason(e.target.value)}
+            // Basic error display for empty reason
+            error={actionLoading && !userRejectionReason.trim()}
+            helperText={actionLoading && !userRejectionReason.trim() ? "La raison est requise pour rejeter." : ""}
           />
+        </DialogContent>
+        <DialogActions sx={{p: {xs:2, sm:3}}}>
+          <Button onClick={() => setRejectConfirmDialogOpen(false)} color="secondary" disabled={actionLoading}>Annuler</Button>
+          <Button
+            onClick={handleRejectConfirmation}
+            color="error"
+            variant="contained"
+            disabled={actionLoading || !userRejectionReason.trim()} // Disable if no reason or loading
+            startIcon={<ThumbDownAlt/>}
+          >
+            {actionLoading ? <CircularProgress size={24} color="inherit"/> : "Rejeter et Annuler la Commande"}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-          <Box sx={{ display: "flex", gap: 2, justifyContent: "flex-end" }}>
+
+      {/* Rating Dialog (existing) - converted to MUI Dialog for consistency */}
+      {ratingDialogOpen && (
+         <Dialog open={ratingDialogOpen} onClose={() => setRatingDialogOpen(false)} maxWidth="xs" fullWidth>
+          <DialogTitle>Noter votre vendeur</DialogTitle>
+          <DialogContent>
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 2 }}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <IconButton key={star} onClick={() => setRating(star)}
+                  sx={{fontSize: '2rem', color: rating >= star ? theme.palette.warning.main : theme.palette.grey[400] }} // Star look
+                >
+                   ★
+                </IconButton>
+              ))}
+            </Box>
+            <TextField
+              fullWidth
+              label="Commentaire (optionnel)"
+              multiline
+              rows={3}
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              variant="outlined"
+            />
+          </DialogContent>
+          <DialogActions sx={{p: {xs:2, sm:3}}}>
             <Button onClick={() => setRatingDialogOpen(false)}>Annuler</Button>
             <Button variant="contained" onClick={handleSubmitRating} disabled={rating === 0 || isSubmittingRating}>
-              {isSubmittingRating ? <CircularProgress size={20} /> : "Envoyer"}
+              {isSubmittingRating ? <CircularProgress size={24} /> : "Envoyer"}
             </Button>
-          </Box>
-        </Paper>
-      )}
-
-      {/* Overlay pour le dialog */}
-      {ratingDialogOpen && (
-        <Box
-          sx={{
-            position: "fixed",
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            bgcolor: "rgba(0,0,0,0.5)",
-            zIndex: 1200,
-          }}
-          onClick={() => setRatingDialogOpen(false)}
-        />
+          </DialogActions>
+        </Dialog>
       )}
     </Container>
   )

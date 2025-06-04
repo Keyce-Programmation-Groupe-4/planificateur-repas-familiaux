@@ -72,6 +72,7 @@ function VendorSignupPage() {
     deliveryZones: [],
     baseFee: "",
     availability: "",
+    vendorType: "", // Added vendorType
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -123,6 +124,12 @@ function VendorSignupPage() {
       return
     }
 
+    if (!formData.vendorType) {
+      setError("Veuillez sélectionner un type de vendeur.")
+      setIsSubmitting(false)
+      return
+    }
+
     const baseFee = Number.parseFloat(formData.baseFee)
     if (isNaN(baseFee) || baseFee < 0) {
       setError("Veuillez entrer des frais de livraison valides.")
@@ -140,9 +147,10 @@ function VendorSignupPage() {
         deliveryZones: formData.deliveryZones,
         baseFee: baseFee,
         availability: formData.availability.trim() || "Non spécifiée",
+        vendorType: formData.vendorType, // Added vendorType
         // Status et ratings
-        isActive: true, // Actif par défaut (peut être changé en false pour approbation)
-        isApproved: true, // Approuvé par défaut (peut être changé en false pour validation admin)
+        isActive: false, // Changed to false by default
+        isApproved: false, // Changed to false by default
         rating: 0,
         totalRatings: 0,
         // Métadonnées
@@ -191,7 +199,7 @@ function VendorSignupPage() {
             Inscription réussie !
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-            Votre profil de vendeur a été créé avec succès. Vous allez être redirigé vers la liste des vendeurs.
+            Votre profil de vendeur a été créé et est en attente d'approbation. Vous allez être redirigé.
           </Typography>
           <CircularProgress color="success" />
         </Paper>
@@ -266,6 +274,22 @@ function VendorSignupPage() {
               />
             </Grid>
 
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth required>
+                <InputLabel id="vendor-type-label">Type de vendeur *</InputLabel>
+                <Select
+                  labelId="vendor-type-label"
+                  value={formData.vendorType}
+                  onChange={handleInputChange("vendorType")}
+                  label="Type de vendeur *"
+                  disabled={isSubmitting}
+                >
+                  <MenuItem value="individual_shopper">Vendeur individuel / Shopper personnel</MenuItem>
+                  <MenuItem value="storefront">Magasin / Boutique établie</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+
             <Grid item xs={12}>
               <TextField
                 fullWidth
@@ -298,7 +322,7 @@ function VendorSignupPage() {
             <Grid item xs={12}>
               <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, display: "flex", alignItems: "center" }}>
                 <StoreIcon sx={{ mr: 1 }} />
-                Spécialités et zones de service
+                Détails de l'activité
               </Typography>
             </Grid>
 
