@@ -27,6 +27,10 @@ import {
   Snackbar,
   useTheme,
   alpha,
+  FormControl, // Added
+  InputLabel,  // Added
+  Select,      // Added
+  MenuItem,    // Added
 } from "@mui/material"
 import {
   Storefront as StoreIcon,
@@ -47,6 +51,7 @@ const initialVendorFormState = {
   phone: "",
   baseFee: "",
   // isApproved and isActive will be managed by separate actions
+  vendorType: "",
 };
 
 function AdminVendorManagement() {
@@ -188,7 +193,8 @@ function AdminVendorManagement() {
         id: vendorToEdit.id,
         name: vendorToEdit.name,
         phone: vendorToEdit.phone,
-        baseFee: vendorToEdit.baseFee || ""
+        baseFee: vendorToEdit.baseFee || "",
+        vendorType: vendorToEdit.vendorType || "" // Populate vendorType
       });
       setIsEditingVendor(true);
     } else {
@@ -209,9 +215,9 @@ function AdminVendorManagement() {
   };
 
   const handleSubmitVendorForm = async () => {
-    const { name, phone, baseFee } = currentVendorForm;
-    if (!name.trim() || !phone.trim() || !baseFee) {
-      showSnackbar("Veuillez remplir tous les champs requis (Nom, Téléphone, Frais de base).", "error");
+    const { name, phone, baseFee, vendorType } = currentVendorForm; // Added vendorType
+    if (!name.trim() || !phone.trim() || !baseFee || !vendorType) { // Added vendorType validation
+      showSnackbar("Veuillez remplir tous les champs requis (Nom, Téléphone, Frais de base, Type de vendeur).", "error");
       return;
     }
     const fee = parseFloat(baseFee);
@@ -233,6 +239,7 @@ function AdminVendorManagement() {
           name: name.trim(),
           phone: phone.trim(),
           baseFee: fee,
+          vendorType: vendorType, // Added vendorType
           // isApproved and isActive are managed by separate actions
         });
         showSnackbar("Vendeur mis à jour avec succès!", "success");
@@ -242,6 +249,7 @@ function AdminVendorManagement() {
           name: name.trim(),
           phone: phone.trim(),
           baseFee: fee,
+          vendorType: vendorType, // Added vendorType
           isApproved: false, // Default for new vendors
           isActive: false,   // Default for new vendors
           createdAt: new Date(), // Optional: timestamp
@@ -304,6 +312,7 @@ function AdminVendorManagement() {
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold" }}>Nom</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Téléphone</TableCell>
+                <TableCell sx={{ fontWeight: "bold" }}>Type de Vendeur</TableCell> {/* Added */}
                 <TableCell sx={{ fontWeight: "bold" }}>Frais de base</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Approbation</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Activité</TableCell>
@@ -315,6 +324,9 @@ function AdminVendorManagement() {
                 <TableRow key={vendor.id} hover>
                   <TableCell sx={{ fontWeight: 500 }}>{vendor.name}</TableCell>
                   <TableCell>{vendor.phone}</TableCell>
+                  <TableCell> {/* Added for vendorType */}
+                    {vendor.vendorType === "individual_shopper" ? "Individuel" : vendor.vendorType === "storefront" ? "Magasin" : "N/A"}
+                  </TableCell>
                   <TableCell>
                     {vendor.baseFee?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" }) || "N/A"}
                   </TableCell>
@@ -400,6 +412,20 @@ function AdminVendorManagement() {
       <Dialog open={formDialogOpen} onClose={handleCloseFormDialog} fullWidth maxWidth="sm">
         <DialogTitle>{isEditingVendor ? "Modifier le Vendeur" : "Ajouter un Nouveau Vendeur"}</DialogTitle>
         <DialogContent sx={{pt:1}}>
+            {/* Added FormControl and Select for vendorType */}
+            <FormControl fullWidth margin="dense" sx={{ mb: 2 }} required>
+                <InputLabel id="vendor-type-dialog-label">Type de vendeur</InputLabel>
+                <Select
+                    labelId="vendor-type-dialog-label"
+                    name="vendorType"
+                    value={currentVendorForm.vendorType}
+                    onChange={handleFormInputChange}
+                    label="Type de vendeur"
+                >
+                    <MenuItem value="individual_shopper">Vendeur individuel / Shopper personnel</MenuItem>
+                    <MenuItem value="storefront">Magasin / Boutique établie</MenuItem>
+                </Select>
+            </FormControl>
             <TextField
                 autoFocus
                 margin="dense"
@@ -436,6 +462,7 @@ function AdminVendorManagement() {
                 onChange={handleFormInputChange}
                 required
                 InputProps={{ inputProps: { min: 0 } }}
+                sx={{ mb: 2 }} // Added margin bottom for spacing
             />
         </DialogContent>
         <DialogActions sx={{p:3}}>
