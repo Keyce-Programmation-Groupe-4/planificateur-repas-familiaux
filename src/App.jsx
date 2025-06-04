@@ -23,6 +23,11 @@ import VendorsPage from "./pages/delivery/VendorsPage"
 import VendorProfilePage from "./pages/delivery/VendorProfilePage"
 import VendorSignupPage from "./pages/vendor/VendorSignupPage"
 import AdminDashboard from "./pages/admin/AdminDashboard"
+import AdminUserManagement from "./pages/admin/AdminUserManagement"
+import AdminRecipeManagement from "./pages/admin/AdminRecipeManagement"
+import AdminIngredientManagement from "./pages/admin/AdminIngredientManagement"
+import AdminVendorManagement from "./pages/admin/AdminVendorManagement"
+import AdminDeliveryManagement from "./pages/admin/AdminDeliveryManagement" // Added
 
 function App() {
   return (
@@ -173,6 +178,46 @@ function App() {
             element={
               <AdminRoute>
                 <AdminDashboard />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/users"
+            element={
+              <AdminRoute>
+                <AdminUserManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/recipes"
+            element={
+              <AdminRoute>
+                <AdminRecipeManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/ingredients"
+            element={
+              <AdminRoute>
+                <AdminIngredientManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/vendors"
+            element={
+              <AdminRoute>
+                <AdminVendorManagement />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/deliveries"
+            element={
+              <AdminRoute>
+                <AdminDeliveryManagement />
               </AdminRoute>
             }
           />
