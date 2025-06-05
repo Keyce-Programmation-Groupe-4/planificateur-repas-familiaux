@@ -46,6 +46,7 @@ import { parseRecipesFromCSV } from "../../utils/csvUtils.js"; // Using the util
 import { db } from "../../firebaseConfig"
 import { collection, getDocs, orderBy, query, doc, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore"
 import { format } from "date-fns"
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
 function AdminRecipeManagement() {
   const theme = useTheme()
@@ -319,25 +320,30 @@ function AdminRecipeManagement() {
 
   if (isLoading) { // Only initial page load
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: "center" }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Chargement des recettes...</Typography>
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, textAlign: "center" }}>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>Chargement des recettes...</Typography>
+        </Container>
+      </AdminLayout>
     )
   }
 
   if (pageError) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{pageError}</Alert>
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Alert severity="error">{pageError}</Alert>
+        </Container>
+      </AdminLayout>
     )
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Box sx={{ display: "flex", alignItems: "center" }}>
+    <AdminLayout>
+      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
+        <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
           <RestaurantMenuIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
             Gestion des Recettes
@@ -615,7 +621,8 @@ function AdminRecipeManagement() {
         </MuiAlert>
       </Snackbar>
 
-    </Container>
+      </Container>
+    </AdminLayout>
   )
 }
 

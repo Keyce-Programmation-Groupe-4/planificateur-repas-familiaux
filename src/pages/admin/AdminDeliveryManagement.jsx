@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import {
   Container,
   Box,
@@ -19,6 +19,8 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  Tooltip,
+  TableSortLabel,
   Dialog,
   DialogActions,
   DialogContent,
@@ -30,10 +32,15 @@ import {
   InputLabel,
   Box as MUIBox, // Renamed Box to MUIBox to avoid conflict with our own Box component if any, or just for clarity
 } from "@mui/material"
+import RefreshIcon from "@mui/icons-material/Refresh"
+import FilterListIcon from "@mui/icons-material/FilterList"
+import { EditNote as EditNoteIcon } from "@mui/icons-material"
 import { LocalShipping as DeliveryIcon, MoreVert as MoreVertIcon, EditNote as EditStatusIcon } from "@mui/icons-material"
 import { db } from "../../firebaseConfig"
-import { collection, getDocs, query, orderBy, doc, updateDoc, serverTimestamp } from "firebase/firestore" // Added doc, updateDoc, serverTimestamp
+import { collection, getDocs, query, doc, updateDoc, serverTimestamp } from "firebase/firestore" // Added doc, updateDoc, serverTimestamp
+import { orderBy as firestoreOrderBy } from "firebase/firestore"; // Import orderBy for sorting
 import { format } from "date-fns" // For formatting dates
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
 function AdminDeliveryManagement() {
   const theme = useTheme();
@@ -64,6 +71,18 @@ function AdminDeliveryManagement() {
 
   // ALL_DELIVERY_STATUSES is defined, ensure it's used in filter dropdown.
   const ALL_DELIVERY_STATUSES_FOR_FILTER = [ // For slightly different labels or to ensure all are there
+    "pending_vendor_confirmation",
+    "pending_user_acceptance",
+    "confirmed",
+    "shopping",
+    "out_for_delivery",
+    "delivered",
+    "cancelled_by_vendor",
+    "cancelled_by_user",
+    // Add any other legacy statuses if necessary e.g. "Problem", "Pending"
+  ];
+
+  const ALL_DELIVERY_STATUSES = [ // For slightly different labels or to ensure all are there
     "pending_vendor_confirmation",
     "pending_user_acceptance",
     "confirmed",
@@ -239,26 +258,31 @@ function AdminDeliveryManagement() {
 
   if (isLoading && deliveryRequests.length === 0) {
     return (
-      <Container sx={{ py: 4, textAlign: "center" }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>Chargement des demandes de livraison...</Typography>
-      </Container>
+      <AdminLayout>
+        <Container sx={{ py: { xs: 2, sm: 3 }, textAlign: "center" }}>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>Chargement des demandes de livraison...</Typography>
+        </Container>
+      </AdminLayout>
     );
   }
 
   // Error display remains, but Alert needs to be MuiAlert if Snackbar uses Alert
   if (error && !isLoading) { // Show general error if not loading and error exists
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <Alert severity="error">{error}</Alert> {/* This should be MuiAlert or ensure no name conflict */}
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Alert severity="error">{error}</Alert> {/* This should be MuiAlert or ensure no name conflict */}
+        </Container>
+      </AdminLayout>
     );
   }
 
   return (
-    <Container maxWidth="xl" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
+    <AdminLayout>
+      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
           <DeliveryIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           Gestion des Demandes de Livraison
         </Typography>
@@ -516,7 +540,8 @@ function AdminDeliveryManagement() {
         </Alert>
       </Snackbar>
 
-    </Container>
+      </Container>
+    </AdminLayout>
   )
 }
 

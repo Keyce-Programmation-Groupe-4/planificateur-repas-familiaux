@@ -1,4 +1,4 @@
-import { Routes, Route } from "react-router-dom"
+import { Routes, Route, Outlet } from "react-router-dom" // Outlet might be useful
 import Layout from "./components/Layout"
 import HomePage from "./pages/HomePage"
 import LoginPage from "./pages/LoginPage"
@@ -29,14 +29,23 @@ import AdminIngredientManagement from "./pages/admin/AdminIngredientManagement"
 import AdminVendorManagement from "./pages/admin/AdminVendorManagement"
 import AdminDeliveryManagement from "./pages/admin/AdminDeliveryManagement" // Added
 
+// Define a layout component for user routes
+const UserRoutesLayout = () => (
+  <Layout>
+    <Outlet /> {/* Child routes will render here */}
+  </Layout>
+);
+
 function App() {
   return (
     <AuthProvider>
-      <Layout>
-        <Routes>
+      <Routes>
+        {/* User Facing Routes wrapped by Main Layout */}
+        <Route element={<UserRoutesLayout />}>
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/vendor/signup" element={<VendorSignupPage />} /> {/* Public vendor signup */}
 
           <Route
             path="/profile"
@@ -126,8 +135,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
-          {/* Routes pour les livraisons */}
           <Route
             path="/delivery/request"
             element={
@@ -168,61 +175,58 @@ function App() {
               </ProtectedRoute>
             }
           />
+        </Route>
 
-          {/* Route d'inscription vendeur (publique) */}
-          <Route path="/vendor/signup" element={<VendorSignupPage />} />
-
-          {/* Routes admin */}
-          <Route
-            path="/admin"
-            element={
-              <AdminRoute>
-                <AdminDashboard />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/users"
-            element={
-              <AdminRoute>
-                <AdminUserManagement />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/recipes"
-            element={
-              <AdminRoute>
-                <AdminRecipeManagement />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/ingredients"
-            element={
-              <AdminRoute>
-                <AdminIngredientManagement />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/vendors"
-            element={
-              <AdminRoute>
-                <AdminVendorManagement />
-              </AdminRoute>
-            }
-          />
-          <Route
-            path="/admin/deliveries"
-            element={
-              <AdminRoute>
-                <AdminDeliveryManagement />
-              </AdminRoute>
-            }
-          />
-        </Routes>
-      </Layout>
+        {/* Admin Routes - Not wrapped by the main Layout */}
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/users"
+          element={
+            <AdminRoute>
+              <AdminUserManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/recipes"
+          element={
+            <AdminRoute>
+              <AdminRecipeManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/ingredients"
+          element={
+            <AdminRoute>
+              <AdminIngredientManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/vendors"
+          element={
+            <AdminRoute>
+              <AdminVendorManagement />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/deliveries"
+          element={
+            <AdminRoute>
+              <AdminDeliveryManagement />
+            </AdminRoute>
+          }
+        />
+      </Routes>
     </AuthProvider>
   )
 }

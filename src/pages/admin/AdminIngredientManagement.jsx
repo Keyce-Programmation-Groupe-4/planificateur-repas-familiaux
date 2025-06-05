@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react"
 import {
   Container,
-  Box,
   Typography,
   Paper,
   Table,
@@ -13,6 +12,7 @@ import {
   TableHead,
   TableRow,
   CircularProgress,
+  DialogContentText,
   Alert,
   Chip,
   useTheme,
@@ -38,6 +38,7 @@ import {
 } from "@mui/icons-material"
 import { db } from "../../firebaseConfig"
 import { collection, getDocs, query, orderBy, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore"
+import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
 const initialIngredientState = {
   name: "",
@@ -218,27 +219,32 @@ function AdminIngredientManagement() {
 
   if (isLoading || actionLoading) { // Combined loading state for initial load and actions
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: "center" }}>
-        <CircularProgress />
-        <Typography sx={{ mt: 2 }}>
-          {actionLoading ? "Traitement en cours..." : "Chargement des ingrédients..."}
-        </Typography>
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 }, textAlign: "center" }}>
+          <CircularProgress />
+          <Typography sx={{ mt: 2 }}>
+            {actionLoading ? "Traitement en cours..." : "Chargement des ingrédients..."}
+          </Typography>
+        </Container>
+      </AdminLayout>
     )
   }
 
   if (error && !isLoading) { // Show error only if not initial loading
     return (
-      <Container maxWidth="lg" sx={{ py: 4 }}>
-        <MuiAlert severity="error">{error}</MuiAlert> {/* Use MuiAlert here */}
-      </Container>
+      <AdminLayout>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <MuiAlert severity="error">{error}</MuiAlert> {/* Use MuiAlert here */}
+        </Container>
+      </AdminLayout>
     )
   }
 
   return (
-    <Container maxWidth="lg" sx={{ py: 4 }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-        <Box sx={{ display: "flex", alignItems: "center" }}>
+    <AdminLayout>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
           <IngredientIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
             Gestion des Ingrédients
@@ -395,7 +401,8 @@ function AdminIngredientManagement() {
         </DialogActions>
       </Dialog>
 
-    </Container>
+      </Container>
+    </AdminLayout>
   )
 }
 
