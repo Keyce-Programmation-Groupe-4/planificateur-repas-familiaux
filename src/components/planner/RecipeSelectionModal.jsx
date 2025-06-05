@@ -46,40 +46,72 @@ function RecipeSelectionModal({
   targetSlotInfo,
   // Expecting availableRecipes to be pre-sorted with family recipes first
   // and each recipe having an 'isFamilyRecipe' boolean flag
-  availableRecipes = [], 
+  availableRecipes = [],
+  currentUserData, // Added prop for user data
 }) {
   const theme = useTheme();
   const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  // Note: Removed local filtering state (selectedFilter) as it wasn't used in the provided code
-  // and the primary filtering is now based on family/public structure.
+
+  // New state for sorting and calorie filter
+  const [sortBy, setSortBy] = useState("default"); // 'default', 'caloriesAsc', 'caloriesDesc'
+  const [maxCaloriesFilter, setMaxCaloriesFilter] = useState("");
+
 
   // Separate recipes into family and public based on the flag
   const { familyRecipes, publicExternalRecipes } = useMemo(() => {
+    const userAllergies = currentUserData?.dietaryPreferences?.allergies || [];
+    const parsedMaxCalories = parseInt(maxCaloriesFilter, 10);
+    const currentMaxCalories = Number.isFinite(parsedMaxCalories) && parsedMaxCalories > 0 ? parsedMaxCalories : null;
+
+    let processedRecipes = availableRecipes.filter(recipe => {
+      const nameMatch = !searchTerm || recipe.name.toLowerCase().includes(searchTerm.toLowerCase());
+      const tagMatch = !searchTerm || (recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())));
+      const searchLogicPassed = !searchTerm || nameMatch || tagMatch; // If no search term, all pass this part
+
+      let shouldFilterOutByAllergy = false;
+      if (userAllergies.length > 0 && recipe.nutritionalInfo?.allergenInfo) {
+        const recipeAllergenInfo = recipe.nutritionalInfo.allergenInfo.toLowerCase();
+        shouldFilterOutByAllergy = userAllergies.some(allergy => recipeAllergenInfo.includes(allergy.toLowerCase()));
+      }
+
+      const recipeCalories = recipe.nutritionalInfo?.calories;
+      const calorieMatch = !currentMaxCalories || (typeof recipeCalories === 'number' && recipeCalories <= currentMaxCalories);
+
+      return searchLogicPassed && !shouldFilterOutByAllergy && calorieMatch;
+    });
+
+    // Apply sorting
+    if (sortBy === 'caloriesAsc') {
+      processedRecipes.sort((a, b) => (a.nutritionalInfo?.calories ?? Number.MAX_VALUE) - (b.nutritionalInfo?.calories ?? Number.MAX_VALUE));
+    } else if (sortBy === 'caloriesDesc') {
+      // For descending, MIN_VALUE makes nulls appear last. If you want nulls first, use MAX_VALUE.
+      processedRecipes.sort((a, b) => (b.nutritionalInfo?.calories ?? Number.MIN_VALUE) - (a.nutritionalInfo?.calories ?? Number.MIN_VALUE));
+    }
+    // If 'default', recipes remain in their original 'availableRecipes' order filtered,
+    // the subsequent separation by isFamilyRecipe will maintain this relative order within those groups.
+
     const family = [];
     const publicExternal = [];
-    availableRecipes.forEach(recipe => {
-        // Apply search term filtering here before separating
-        const nameMatch = recipe.name.toLowerCase().includes(searchTerm.toLowerCase());
-        const tagMatch = recipe.tags && recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase()));
-        
-        if (!searchTerm || nameMatch || tagMatch) {
-            if (recipe.isFamilyRecipe) {
-                family.push(recipe);
-            } else {
-                publicExternal.push(recipe);
-            }
+    processedRecipes.forEach(recipe => {
+        if (recipe.isFamilyRecipe) {
+            family.push(recipe);
+        } else {
+            publicExternal.push(recipe);
         }
     });
+
     return { familyRecipes: family, publicExternalRecipes: publicExternal };
-  }, [availableRecipes, searchTerm]);
+  }, [availableRecipes, searchTerm, currentUserData, sortBy, maxCaloriesFilter]);
 
   useEffect(() => {
     if (open) {
       setIsLoading(true);
       setError(null);
       setSearchTerm("");
+      setMaxCaloriesFilter(""); // Reset filter on open
+      setSortBy("default"); // Reset sort on open
       // Simulate loading, actual data comes from props
       const timer = setTimeout(() => {
         setIsLoading(false);
@@ -249,6 +281,38 @@ function RecipeSelectionModal({
               },
             }}
           />
+          {/* Filter and Sort Controls */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mt: 2 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel id="sort-by-label">Trier par</InputLabel>
+              <Select
+                labelId="sort-by-label"
+                id="sort-by-select"
+                value={sortBy}
+                label="Trier par"
+                onChange={(e) => setSortBy(e.target.value)}
+                sx={{ borderRadius: 3 }}
+              >
+                <MenuItem value="default">Par défaut</MenuItem>
+                <MenuItem value="caloriesAsc">Calories (croissant)</MenuItem>
+                <MenuItem value="caloriesDesc">Calories (décroissant)</MenuItem>
+              </Select>
+            </FormControl>
+            <TextField
+              fullWidth
+              label="Max calories / portion"
+              type="number"
+              variant="outlined"
+              size="small"
+              value={maxCaloriesFilter}
+              onChange={(e) => setMaxCaloriesFilter(e.target.value)}
+              InputProps={{
+                endAdornment: <InputAdornment position="end">kcal</InputAdornment>,
+                sx: { borderRadius: 3 }
+              }}
+              inputProps={{ min: 0 }}
+            />
+          </Stack>
         </Box>
 
         {/* Recipe List */}

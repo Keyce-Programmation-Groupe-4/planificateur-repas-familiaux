@@ -1077,6 +1077,7 @@ function WeeklyPlannerPage() {
             onRecipeSelect={handleRecipeSelected}
             availableRecipes={availableRecipesForPlanning}
             targetSlotInfo={targetSlotInfo}
+            currentUserData={userData} // Added this line
           />
           <Snackbar
             open={notificationResult.open}

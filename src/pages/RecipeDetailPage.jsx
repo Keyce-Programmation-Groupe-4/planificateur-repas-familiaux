@@ -47,6 +47,7 @@ import {
   Favorite as FavoriteIcon,
   FavoriteBorder as FavoriteBorderIcon,
   WhatsApp as WhatsAppIcon,
+  LocalFireDepartment as LocalFireDepartmentIcon, // Added for calories
 } from "@mui/icons-material"
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
@@ -609,6 +610,92 @@ export default function RecipeDetailPage() {
                   </List>
                 </Card>
               </Box>
+
+              <Divider sx={{ my: 4 }} />
+
+              {/* Nutritional Information */}
+              {recipe.nutritionalInfo && Object.values(recipe.nutritionalInfo).some(val => val !== null && val !== "") && (
+                <Box sx={{ mb: 4 }}>
+                  <Typography
+                    variant="h5"
+                    component="h2"
+                    sx={{ mb: 3, display: "flex", alignItems: "center", gap: 1, fontWeight: 600 }}
+                  >
+                    {/* Consider adding a relevant icon for nutrition section title */}
+                    Informations Nutritionnelles (par portion)
+                  </Typography>
+                  <Card
+                    elevation={0}
+                    sx={{
+                      borderRadius: 3,
+                      border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+                      p: 3, // Padding inside the card
+                    }}
+                  >
+                    <CardContent>
+                      <Grid container spacing={2}>
+                        {recipe.nutritionalInfo.calories && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1" sx={{ display: 'flex', alignItems: 'center' }}>
+                              <LocalFireDepartmentIcon sx={{ mr: 1, color: 'warning.main' }} />
+                              <strong>Calories:</strong>&nbsp;{recipe.nutritionalInfo.calories} kcal
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.protein && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Protéines:</strong> {recipe.nutritionalInfo.protein} g
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.carbs && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Glucides:</strong> {recipe.nutritionalInfo.carbs} g
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.fat && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Lipides:</strong> {recipe.nutritionalInfo.fat} g
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.fiber && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Fibres:</strong> {recipe.nutritionalInfo.fiber} g
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.sugar && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Sucres:</strong> {recipe.nutritionalInfo.sugar} g
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.sodium && (
+                          <Grid item xs={12} sm={6} md={4}>
+                            <Typography variant="body1">
+                              <strong>Sodium:</strong> {recipe.nutritionalInfo.sodium} mg
+                            </Typography>
+                          </Grid>
+                        )}
+                        {recipe.nutritionalInfo.allergenInfo && (
+                          <Grid item xs={12}>
+                            <Typography variant="body1">
+                              <strong>Allergènes:</strong> {recipe.nutritionalInfo.allergenInfo}
+                            </Typography>
+                          </Grid>
+                        )}
+                      </Grid>
+                    </CardContent>
+                  </Card>
+                </Box>
+              )}
 
               <Divider sx={{ my: 4 }} />
 

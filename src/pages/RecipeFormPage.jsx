@@ -123,6 +123,16 @@ export default function RecipeFormPage() {
   const [existingPhotoUrl, setExistingPhotoUrl] = useState(null);
   const [visibility, setVisibility] = useState("public"); // <-- NOUVEAU: État pour la visibilité
 
+  // Nutritional Information State
+  const [calories, setCalories] = useState("");
+  const [protein, setProtein] = useState("");
+  const [carbs, setCarbs] = useState("");
+  const [fat, setFat] = useState("");
+  const [fiber, setFiber] = useState("");
+  const [sugar, setSugar] = useState("");
+  const [sodium, setSodium] = useState("");
+  const [allergenInfo, setAllergenInfo] = useState("");
+
   // Ingredient Management State
   const [allIngredients, setAllIngredients] = useState([]);
   const [selectedIngredient, setSelectedIngredient] = useState(null);
@@ -153,6 +163,10 @@ export default function RecipeFormPage() {
   const [error, setError] = useState("");
   const [formError, setFormError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Spoonacular API state
+  const [isAnalyzingNutrition, setIsAnalyzingNutrition] = useState(false);
+  const [nutritionApiError, setNutritionApiError] = useState("");
 
   // Fetch existing ingredients
   const fetchAllIngredients = useCallback(async () => {
@@ -203,6 +217,15 @@ export default function RecipeFormPage() {
               setExistingPhotoUrl(data.photoUrl || null);
               setPhotoPreview(data.photoUrl || null);
               setVisibility(data.visibility || "public"); // <-- NOUVEAU: Charger la visibilité existante
+              // Load nutritional information
+              setCalories(data.nutritionalInfo?.calories?.toString() || "");
+              setProtein(data.nutritionalInfo?.protein?.toString() || "");
+              setCarbs(data.nutritionalInfo?.carbs?.toString() || "");
+              setFat(data.nutritionalInfo?.fat?.toString() || "");
+              setFiber(data.nutritionalInfo?.fiber?.toString() || "");
+              setSugar(data.nutritionalInfo?.sugar?.toString() || "");
+              setSodium(data.nutritionalInfo?.sodium?.toString() || "");
+              setAllergenInfo(data.nutritionalInfo?.allergenInfo || "");
           } else {
               setFormError("Accès non autorisé à cette recette.");
               navigate("/recipes");
@@ -507,6 +530,16 @@ export default function RecipeFormPage() {
       ingredientsList: ingredientsList,
       familyId: userData.familyId, // <-- NOUVEAU: Toujours enregistrer familyId
       visibility: visibility, // <-- NOUVEAU: Enregistrer la visibilité
+      nutritionalInfo: {
+        calories: calories ? (parseInt(calories, 10) || null) : null,
+        protein: protein ? (parseInt(protein, 10) || null) : null,
+        carbs: carbs ? (parseInt(carbs, 10) || null) : null,
+        fat: fat ? (parseInt(fat, 10) || null) : null,
+        fiber: fiber ? (parseInt(fiber, 10) || null) : null,
+        sugar: sugar ? (parseInt(sugar, 10) || null) : null,
+        sodium: sodium ? (parseInt(sodium, 10) || null) : null,
+        allergenInfo: allergenInfo.trim() || null,
+      },
     };
 
     try {
@@ -557,6 +590,96 @@ export default function RecipeFormPage() {
       setUploadProgress(0);
     }
   };
+
+  // Helper function to find nutrient from Spoonacular response
+  const findNutrient = (nutrients, name) => {
+    return nutrients.find(n => n.name.toLowerCase() === name.toLowerCase());
+  };
+
+  // Ensure VITE_SPOONACULAR_API_KEY is set in your .env file
+  const handleAnalyzeRecipeWithSpoonacular = async () => {
+    setIsAnalyzingNutrition(true);
+    setNutritionApiError("");
+
+    const apiKey = import.meta.env.VITE_SPOONACULAR_API_KEY;
+
+    if (!apiKey) {
+      setNutritionApiError("Clé API Spoonacular non configurée.");
+      setIsAnalyzingNutrition(false);
+      return;
+    }
+
+    if (ingredientsList.length === 0) {
+      setNutritionApiError("Veuillez ajouter des ingrédients avant d'analyser.");
+      setIsAnalyzingNutrition(false);
+      return;
+    }
+
+    const formattedIngredients = ingredientsList.map(ing => {
+      return `${ing.quantity} ${ing.unit} ${ing.ingredientName}`;
+    });
+
+    const requestBody = {
+      title: recipeName || "Analyse de recette",
+      servings: parseInt(servings, 10) || 1,
+      ingredients: formattedIngredients,
+    };
+
+    try {
+      const response = await fetch(`https://api.spoonacular.com/recipes/analyze?apiKey=${apiKey}&includeNutrition=true`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Erreur inconnue de l'API." }));
+        console.error("Spoonacular API Error:", response.status, errorData);
+        let errorMessage = `Erreur ${response.status}: `;
+        if (response.status === 401 || response.status === 402) {
+            errorMessage += "Quota API atteint ou clé invalide?";
+        } else if (errorData && errorData.message) {
+            errorMessage += errorData.message;
+        } else {
+            errorMessage += "Impossible d'analyser la nutrition.";
+        }
+        setNutritionApiError(errorMessage);
+        setIsAnalyzingNutrition(false);
+        return;
+      }
+
+      const data = await response.json();
+
+      if (data.nutrition && data.nutrition.nutrients) {
+        const nutrients = data.nutrition.nutrients;
+        setCalories(findNutrient(nutrients, "Calories")?.amount.toFixed(0).toString() || calories);
+        setProtein(findNutrient(nutrients, "Protein")?.amount.toFixed(0).toString() || protein);
+        // Spoonacular uses "Carbohydrates", not "Carbs"
+        setCarbs(findNutrient(nutrients, "Carbohydrates")?.amount.toFixed(0).toString() || carbs);
+        setFat(findNutrient(nutrients, "Fat")?.amount.toFixed(0).toString() || fat);
+        setFiber(findNutrient(nutrients, "Fiber")?.amount.toFixed(0).toString() || fiber);
+        setSugar(findNutrient(nutrients, "Sugar")?.amount.toFixed(0).toString() || sugar);
+        setSodium(findNutrient(nutrients, "Sodium")?.amount.toFixed(0).toString() || sodium);
+        // Allergen info is not directly provided by this Spoonacular endpoint in a structured way to set allergenInfo state.
+        // Users would typically infer allergens from ingredients or use a different Spoonacular feature.
+        // We can set a generic note if ingredients were analyzed.
+        if (data.extendedIngredients && data.extendedIngredients.length > 0) {
+            setAllergenInfo(prev => prev ? `${prev}\nNote: Les valeurs nutritionnelles ont été estimées par API.` : "Note: Les valeurs nutritionnelles ont été estimées par API.");
+        }
+
+      } else {
+        setNutritionApiError("Aucune donnée nutritionnelle reçue de l'API.");
+      }
+    } catch (err) {
+      console.error("Error calling Spoonacular API:", err);
+      setNutritionApiError("Erreur de communication avec le service de nutrition. Vérifiez votre connexion.");
+    } finally {
+      setIsAnalyzingNutrition(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -790,6 +913,122 @@ export default function RecipeFormPage() {
                     <LinearProgress variant="determinate" value={uploadProgress} sx={{ mt: 1 }} />
                   )}
                 </Box>
+
+                {/* Nutritional Information Section */}
+                <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: `1px solid ${alpha(theme.palette.divider, 0.1)}`, mt: 3 }}>
+                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, mb: 2 }}>
+                    Informations Nutritionnelles (par portion)
+                  </Typography>
+                  <Grid container spacing={2}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Calories"
+                        type="number"
+                        value={calories}
+                        onChange={(e) => setCalories(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Protéines"
+                        type="number"
+                        value={protein}
+                        onChange={(e) => setProtein(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">g</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Glucides"
+                        type="number"
+                        value={carbs}
+                        onChange={(e) => setCarbs(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">g</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Lipides"
+                        type="number"
+                        value={fat}
+                        onChange={(e) => setFat(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">g</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Fibres (optionnel)"
+                        type="number"
+                        value={fiber}
+                        onChange={(e) => setFiber(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">g</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Sucres (optionnel)"
+                        type="number"
+                        value={sugar}
+                        onChange={(e) => setSugar(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">g</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        label="Sodium (optionnel)"
+                        type="number"
+                        value={sodium}
+                        onChange={(e) => setSodium(e.target.value)}
+                        fullWidth
+                        disabled={!canModify}
+                        InputProps={{ endAdornment: <InputAdornment position="end">mg</InputAdornment>, inputProps: { min: 0 } }}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        label="Informations sur les allergènes (optionnel)"
+                        value={allergenInfo}
+                        onChange={(e) => setAllergenInfo(e.target.value)}
+                        multiline
+                        rows={2}
+                        fullWidth
+                        disabled={!canModify}
+                      />
+                    </Grid>
+                  </Grid>
+                  {/* Spoonacular API Button and Info */}
+                  <Box sx={{ mt: 2, textAlign: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      onClick={handleAnalyzeRecipeWithSpoonacular}
+                      disabled={isAnalyzingNutrition || ingredientsList.length === 0 || !canModify}
+                      sx={{ borderRadius: 3 }}
+                    >
+                      {isAnalyzingNutrition ? <CircularProgress size={24} /> : "Analyser avec Spoonacular"}
+                    </Button>
+                    {nutritionApiError && (
+                      <Alert severity="error" sx={{ mt: 2, borderRadius: 3 }}>
+                        {nutritionApiError}
+                      </Alert>
+                    )}
+                     <Typography variant="caption" display="block" sx={{ mt: 1, fontStyle: 'italic', color: 'text.secondary' }}>
+                      Note: L'analyse API nécessite une clé Spoonacular valide et des ingrédients bien formatés pour de meilleurs résultats.
+                    </Typography>
+                  </Box>
+                </Paper>
               </Stack>
             </Grid>
 

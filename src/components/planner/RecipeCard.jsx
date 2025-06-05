@@ -15,7 +15,8 @@ import {
   Close, 
   Restaurant,
   Star,
-  AccessTime
+  AccessTime,
+  LocalFireDepartment as LocalFireDepartmentIcon // Added for calories
 } from '@mui/icons-material';
 
 function RecipeCard({ 
@@ -178,6 +179,14 @@ function RecipeCard({
                 <Star sx={{ fontSize: '0.9rem', color: theme.palette.warning.main }} />
                 <Typography variant="caption" color="text.secondary">
                   {difficulty}
+                </Typography>
+              </Box>
+            )}
+            {recipeData.nutritionalInfo?.calories && (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <LocalFireDepartmentIcon sx={{ fontSize: '0.9rem', color: theme.palette.text.secondary }} />
+                <Typography variant="caption" color="text.secondary">
+                  {recipeData.nutritionalInfo.calories} kcal
                 </Typography>
               </Box>
             )}

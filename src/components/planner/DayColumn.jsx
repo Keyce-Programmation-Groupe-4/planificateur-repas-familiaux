@@ -29,6 +29,26 @@ function DayColumn({ dayName, dayKey, meals, recipes, onOpenModal, onDeleteRecip
     return recipes && recipeId ? recipes[recipeId] : null
   }
 
+  // Calculate daily nutritional totals
+  let totalCalories = 0;
+  let totalProtein = 0;
+  let totalCarbs = 0;
+  let totalFat = 0;
+
+  if (meals && recipes) {
+    Object.values(meals).forEach(recipeId => {
+      if (recipeId && recipes[recipeId] && recipes[recipeId].nutritionalInfo) {
+        const nutrition = recipes[recipeId].nutritionalInfo;
+        totalCalories += Number(nutrition.calories) || 0;
+        totalProtein += Number(nutrition.protein) || 0;
+        totalCarbs += Number(nutrition.carbs) || 0;
+        totalFat += Number(nutrition.fat) || 0;
+      }
+    });
+  }
+
+  const shouldShowSummary = totalCalories > 0 || totalProtein > 0 || totalCarbs > 0 || totalFat > 0;
+
   if (!meals) {
     return (
       <Fade in timeout={300}>
@@ -178,6 +198,29 @@ function DayColumn({ dayName, dayKey, meals, recipes, onOpenModal, onDeleteRecip
             index={2}
           />
         </Stack>
+
+        {/* Daily Nutritional Summary */}
+        {shouldShowSummary && (
+          <Box sx={{ mt: 2, pt: 1.5, borderTop: `1px solid ${alpha(theme.palette.divider, 0.7)}` }}>
+            <Typography variant="subtitle2" sx={{ mb: 0.5, fontWeight: 600, color: theme.palette.text.secondary, textAlign: 'center' }}>
+              Résumé Nutri. (Jour)
+            </Typography>
+            <Stack spacing={0.25} sx={{ px: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Calories: {totalCalories} kcal
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Protéines: {totalProtein} g
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Glucides: {totalCarbs} g
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Lipides: {totalFat} g
+              </Typography>
+            </Stack>
+          </Box>
+        )}
       </Paper>
     </Zoom>
   )

@@ -52,6 +52,8 @@ import CloseIcon from "@mui/icons-material/Close"
 import CalendarIcon from "@mui/icons-material/CalendarMonth"
 import CakeIcon from '@mui/icons-material/Cake'
 import BarChartIcon from '@mui/icons-material/BarChart'
+import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
+import EditNoteIcon from '@mui/icons-material/EditNote';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
@@ -195,6 +197,12 @@ export default function ProfilePage() {
   const [allergies, setAllergies] = useState([])
   const [dislikes, setDislikes] = useState([])
   const [favorites, setFavorites] = useState([])
+  // Nutritional goals states
+  const [caloriesTarget, setCaloriesTarget] = useState(0)
+  const [proteinTarget, setProteinTarget] = useState(0)
+  const [carbTarget, setCarbTarget] = useState(0)
+  const [fatTarget, setFatTarget] = useState(0)
+  const [otherNutritionalNotes, setOtherNutritionalNotes] = useState("")
   const [notificationSettings, setNotificationSettings] = useState({
     invitations: true,
     planningReady: true,
@@ -223,6 +231,12 @@ export default function ProfilePage() {
       setAllergies(userData.dietaryPreferences?.allergies || [])
       setDislikes(userData.dietaryPreferences?.dislikes || [])
       setFavorites(userData.dietaryPreferences?.favorites || [])
+      // Load nutritional goals
+      setCaloriesTarget(userData.dietaryPreferences?.caloriesTarget || 0)
+      setProteinTarget(userData.dietaryPreferences?.proteinTarget || 0)
+      setCarbTarget(userData.dietaryPreferences?.carbTarget || 0)
+      setFatTarget(userData.dietaryPreferences?.fatTarget || 0)
+      setOtherNutritionalNotes(userData.dietaryPreferences?.otherNutritionalNotes || "")
       setNotificationSettings({
         invitations: userData.notificationSettings?.invitations ?? true,
         planningReady: userData.notificationSettings?.planningReady ?? true,
@@ -271,6 +285,11 @@ export default function ProfilePage() {
           allergies: allergies,
           dislikes: dislikes,
           favorites: favorites,
+          caloriesTarget: parseInt(caloriesTarget, 10) || null,
+          proteinTarget: parseInt(proteinTarget, 10) || null,
+          carbTarget: parseInt(carbTarget, 10) || null,
+          fatTarget: parseInt(fatTarget, 10) || null,
+          otherNutritionalNotes: otherNutritionalNotes,
         },
         notificationSettings: notificationSettings,
         updatedAt: serverTimestamp(),
@@ -302,6 +321,12 @@ export default function ProfilePage() {
       setAllergies(userData.dietaryPreferences?.allergies || [])
       setDislikes(userData.dietaryPreferences?.dislikes || [])
       setFavorites(userData.dietaryPreferences?.favorites || [])
+      // Reset nutritional goals
+      setCaloriesTarget(userData.dietaryPreferences?.caloriesTarget || 0)
+      setProteinTarget(userData.dietaryPreferences?.proteinTarget || 0)
+      setCarbTarget(userData.dietaryPreferences?.carbTarget || 0)
+      setFatTarget(userData.dietaryPreferences?.fatTarget || 0)
+      setOtherNutritionalNotes(userData.dietaryPreferences?.otherNutritionalNotes || "")
       setNotificationSettings({
         invitations: userData.notificationSettings?.invitations ?? true,
         planningReady: userData.notificationSettings?.planningReady ?? true,
@@ -1271,6 +1296,114 @@ export default function ProfilePage() {
                                       }}
                                     />
                                   )}
+                                />
+                              </Grid>
+
+                              {/* Nutritional Goals */}
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  label="Objectif calorique quotidien"
+                                  type="number"
+                                  value={caloriesTarget}
+                                  onChange={(e) => setCaloriesTarget(e.target.value)}
+                                  disabled={!isEditing || loading}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <LocalFireDepartmentIcon color="action" sx={{ mr: 1 }} />
+                                    ),
+                                  }}
+                                  sx={{
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: 4,
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
+                                    },
+                                    "& .MuiInputLabel-root": {
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
+                                    },
+                                  }}
+                                />
+                              </Grid>
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  label="Objectif protéines (g)"
+                                  type="number"
+                                  value={proteinTarget}
+                                  onChange={(e) => setProteinTarget(e.target.value)}
+                                  disabled={!isEditing || loading}
+                                  sx={{
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: 4,
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
+                                    },
+                                    "& .MuiInputLabel-root": {
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
+                                    },
+                                  }}
+                                />
+                              </Grid>
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  label="Objectif glucides (g)"
+                                  type="number"
+                                  value={carbTarget}
+                                  onChange={(e) => setCarbTarget(e.target.value)}
+                                  disabled={!isEditing || loading}
+                                  sx={{
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: 4,
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
+                                    },
+                                    "& .MuiInputLabel-root": {
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
+                                    },
+                                  }}
+                                />
+                              </Grid>
+                              <Grid item xs={12} sm={6}>
+                                <TextField
+                                  fullWidth
+                                  label="Objectif lipides (g)"
+                                  type="number"
+                                  value={fatTarget}
+                                  onChange={(e) => setFatTarget(e.target.value)}
+                                  disabled={!isEditing || loading}
+                                  sx={{
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: 4,
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
+                                    },
+                                    "& .MuiInputLabel-root": {
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
+                                    },
+                                  }}
+                                />
+                              </Grid>
+                              <Grid item xs={12}>
+                                <TextField
+                                  fullWidth
+                                  label="Autres notes nutritionnelles"
+                                  multiline
+                                  rows={3}
+                                  value={otherNutritionalNotes}
+                                  onChange={(e) => setOtherNutritionalNotes(e.target.value)}
+                                  disabled={!isEditing || loading}
+                                  InputProps={{
+                                    startAdornment: (
+                                      <EditNoteIcon color="action" sx={{ mr: 1 }} />
+                                    ),
+                                  }}
+                                  sx={{
+                                    "& .MuiOutlinedInput-root": {
+                                      borderRadius: 4,
+                                      fontSize: { xs: "0.9rem", md: "1rem" },
+                                    },
+                                    "& .MuiInputLabel-root": {
+                                      fontSize: { xs: "0.85rem", md: "0.9rem" },
+                                    },
+                                  }}
                                 />
                               </Grid>
                             </Grid>

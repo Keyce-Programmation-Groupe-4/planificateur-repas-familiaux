@@ -289,6 +289,7 @@ function AdminRecipeManagement() {
             category: recipe.category || null, // Assuming 'category' comes from CSV and is on `recipe` object
             // cookTime is not part of parseRecipesFromCSV's defined output, handle if present
             cookTime: recipe.cookTime ? Number(recipe.cookTime) : null, // Example if cookTime was passed through
+            nutritionalInfo: recipe.nutritionalInfo || null, // Added nutritional info
             isPublic: true,
             familyId: null,
             createdBy: 'admin_csv_import',
@@ -368,6 +369,14 @@ function AdminRecipeManagement() {
           <code>tags</code> (Optionnel) - Chaîne de tags séparés par des points-virgules (ex: "dessert;facile;rapide").<br/>
           <code>visibility</code> (Optionnel) - "public" ou "family" (sera forcé à "public" lors de cet import).<br/>
           <code>photoUrl</code> (Optionnel) - URL directe de l'image de la recette.<br/>
+          <code>calories</code> (Optionnel) - Calories par portion (nombre, ex: 350).<br/>
+          <code>protein</code> (Optionnel) - Protéines par portion en grammes (nombre, ex: 25).<br/>
+          <code>carbs</code> (Optionnel) - Glucides par portion en grammes (nombre, ex: 30).<br/>
+          <code>fat</code> (Optionnel) - Lipides par portion en grammes (nombre, ex: 15).<br/>
+          <code>fiber</code> (Optionnel) - Fibres par portion en grammes (nombre, ex: 5).<br/>
+          <code>sugar</code> (Optionnel) - Sucres par portion en grammes (nombre, ex: 10).<br/>
+          <code>sodium</code> (Optionnel) - Sodium par portion en milligrammes (nombre, ex: 500).<br/>
+          <code>allergenInfo</code> (Optionnel) - Informations sur les allergènes (texte, ex: "Contient des noix").<br/>
           <strong>Note:</strong> Les champs `cookTime`, `sourceName`, `sourceUrl` du précédent format ne sont pas gérés par l'utilitaire d'import actuel.
         </MuiAlert>
         <Grid container spacing={2} alignItems="center">
@@ -496,11 +505,13 @@ function AdminRecipeManagement() {
             <TableHead sx={{ backgroundColor: theme.palette.grey[100] }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold", width: "5%" }}>Image</TableCell>
-                <TableCell sx={{ fontWeight: "bold", width: "30%" }}>Nom de la Recette</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "25%" }}>Nom de la Recette</TableCell>
                 <TableCell sx={{ fontWeight: "bold", width: "15%" }}>Créateur (ID)</TableCell>
-                <TableCell sx={{ fontWeight: "bold", width: "15%" }}>Date de Création</TableCell>
-                <TableCell sx={{ fontWeight: "bold", width: "15%" }}>Visibilité</TableCell>
-                <TableCell sx={{ fontWeight: "bold", width: "10%" }}>Source</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "10%" }}>Date de Création</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "10%" }}>Visibilité</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "5%" }}>Source</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "10%" }}>Calories</TableCell>
+                <TableCell sx={{ fontWeight: "bold", width: "10%" }}>Macros (P/G/L)</TableCell>
                 <TableCell sx={{ fontWeight: "bold", width: "10%", textAlign: "center" }}>Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -552,6 +563,10 @@ function AdminRecipeManagement() {
                     ) : (
                       "N/A"
                     )}
+                  </TableCell>
+                  <TableCell>{recipe.nutritionalInfo?.calories || "N/A"}</TableCell>
+                  <TableCell>
+                    {`${recipe.nutritionalInfo?.protein || '-'}/${recipe.nutritionalInfo?.carbs || '-'}/${recipe.nutritionalInfo?.fat || '-'}`}
                   </TableCell>
                   <TableCell sx={{ textAlign: "center" }}>
                     <IconButton

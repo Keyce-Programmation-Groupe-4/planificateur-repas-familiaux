@@ -87,6 +87,16 @@ export const parseRecipesFromCSV = (file) => {
               tags,
               visibility: row.visibility === "public" ? "public" : "family",
               photoUrl: row.photoUrl || "",
+              nutritionalInfo: {
+                calories: row.calories && !isNaN(parseInt(row.calories, 10)) ? parseInt(row.calories, 10) : null,
+                protein: row.protein && !isNaN(parseInt(row.protein, 10)) ? parseInt(row.protein, 10) : null,
+                carbs: row.carbs && !isNaN(parseInt(row.carbs, 10)) ? parseInt(row.carbs, 10) : null,
+                fat: row.fat && !isNaN(parseInt(row.fat, 10)) ? parseInt(row.fat, 10) : null,
+                fiber: row.fiber && !isNaN(parseInt(row.fiber, 10)) ? parseInt(row.fiber, 10) : null,
+                sugar: row.sugar && !isNaN(parseInt(row.sugar, 10)) ? parseInt(row.sugar, 10) : null,
+                sodium: row.sodium && !isNaN(parseInt(row.sodium, 10)) ? parseInt(row.sodium, 10) : null,
+                allergenInfo: row.allergenInfo || null,
+              },
             });
           } catch (err) {
             errors.push(`Erreur à la ligne ${index + 2} (recette "${row.name || "inconnue"}") : ${err.message}`);
