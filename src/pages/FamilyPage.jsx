@@ -46,6 +46,7 @@ import {
   ArrowDownward as DemoteIcon,
   RemoveCircle as RemoveIcon,
   ExitToApp as ExitIcon,
+  Edit as EditIcon, // Added EditIcon
 } from "@mui/icons-material"
 import { default as FamilyIcon } from '@mui/icons-material/Groups'
 import { useAuth } from "../contexts/AuthContext"
@@ -85,9 +86,13 @@ export default function FamilyPage() {
   const [isProcessingAction, setIsProcessingAction] = useState(null)
   const [leaveFamilyDialogOpen, setLeaveFamilyDialogOpen] = useState(false)
 
+  // State for dietary restrictions editing
+  const [editRestrictionsDialogOpen, setEditRestrictionsDialogOpen] = useState(false)
+  const [currentRestrictions, setCurrentRestrictions] = useState([])
+  const [newRestrictionInput, setNewRestrictionInput] = useState("")
+
   const hasFamily = userData?.familyId
   const isFamilyAdmin = hasFamily && userData?.uid === familyData?.adminUid
-  
 
   useEffect(() => {
     let isMounted = true
@@ -455,6 +460,67 @@ export default function FamilyPage() {
     setError("")
   }
 
+  const handleOpenEditRestrictionsDialog = () => {
+    // Ensure userData and its dietaryRestrictions are current from AuthContext for the logged-in user
+    setCurrentRestrictions(userData?.dietaryRestrictions ? [...userData.dietaryRestrictions] : [])
+    setNewRestrictionInput("")
+    setError("") // Clear previous errors from other dialogs
+    setEditRestrictionsDialogOpen(true)
+  }
+
+  const handleCloseEditRestrictionsDialog = () => {
+    setEditRestrictionsDialogOpen(false)
+    setNewRestrictionInput("") // Clear input on close
+    // setError("") // Might clear errors too soon if needed for a snackbar
+  }
+
+  const handleAddRestriction = () => {
+    const trimmedInput = newRestrictionInput.trim()
+    if (trimmedInput && !currentRestrictions.includes(trimmedInput)) {
+      setCurrentRestrictions([...currentRestrictions, trimmedInput])
+      setNewRestrictionInput("")
+      setError("") // Clear error if restriction was added successfully
+    } else if (currentRestrictions.includes(trimmedInput)) {
+      setError("Cette restriction existe déjà.") // Specific error for duplicate
+    } else if (!trimmedInput) {
+      setError("La restriction ne peut pas être vide.")
+    }
+  }
+
+  const handleDeleteRestriction = (restrictionToDelete) => {
+    setCurrentRestrictions(currentRestrictions.filter((r) => r !== restrictionToDelete))
+  }
+
+  const handleSaveRestrictions = async () => {
+    if (!currentUser) {
+      setError("Utilisateur non authentifié.")
+      return
+    }
+    // Using a more specific processing key in case other actions use member UIDs
+    const processingKey = `${currentUser.uid}_dietaryRestrictions`;
+    setIsProcessingAction(processingKey)
+    setError("")
+    setSuccessMessage("")
+    try {
+      const userDocRef = doc(db, "users", currentUser.uid)
+      await updateDoc(userDocRef, {
+        dietaryRestrictions: currentRestrictions,
+        updatedAt: serverTimestamp(),
+      })
+      setSuccessMessage("Besoins alimentaires mis à jour avec succès !")
+      // AuthContext's onSnapshot for userData should pick this up.
+      // If membersData state also holds a copy of currentUser's data, it might need manual update here
+      // or a refetch, but membersData is typically for *other* members.
+      // For the current user, we rely on AuthContext's `userData`.
+      setEditRestrictionsDialogOpen(false)
+    } catch (err) {
+      console.error("Error updating dietary restrictions:", err)
+      setError("Erreur lors de la mise à jour des besoins alimentaires.")
+    } finally {
+      setIsProcessingAction(null) // Reset with the specific key or just null if it's generic
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -662,10 +728,26 @@ export default function FamilyPage() {
                                 primary={member.displayName || "Utilisateur"}
                                 secondary={member.email}
                                 primaryTypographyProps={{ fontWeight: 600 }}
+                                secondary={
+                                  <>
+                                    {member.email}
+                                    <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                      {(member.dietaryRestrictions || []).map((restriction, index) => (
+                                        <Chip key={index} label={restriction} size="small" variant="outlined" />
+                                      ))}
+                                      {(member.dietaryRestrictions?.length === 0 || !member.dietaryRestrictions) && (
+                                        <Typography variant="caption" color="textSecondary" sx={{width: '100%'}}>
+                                          {currentUser?.uid === member.uid ? "Aucune restriction ajoutée." : "Pas de besoins spécifiques."}
+                                        </Typography>
+                                      )}
+                                    </Box>
+                                  </>
+                                }
                               />
-                              <Chip
-                                label={member.familyRole || "Membre"}
-                                size="small"
+                              <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: isMobile ? 'flex-start' : 'flex-end', gap: 1, ml: isMobile ? 0 : 'auto', mt: isMobile ? 1 : 0 }}>
+                                <Chip
+                                  label={member.familyRole || "Membre"}
+                                  size="small"
                                 color={
                                   member.familyRole === "Admin"
                                     ? "error"
@@ -723,7 +805,19 @@ export default function FamilyPage() {
                                     Quitter
                                   </Button>
                                 )}
+                                {currentUser && member.uid === currentUser.uid && (
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    startIcon={<EditIcon />}
+                                    onClick={() => handleOpenEditRestrictionsDialog()} // Placeholder, will be defined in next chunk
+                                    sx={{ width: isMobile ? '100%' : 'auto' }}
+                                  >
+                                    Mes Besoins Alimentaires
+                                  </Button>
+                                )}
                               </Stack>
+                              </Box> {/* End of flex column for chip and buttons */}
                             </ListItem>
                           </Fade>
                         ))}
@@ -1115,8 +1209,119 @@ export default function FamilyPage() {
           </DialogActions>
         </Dialog>
 
+        {/* Edit Dietary Restrictions Dialog */}
+        <Dialog
+          open={editRestrictionsDialogOpen}
+          onClose={handleCloseEditRestrictionsDialog}
+          maxWidth="sm"
+          fullWidth
+          fullScreen={isMobile}
+          PaperProps={{
+            sx: {
+              borderRadius: isMobile ? 0 : 6, // Full screen on mobile means no border radius needed at the dialog level
+              background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            },
+          }}
+          BackdropProps={{ // Added for consistency with other dialogs
+            sx: {
+              backgroundColor: alpha(theme.palette.common.black, 0.7),
+              backdropFilter: "blur(8px)",
+            },
+          }}
+        >
+          <DialogTitle
+            sx={{
+              pb: 2,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+              borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+            }}
+          >
+            <Stack direction="row" alignItems="center" spacing={2}>
+              <Avatar sx={{ background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`}}>
+                <EditIcon sx={{color: theme.palette.primary.contrastText}}/>
+              </Avatar>
+              <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 700 }}>
+                Modifier mes Besoins Alimentaires
+              </Typography>
+            </Stack>
+          </DialogTitle>
+          <DialogContent sx={{ p: isMobile ? 2 : 3, mt: 2 }}>
+            {error && editRestrictionsDialogOpen && ( // Show error only if this dialog is open
+               <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }} onClose={() => setError("")}>{error}</Alert>
+            )}
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Listez ici vos allergies, intolérances, ou régimes spécifiques (ex: Végétarien, Sans gluten, Allergie aux noix).
+            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+              <TextField
+                fullWidth
+                label="Ajouter une restriction"
+                variant="outlined"
+                value={newRestrictionInput}
+                onChange={(e) => { setNewRestrictionInput(e.target.value); setError(""); }} // Clear error on input change
+                onKeyPress={(e) => { if (e.key === 'Enter') { handleAddRestriction(); e.preventDefault(); } }}
+                disabled={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions`}
+                sx={{ "& .MuiOutlinedInput-root": { borderRadius: 3 } }}
+              />
+              <Button
+                onClick={handleAddRestriction}
+                variant="contained"
+                disabled={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions` || !newRestrictionInput.trim()}
+                sx={{ borderRadius: 3, px:3, whiteSpace: 'nowrap' }}
+              >
+                Ajouter
+              </Button>
+            </Stack>
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mb: 2, p: currentRestrictions.length > 0 ? 1 : 0,  minHeight: currentRestrictions.length > 0 ? 'auto' : '40px', alignItems: 'center', justifyContent: currentRestrictions.length === 0 ? 'center' : 'flex-start', backgroundColor: currentRestrictions.length > 0 ? alpha(theme.palette.primary.main, 0.05) : 'transparent', borderRadius: 2 }}>
+              {currentRestrictions.map((restriction, index) => (
+                <Fade in timeout={300} key={index}>
+                  <Chip
+                    label={restriction}
+                    onDelete={() => handleDeleteRestriction(restriction)}
+                    disabled={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions`}
+                    color="primary"
+                    sx={{ fontWeight: 500 }}
+                  />
+                </Fade>
+              ))}
+              {currentRestrictions.length === 0 && (
+                <Typography variant="body2" color="text.secondary">
+                  Aucune restriction pour le moment.
+                </Typography>
+              )}
+            </Box>
+          </DialogContent>
+          <DialogActions
+            sx={{
+              p: isMobile ? 2 : 3,
+              background: `linear-gradient(135deg, ${alpha(theme.palette.background.paper, 0.8)} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+              borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+              gap: 2,
+            }}
+          >
+            <Button
+              onClick={handleCloseEditRestrictionsDialog}
+              disabled={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions`}
+              variant="outlined"
+              sx={{ borderRadius: 3, px: 3 }}
+            >
+              Annuler
+            </Button>
+            <Button
+              onClick={handleSaveRestrictions}
+              variant="contained"
+              color="primary"
+              disabled={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions` || currentRestrictions.length === (userData?.dietaryRestrictions || []).length && currentRestrictions.every(val => (userData?.dietaryRestrictions || []).includes(val))}
+              startIcon={isProcessingAction === `${currentUser?.uid}_dietaryRestrictions` ? <CircularProgress size={20} color="inherit" /> : <CheckIcon />}
+              sx={{ borderRadius: 3, px: 3 }}
+            >
+              Enregistrer
+            </Button>
+          </DialogActions>
+        </Dialog>
+
         <Snackbar
-          open={!!successMessage || (!!error && !createFamilyDialogOpen && !leaveFamilyDialogOpen)}
+          open={!!successMessage || (!!error && !createFamilyDialogOpen && !leaveFamilyDialogOpen && !editRestrictionsDialogOpen)}
           autoHideDuration={6000}
           onClose={handleCloseSnackbar}
           anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
