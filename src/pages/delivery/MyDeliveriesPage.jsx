@@ -20,6 +20,7 @@ import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore"
 import DeliveryStatusCard from "../../components/delivery/DeliveryStatusCard"
+import { DELIVERY_STATUSES } from "../../config/deliveryStatuses" // Added import
 
 function MyDeliveriesPage() {
   const theme = useTheme()
@@ -100,21 +101,57 @@ function MyDeliveriesPage() {
   }
 
   const getFilteredDeliveries = () => {
+    const activeStatuses = [
+      DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
+      DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
+      DELIVERY_STATUSES.CONFIRMED.key,
+      DELIVERY_STATUSES.SHOPPING.key,
+      DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+    ];
+    const completedStatuses = [DELIVERY_STATUSES.DELIVERED.key];
+    const cancelledStatuses = [
+      DELIVERY_STATUSES.CANCELLED_BY_USER.key,
+      DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key,
+      DELIVERY_STATUSES.CANCELLED.key,
+    ];
+
     switch (activeTab) {
       case 0: // Actives
-        return deliveries.filter((d) => ["pending", "accepted", "shopping",
-           "delivering", "pending_vendor_confirmation", "pending_user_acceptance",
-           "shopping", "out_for_delivery"].includes(d.status))
+        return deliveries.filter((d) => activeStatuses.includes(d.status));
       case 1: // Terminées
-        return deliveries.filter((d) => d.status === "delivered")
+        return deliveries.filter((d) => completedStatuses.includes(d.status));
       case 2: // Annulées
-        return deliveries.filter((d) => d.status === "cancelled")
+        return deliveries.filter((d) => cancelledStatuses.includes(d.status));
       default:
-        return deliveries
+        return deliveries;
     }
   }
 
-  const filteredDeliveries = getFilteredDeliveries()
+  const filteredDeliveries = getFilteredDeliveries() // Call it once
+
+  // Calculate counts for tabs based on the same logic
+  const activeCount = deliveries.filter(d =>
+    [
+      DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
+      DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
+      DELIVERY_STATUSES.CONFIRMED.key,
+      DELIVERY_STATUSES.SHOPPING.key,
+      DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+    ].includes(d.status)
+  ).length;
+
+  const completedCount = deliveries.filter(d =>
+    d.status === DELIVERY_STATUSES.DELIVERED.key
+  ).length;
+
+  const cancelledCount = deliveries.filter(d =>
+    [
+      DELIVERY_STATUSES.CANCELLED_BY_USER.key,
+      DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key,
+      DELIVERY_STATUSES.CANCELLED.key,
+    ].includes(d.status)
+  ).length;
+
 
   if (isLoading) {
     return (
@@ -172,19 +209,17 @@ function MyDeliveriesPage() {
         >
           <Tab
             icon={<LocalShipping />}
-            label={`Actives (${
-              deliveries.filter((d) => ["pending", "accepted", "shopping", "delivering"].includes(d.status)).length
-            })`}
+            label={`Actives (${activeCount})`}
             iconPosition="start"
           />
           <Tab
             icon={<History />}
-            label={`Terminées (${deliveries.filter((d) => d.status === "delivered").length})`}
+            label={`Terminées (${completedCount})`}
             iconPosition="start"
           />
           <Tab
             icon={<Cancel />}
-            label={`Annulées (${deliveries.filter((d) => d.status === "cancelled").length})`}
+            label={`Annulées (${cancelledCount})`}
             iconPosition="start"
           />
         </Tabs>

@@ -47,6 +47,7 @@ import { collection, getDocs, query, doc, updateDoc, serverTimestamp, where } fr
 import { orderBy as firestoreOrderBy } from "firebase/firestore"; // Import orderBy for sorting
 import { format } from "date-fns" // For formatting dates
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
+import { DELIVERY_STATUS_LIST, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
 
 function AdminDeliveryManagement() {
   const theme = useTheme();
@@ -72,33 +73,16 @@ function AdminDeliveryManagement() {
   const [anchorEl, setAnchorEl] = useState(null);
   const [selectedDelivery, setSelectedDelivery] = useState(null);
   const [statusUpdateDialogOpen, setStatusUpdateDialogOpen] = useState(false);
-  const [selectedStatusToUpdate, setSelectedStatusToUpdate] = useState("");
+  const [selectedStatusToUpdate, setSelectedStatusToUpdate] = useState(""); // This will store the status key
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" });
 
-  // ALL_DELIVERY_STATUSES is defined, ensure it's used in filter dropdown.
-  const ALL_DELIVERY_STATUSES_FOR_FILTER = [ // For slightly different labels or to ensure all are there
-    "pending_vendor_confirmation",
-    "pending_user_acceptance",
-    "confirmed",
-    "shopping",
-    "out_for_delivery",
-    "delivered",
-    "cancelled_by_vendor",
-    "cancelled_by_user",
-    // Add any other legacy statuses if necessary e.g. "Problem", "Pending"
-  ];
+  // Use DELIVERY_STATUS_LIST to populate dropdowns, ensuring we use the key for value
+  // and a human-readable label (adminLabel or label) for display.
+  const STATUS_OPTIONS_FOR_SELECT = DELIVERY_STATUS_LIST.map(status => ({
+    value: status.key,
+    label: status.adminLabel || status.label, // Prefer adminLabel, fallback to general label
+  }));
 
-  const ALL_DELIVERY_STATUSES = [ // For slightly different labels or to ensure all are there
-    "pending_vendor_confirmation",
-    "pending_user_acceptance",
-    "confirmed",
-    "shopping",
-    "out_for_delivery",
-    "delivered",
-    "cancelled_by_vendor",
-    "cancelled_by_user",
-    // Add any other legacy statuses if necessary e.g. "Problem", "Pending"
-  ];
 
   const formatTimestamp = useCallback((timestamp) => {
     if (!timestamp || !timestamp.toDate) return "N/A";
@@ -200,7 +184,7 @@ function AdminDeliveryManagement() {
   };
 
   const handleConfirmStatusUpdate = async () => {
-    if (!selectedDelivery || !selectedStatusToUpdate) {
+    if (!selectedDelivery || !selectedStatusToUpdate) { // selectedStatusToUpdate is a key string
       showSnackbar("Aucun statut sélectionné ou livraison non valide.", "error");
       return;
     }
@@ -208,11 +192,11 @@ function AdminDeliveryManagement() {
     try {
       const deliveryRef = doc(db, "deliveryRequests", selectedDelivery.id);
       await updateDoc(deliveryRef, {
-        status: selectedStatusToUpdate,
-        updatedAt: serverTimestamp(), // Changed from lastUpdatedAt
-        statusHistory: [ // Add to status history
+        status: selectedStatusToUpdate, // This is the key string
+        updatedAt: serverTimestamp(),
+        statusHistory: [
           ...(selectedDelivery.statusHistory || []),
-          { status: selectedStatusToUpdate, timestamp: serverTimestamp(), changedBy: "admin" }
+          { status: selectedStatusToUpdate, timestamp: serverTimestamp(), changedBy: "admin" } // Store the key string
         ]
       });
       showSnackbar("Statut de la livraison mis à jour avec succès!", "success");
@@ -226,21 +210,22 @@ function AdminDeliveryManagement() {
     }
   };
 
-  const getStatusChip = (status) => {
+  const getStatusChip = (statusKey) => {
+    const statusObj = getDeliveryStatusByKey(statusKey);
     let color = "default";
-    let label = status;
+    let label = statusKey;
     let variant = "filled"; // Default to filled
 
-    switch (status) {
-      case "pending_vendor_confirmation": color = "warning"; label = "Attente Vendeur"; variant="outlined"; break;
-      case "pending_user_acceptance": color = "info"; label = "Attente Client"; variant="outlined";break;
-      case "confirmed": color = "primary"; label = "Confirmée"; break;
-      case "shopping": color = "secondary"; label = "Achats"; break;
-      case "out_for_delivery": color = "secondary"; label = "En Livraison"; variant="outlined"; break;
-      case "delivered": color = "success"; label = "Livrée"; break;
-      case "cancelled_by_vendor": color = "error"; label = "Annulée (Vendeur)"; variant="outlined"; break;
-      case "cancelled_by_user": color = "error"; label = "Annulée (Client)"; variant="outlined"; break;
-      default: label = status ? status.replace(/_/g, " ") : "Inconnu"; variant="outlined"; break;
+    if (statusObj) {
+      label = statusObj.adminLabel || statusObj.label;
+      color = statusObj.color || "default";
+      // Determine variant based on status type or a new property in config if needed
+      if (statusKey.includes("pending") || statusKey.includes("cancelled") || statusKey === "out_for_delivery") {
+        variant = "outlined";
+      }
+    } else {
+      label = statusKey ? statusKey.replace(/_/g, " ") : "Inconnu";
+      variant = "outlined";
     }
     return <Chip label={label} color={color} size="small" variant={variant} sx={{textTransform: 'capitalize', minWidth: '100px'}}/>;
   };
@@ -313,10 +298,9 @@ function AdminDeliveryManagement() {
             IconComponent={FilterListIcon}
           >
             <MenuItem value=""><em>Tous les statuts</em></MenuItem>
-            {ALL_DELIVERY_STATUSES.map(statusKey => (
-              <MenuItem key={statusKey} value={statusKey}>
-                {/* Use getStatusChip to render a small chip in the menu item or just text */}
-                {statusKey.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+            {STATUS_OPTIONS_FOR_SELECT.map(option => (
+              <MenuItem key={option.value} value={option.value}>
+                {option.label}
               </MenuItem>
             ))}
           </Select>
@@ -515,13 +499,13 @@ function AdminDeliveryManagement() {
               <Select
                 labelId="status-select-label"
                 id="status-select"
-                value={selectedStatus}
+                value={selectedStatusToUpdate}
                 label="Nouveau Statut"
-                onChange={handleStatusChange}
+                onChange={handleStatusChange} // handleStatusChange sets selectedStatusToUpdate (which is a key)
               >
-                {ALL_DELIVERY_STATUSES.map((statusValue) => ( // Used ALL_DELIVERY_STATUSES
-                  <MenuItem key={statusValue} value={statusValue}>
-                    {statusValue.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                {STATUS_OPTIONS_FOR_SELECT.map((option) => (
+                  <MenuItem key={option.value} value={option.value}>
+                    {option.label} {/* Display user-friendly admin label */}
                   </MenuItem>
                 ))}
               </Select>

@@ -52,6 +52,7 @@ import {
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { doc, getDoc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore"
+import { DELIVERY_STATUSES, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
 
 function DeliveryTrackingPage() {
   const theme = useTheme()
@@ -139,50 +140,28 @@ function DeliveryTrackingPage() {
     return () => unsubscribe()
   }, [deliveryId, familyId])
 
-  const getStepFromStatus = (status) => {
-    // Adjusted steps for new flow
-    switch (status) {
-      case "pending_vendor_confirmation": return 0;
-      case "pending_user_acceptance": return 1;
-      case "confirmed": return 2;
-      case "shopping": return 3;
-      case "out_for_delivery": return 4; // Changed from delivering
-      case "delivered": return 5;
-      // Terminal states
-      case "cancelled_by_vendor": return -1;
-      case "cancelled_by_user": return -1;
-      case "cancelled": return -1; // Generic cancellation (e.g. original 'pending' cancelled by user)
-      default: return 0; // Default to first step if status is unknown
-    }
+  const getStepFromStatus = (statusKey) => {
+    const statusObj = getDeliveryStatusByKey(statusKey);
+    return statusObj ? statusObj.step : 0; // Default to first step if status is unknown or not in active flow
   }
 
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case "pending_vendor_confirmation": return "En attente de confirmation du vendeur";
-      case "pending_user_acceptance": return "En attente de votre approbation";
-      case "confirmed": return "Confirmée par vous";
-      case "shopping": return "Achats en cours";
-      case "out_for_delivery": return "En cours de livraison"; // Changed from delivering
-      case "delivered": return "Livrée";
-      case "cancelled_by_vendor": return "Annulée par le vendeur";
-      case "cancelled_by_user": return "Annulée par vous";
-      case "cancelled": return "Annulée"; // Keep this for backward compatibility if old "cancelled" statuses exist
-      default: return status; // Show raw status if not mapped
-    }
+  const getStatusLabel = (statusKey) => {
+    const statusObj = getDeliveryStatusByKey(statusKey);
+    return statusObj ? (statusObj.userLabel || statusObj.label) : statusKey; // Show raw status key if not mapped
   }
 
   // Generic function to update delivery status and history
-  const updateDeliveryStatus = async (newStatus, extraData = {}) => {
+  const updateDeliveryStatus = async (newStatusKey, extraData = {}) => { // newStatusKey is a string like "confirmed"
     if (!deliveryId || !deliveryData) return false;
     setActionLoading(true); // Disable buttons
     setError(null); // Clear previous errors
     try {
       const deliveryRef = doc(db, "deliveryRequests", deliveryId);
       await updateDoc(deliveryRef, {
-        status: newStatus,
+        status: newStatusKey, // Ensure this is the key string
         statusHistory: [
           ...(deliveryData.statusHistory || []),
-          { status: newStatus, timestamp: serverTimestamp(), changedBy: "user" }, // Assume 'user' for actions from this page
+          { status: newStatusKey, timestamp: serverTimestamp(), changedBy: "user" }, // Assume 'user' for actions from this page
         ],
         ...extraData, // For things like rejection reasons or final costs
         updatedAt: serverTimestamp(),
@@ -190,7 +169,7 @@ function DeliveryTrackingPage() {
       // Data will refresh via onSnapshot, no need to setDeliveryData here
       return true;
     } catch (err) {
-      console.error(`Erreur lors de la mise à jour du statut à ${newStatus}:`, err);
+      console.error(`Erreur lors de la mise à jour du statut à ${newStatusKey}:`, err);
       setError(`Erreur lors de la mise à jour: ${err.message}`);
       return false;
     } finally {
@@ -199,8 +178,7 @@ function DeliveryTrackingPage() {
   };
 
   const handleAcceptConfirmation = async () => {
-    // Optionally, could add userAcceptedAt: serverTimestamp() to extraData
-    await updateDeliveryStatus("confirmed");
+    await updateDeliveryStatus(DELIVERY_STATUSES.CONFIRMED.key);
   };
 
   const handleOpenRejectConfirmationDialog = () => {
@@ -210,35 +188,30 @@ function DeliveryTrackingPage() {
 
   const handleRejectConfirmation = async () => {
     if (!userRejectionReason.trim()) {
-        // This validation should ideally be handled by disabling the button or showing inline error in dialog
         setError("La raison du rejet est obligatoire.");
         return;
     }
-    const success = await updateDeliveryStatus("cancelled_by_user", {
+    const success = await updateDeliveryStatus(DELIVERY_STATUSES.CANCELLED_BY_USER.key, {
       userRejectionReason: userRejectionReason.trim(),
-      // Optionally: cancelledAt: serverTimestamp()
     });
     if (success) {
       setRejectConfirmDialogOpen(false); // Close dialog on successful rejection
     }
   };
 
-  // Renamed from handleCancelDelivery to be more specific
   const handleCancelDeliveryBeforeVendorConfirmation = async () => {
     if (!deliveryId || !deliveryData) return;
 
-    // Only allow cancellation if vendor hasn't confirmed yet
-    if (deliveryData.status !== "pending_vendor_confirmation") {
+    if (deliveryData.status !== DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) {
       alert("Vous ne pouvez annuler que les demandes qui n'ont pas encore été traitées par le vendeur.");
       return;
     }
-    // Using the generic update function. 'cancelled_by_user' implies it was the user/customer.
-    await updateDeliveryStatus("cancelled_by_user" /*, { cancelledAt: serverTimestamp() } */);
+    await updateDeliveryStatus(DELIVERY_STATUSES.CANCELLED_BY_USER.key);
   }
 
 
   const handleOpenRatingDialog = () => {
-    if (deliveryData.status !== "delivered") {
+    if (deliveryData.status !== DELIVERY_STATUSES.DELIVERED.key) {
       alert("Vous ne pouvez noter que les livraisons terminées.")
       return
     }
@@ -303,9 +276,13 @@ function DeliveryTrackingPage() {
   }
 
   const activeStep = getStepFromStatus(deliveryData?.status)
-  // More robust check for terminal states
-  const isTerminalStatus = deliveryData?.status?.startsWith("cancelled") || deliveryData?.status === "delivered";
-  const canCancelBeforeVendorAction = deliveryData?.status === "pending_vendor_confirmation";
+  const currentStatusKey = deliveryData?.status;
+  const isTerminalStatus = currentStatusKey === DELIVERY_STATUSES.DELIVERED.key ||
+                           currentStatusKey === DELIVERY_STATUSES.CANCELLED_BY_USER.key ||
+                           currentStatusKey === DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key ||
+                           currentStatusKey === DELIVERY_STATUSES.CANCELLED.key;
+
+  const canCancelBeforeVendorAction = currentStatusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key;
 
   // Cost related variables
   // Use finalAgreedCost if available (after user acceptance), then vendorFinalCost, then initial.
@@ -357,14 +334,14 @@ function DeliveryTrackingPage() {
             Suivi de Commande
           </Typography>
 
-          {deliveryData?.status?.startsWith("cancelled") && (
-            <Chip label={getStatusLabel(deliveryData.status)} color="error" size="small" sx={{ ml: 2, borderRadius: 2 }} />
+          {currentStatusKey && getDeliveryStatusByKey(currentStatusKey)?.key.startsWith("cancelled") && (
+            <Chip label={getStatusLabel(currentStatusKey)} color={getDeliveryStatusByKey(currentStatusKey)?.color || "error"} size="small" sx={{ ml: 2, borderRadius: 2 }} />
           )}
-          {deliveryData?.status === "delivered" && (
-            <Chip label="Livrée" color="success" icon={<CheckCircle />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
+          {currentStatusKey === DELIVERY_STATUSES.DELIVERED.key && (
+            <Chip label={DELIVERY_STATUSES.DELIVERED.userLabel} color={DELIVERY_STATUSES.DELIVERED.color} icon={<CheckCircle />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
           )}
-           {deliveryData?.status === "confirmed" && (
-            <Chip label="Confirmée par vous" color="primary" icon={<AssignmentTurnedIn />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
+           {currentStatusKey === DELIVERY_STATUSES.CONFIRMED.key && (
+            <Chip label={DELIVERY_STATUSES.CONFIRMED.userLabel} color={DELIVERY_STATUSES.CONFIRMED.color} icon={<AssignmentTurnedIn />} size="small" sx={{ ml: 2, borderRadius: 2 }} />
           )}
         </Box>
 
@@ -372,37 +349,37 @@ function DeliveryTrackingPage() {
         {!isTerminalStatus && (
           <Stepper activeStep={activeStep} orientation="vertical" sx={{ mb: 4 }}>
             <Step>
-              <StepLabel icon={<HourglassEmpty />}>En attente de confirmation du vendeur</StepLabel>
+              <StepLabel icon={<HourglassEmpty />}>{DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Le vendeur examine votre demande et confirmera la disponibilité et les prix des articles.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel icon={<PriceCheck />}>En attente de votre approbation</StepLabel>
+              <StepLabel icon={<PriceCheck />}>{DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Le vendeur a mis à jour les articles. Veuillez vérifier les détails ci-dessous et accepter ou rejeter la proposition.</Typography>
               </StepContent>
             </Step>
              <Step>
-              <StepLabel icon={<AssignmentTurnedIn />}>Commande confirmée</StepLabel>
+              <StepLabel icon={<AssignmentTurnedIn />}>{DELIVERY_STATUSES.CONFIRMED.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Vous avez accepté la proposition. Le vendeur va commencer à préparer votre commande.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel icon={<ShoppingCartCheckout />}>Achats en cours</StepLabel>
+              <StepLabel icon={<ShoppingCartCheckout />}>{DELIVERY_STATUSES.SHOPPING.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Le vendeur est en train d'acheter vos produits.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel icon={<LocalShipping />}>En cours de livraison</StepLabel>
+              <StepLabel icon={<LocalShipping />}>{DELIVERY_STATUSES.OUT_FOR_DELIVERY.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Votre commande est en route.</Typography>
               </StepContent>
             </Step>
             <Step>
-              <StepLabel icon={<CheckCircle />}>Livraison terminée</StepLabel>
+              <StepLabel icon={<CheckCircle />}>{DELIVERY_STATUSES.DELIVERED.userLabel}</StepLabel>
               <StepContent>
                 <Typography>Vos courses ont été livrées !</Typography>
               </StepContent>
@@ -411,7 +388,7 @@ function DeliveryTrackingPage() {
         )}
 
         {/* Section for User Acceptance */}
-        {deliveryData?.status === "pending_user_acceptance" && (
+        {currentStatusKey === DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key && (
           <Paper elevation={2} sx={{ p: {xs:2, sm:3}, my:3, borderRadius:3, border: `1px solid ${theme.palette.info.main}`, background: alpha(theme.palette.info.light, 0.05) }}>
             <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, display: 'flex', alignItems: 'center', color: theme.palette.info.dark }}>
               <Info sx={{mr:1}}/> Action Requise
@@ -459,8 +436,8 @@ function DeliveryTrackingPage() {
               <Typography variant="subtitle2" color="text.secondary">
                 Statut actuel
               </Typography>
-              <Typography sx={{ fontWeight: 600, color: deliveryData?.status?.startsWith("cancelled") ? theme.palette.error.main : deliveryData?.status === "delivered" ? theme.palette.success.main : deliveryData?.status === "confirmed" ? theme.palette.primary.main : 'text.primary' }}>
-                {getStatusLabel(deliveryData?.status)}
+              <Typography sx={{ fontWeight: 600, color: getDeliveryStatusByKey(currentStatusKey)?.color ? theme.palette[getDeliveryStatusByKey(currentStatusKey)?.color]?.main || theme.palette.text.primary : theme.palette.text.primary }}>
+                {getStatusLabel(currentStatusKey)}
               </Typography>
             </Box>
 
@@ -568,7 +545,7 @@ function DeliveryTrackingPage() {
             </Button>
           )}
 
-          {deliveryData?.status === "delivered" && !deliveryData?.hasRating && (
+          {currentStatusKey === DELIVERY_STATUSES.DELIVERED.key && !deliveryData?.hasRating && (
             <Button variant="contained" onClick={handleOpenRatingDialog}>
               Noter le vendeur
             </Button>

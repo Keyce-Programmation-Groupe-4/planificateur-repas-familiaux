@@ -1,27 +1,25 @@
 "use client"
 import { Card, CardContent, Typography, Box, Chip, Divider, useTheme, alpha, Button } from "@mui/material"
 import { LocalShipping, AccessTime, CheckCircle, Cancel, LocationOn } from "@mui/icons-material"
+import { getDeliveryStatusByKey, DELIVERY_STATUSES } from "../../config/deliveryStatuses" // Added import
 
 function DeliveryStatusCard({ delivery, vendor, onTrack, onCancel }) {
   const theme = useTheme()
 
-  const getStatusChip = (status) => {
-    switch (status) {
-      case "pending":
-        return <Chip label="En attente" color="warning" size="small" icon={<AccessTime fontSize="small" />} />
-      case "accepted":
-        return <Chip label="Acceptée" color="info" size="small" />
-      case "shopping":
-        return <Chip label="Achats en cours" color="info" size="small" />
-      case "delivering":
-        return <Chip label="En livraison" color="primary" size="small" />
-      case "delivered":
-        return <Chip label="Livrée" color="success" size="small" icon={<CheckCircle fontSize="small" />} />
-      case "cancelled":
-        return <Chip label="Annulée" color="error" size="small" icon={<Cancel fontSize="small" />} />
-      default:
-        return <Chip label={status} size="small" />
+  const getStatusChip = (statusKey) => {
+    const statusConfig = getDeliveryStatusByKey(statusKey);
+    let icon = null;
+    // Optionally add icons based on statusConfig or statusKey if desired
+    if (statusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) icon = <AccessTime fontSize="small" />;
+    else if (statusKey === DELIVERY_STATUSES.DELIVERED.key) icon = <CheckCircle fontSize="small" />;
+    else if (statusKey && statusKey.startsWith("cancelled")) icon = <Cancel fontSize="small" />;
+
+
+    if (statusConfig) {
+      return <Chip label={statusConfig.userLabel || statusConfig.label} color={statusConfig.color} size="small" icon={icon} />;
     }
+    // Fallback for unknown statuses
+    return <Chip label={statusKey || "Inconnu"} size="small" />;
   }
 
   const formatDate = (dateString, timeString) => {
@@ -101,9 +99,12 @@ function DeliveryStatusCard({ delivery, vendor, onTrack, onCancel }) {
         </Box>
 
         <Box sx={{ display: "flex", justifyContent: "space-between", mt: 3 }}>
-          {delivery.status === "pending" && (
+          {/* Show cancel if status is PENDING_VENDOR_CONFIRMATION or PENDING_USER_ACCEPTANCE (user can reject/cancel) */}
+          {(delivery.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key ||
+            delivery.status === DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key) &&
+            onCancel && ( // Ensure onCancel is provided
             <Button variant="outlined" color="error" startIcon={<Cancel />} onClick={onCancel}>
-              Annuler
+              Annuler / Rejeter
             </Button>
           )}
           <Button variant="contained" onClick={onTrack} sx={{ ml: "auto" }}>

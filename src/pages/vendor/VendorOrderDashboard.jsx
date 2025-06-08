@@ -52,6 +52,7 @@ import {
   Autorenew as InProgressIcon,
 } from "@mui/icons-material"
 import { db } from "../../firebaseConfig"
+import { DELIVERY_STATUSES, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
 import {
   collection,
   query,
@@ -111,8 +112,12 @@ function VendorOrderDashboard() {
       const q = query(
         collection(db, "deliveryRequests"),
         where("vendorId", "==", vendorId),
-        // Fetching a broader range of statuses
-        where("status", "in", ["pending_vendor_confirmation", "confirmed", "shopping", "out_for_delivery"])
+        where("status", "in", [
+          DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
+          DELIVERY_STATUSES.CONFIRMED.key,
+          DELIVERY_STATUSES.SHOPPING.key,
+          DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
+        ])
       )
       const querySnapshot = await getDocs(q)
       const fetchedRequests = []
@@ -120,7 +125,7 @@ function VendorOrderDashboard() {
         const requestData = dRequestDoc.data()
         let itemsToDisplay = []
 
-        if (requestData.status === "pending_vendor_confirmation") {
+        if (requestData.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) {
           // For pending_vendor_confirmation, items are from the original shopping list
           // These are used by the vendor to make adjustments.
           itemsToDisplay = requestData.items || [] // This 'items' field should be populated from shopping list initially
@@ -132,7 +137,11 @@ function VendorOrderDashboard() {
               itemsToDisplay = shoppingListSnap.data().items || []
             }
           }
-        } else if (["confirmed", "shopping", "out_for_delivery"].includes(requestData.status)) {
+        } else if ([
+            DELIVERY_STATUSES.CONFIRMED.key,
+            DELIVERY_STATUSES.SHOPPING.key,
+            DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
+          ].includes(requestData.status)) {
           // For active orders (confirmed by user, shopping, out_for_delivery),
           // items displayed should be from vendorConfirmedItems.
           // These items reflect what the user agreed to, including prices.
@@ -252,13 +261,13 @@ function VendorOrderDashboard() {
     try {
       const requestRef = doc(db, "deliveryRequests", request.id)
       await updateDoc(requestRef, {
-        status: "pending_user_acceptance",
+        status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
         vendorConfirmedItems: confirmedItems,
         finalOrderCost: finalOrderCost,
         vendorOverallNote: overallNotes[request.id] || "",
         statusHistory: [
           ...(request.statusHistory || []),
-          { status: "pending_user_acceptance", timestamp: serverTimestamp(), changedBy: "vendor" }
+          { status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key, timestamp: serverTimestamp(), changedBy: "vendor" }
         ],
         updatedAt: serverTimestamp(),
       })
@@ -285,11 +294,11 @@ function VendorOrderDashboard() {
     try {
       const requestRef = doc(db, "deliveryRequests", currentRequestToReject.id);
       await updateDoc(requestRef, {
-        status: "cancelled_by_vendor",
+        status: DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key,
         vendorRejectionReason: rejectionReason.trim() || "Non spécifiée",
         statusHistory: [
           ...(currentRequestToReject.statusHistory || []),
-          { status: "cancelled_by_vendor", timestamp: serverTimestamp(), changedBy: "vendor" }
+          { status: DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key, timestamp: serverTimestamp(), changedBy: "vendor" }
         ],
         updatedAt: serverTimestamp(),
       });
@@ -309,30 +318,31 @@ function VendorOrderDashboard() {
     }
   };
 
-  const handleUpdateOrderStatus = async (requestId, currentStatus, newStatus) => {
+  const handleUpdateOrderStatus = async (requestId, currentStatusKey, newStatusKey) => {
     setActionLoading(prevState => ({ ...prevState, [requestId]: true }));
     setError("");
     try {
       const requestRef = doc(db, "deliveryRequests", requestId);
       await updateDoc(requestRef, {
-        status: newStatus,
+        status: newStatusKey, // This is the key string
         statusHistory: [
           ...(requests.find(r => r.id === requestId)?.statusHistory || []),
-          { status: newStatus, timestamp: serverTimestamp(), changedBy: "vendor" }
+          { status: newStatusKey, timestamp: serverTimestamp(), changedBy: "vendor" } // Store the key string
         ],
         updatedAt: serverTimestamp(),
       });
       fetchRequests(); // Refetch to update lists
-      showSnackbar(`Statut de la commande mis à jour à: ${newStatus.replace("_", " ").toUpperCase()}`, "success");
+      const statusLabel = getDeliveryStatusByKey(newStatusKey)?.label || newStatusKey.replace("_", " ").toUpperCase();
+      showSnackbar(`Statut de la commande mis à jour à: ${statusLabel}`, "success");
       // NOTIFICATION POINT
-      const updatedRequest = requests.find(r => r.id === requestId); // Need to get familyId from the request
+      const updatedRequest = requests.find(r => r.id === requestId);
       if (updatedRequest) {
-        console.log(`NOTIFICATION_POINT: Order status updated to ${newStatus}. Notify user ${updatedRequest.familyId}. Order ID: ${requestId}`);
+        console.log(`NOTIFICATION_POINT: Order status updated to ${newStatusKey}. Notify user ${updatedRequest.familyId}. Order ID: ${requestId}`);
       }
-      // FUTURE_ROBUSTNESS: Consider adding a 'failed_delivery' or 'disputed' status and flow.
     } catch (err) {
-      console.error(`Erreur détaillée lors de la mise à jour du statut (${newStatus}) pour la commande ${requestId}:`, err);
-      const userMessage = `Erreur lors du passage de la commande ${requestId.substring(0,4)} au statut ${newStatus.replace("_"," ")}. Veuillez réessayer.`;
+      console.error(`Erreur détaillée lors de la mise à jour du statut (${newStatusKey}) pour la commande ${requestId}:`, err);
+      const statusLabel = getDeliveryStatusByKey(newStatusKey)?.label || newStatusKey.replace("_"," ");
+      const userMessage = `Erreur lors du passage de la commande ${requestId.substring(0,4)} au statut ${statusLabel}. Veuillez réessayer.`;
       setError(userMessage);
       showSnackbar(userMessage, "error");
     } finally {
@@ -340,8 +350,12 @@ function VendorOrderDashboard() {
     }
   };
 
-  const pendingConfirmationRequests = requests.filter(r => r.status === "pending_vendor_confirmation");
-  const activeOrders = requests.filter(r => ["confirmed", "shopping", "out_for_delivery"].includes(r.status));
+  const pendingConfirmationRequests = requests.filter(r => r.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key);
+  const activeOrders = requests.filter(r => [
+      DELIVERY_STATUSES.CONFIRMED.key,
+      DELIVERY_STATUSES.SHOPPING.key,
+      DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
+    ].includes(r.status));
 
 
   if (isLoading) { // Simplified initial loading
@@ -361,28 +375,33 @@ function VendorOrderDashboard() {
     )
   }
 
-  const getStatusChip = (status) => {
-    switch(status) {
-      case "pending_vendor_confirmation": return <Chip icon={<PendingIcon/>} label="Action requise" color="warning" size="small"/>;
-      case "confirmed": return <Chip icon={<CheckCircleOutlineIcon/>} label="Confirmée par client" color="info" size="small"/>;
-      case "shopping": return <Chip icon={<InProgressIcon/>} label="Achats en cours" color="secondary" size="small"/>;
-      case "out_for_delivery": return <Chip icon={<LocalShippingOutlined/>} label="En livraison" color="primary" size="small"/>;
-      default: return <Chip label={status} size="small"/>;
+  const getStatusChip = (statusKey) => {
+    const statusObj = getDeliveryStatusByKey(statusKey);
+    if (statusObj) {
+      // Define icons based on status key or add to config
+      let icon = null;
+      if (statusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) icon = <PendingIcon/>;
+      else if (statusKey === DELIVERY_STATUSES.CONFIRMED.key) icon = <CheckCircleOutlineIcon/>;
+      else if (statusKey === DELIVERY_STATUSES.SHOPPING.key) icon = <InProgressIcon/>;
+      else if (statusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) icon = <LocalShippingOutlined/>;
+
+      return <Chip icon={icon} label={statusObj.adminLabel || statusObj.label} color={statusObj.color} size="small"/>;
     }
+    return <Chip label={statusKey} size="small"/>;
   }
 
   const renderActionButtonsForActiveOrder = (order) => {
     const currentActionLoading = actionLoading[order.id] || false;
-    switch(order.status) {
-      case "confirmed":
-        return <Button variant="contained" size="small" startIcon={<StartIcon />} onClick={() => handleUpdateOrderStatus(order.id, order.status, "shopping")} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Commencer les achats"}</Button>;
-      case "shopping":
-        return <Button variant="contained" size="small" startIcon={<OutForDeliveryIcon />} onClick={() => handleUpdateOrderStatus(order.id, order.status, "out_for_delivery")} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Marquer comme En Livraison"}</Button>;
-      case "out_for_delivery":
-        return <Button variant="contained" size="small" startIcon={<DeliveredIcon />} onClick={() => handleUpdateOrderStatus(order.id, order.status, "delivered")} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Marquer comme Livrée"}</Button>;
-      default:
-        return null;
+    const currentStatusKey = order.status;
+
+    if (currentStatusKey === DELIVERY_STATUSES.CONFIRMED.key) {
+      return <Button variant="contained" size="small" startIcon={<StartIcon />} onClick={() => handleUpdateOrderStatus(order.id, currentStatusKey, DELIVERY_STATUSES.SHOPPING.key)} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Commencer les achats"}</Button>;
+    } else if (currentStatusKey === DELIVERY_STATUSES.SHOPPING.key) {
+      return <Button variant="contained" size="small" startIcon={<OutForDeliveryIcon />} onClick={() => handleUpdateOrderStatus(order.id, currentStatusKey, DELIVERY_STATUSES.OUT_FOR_DELIVERY.key)} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Marquer comme En Livraison"}</Button>;
+    } else if (currentStatusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) {
+      return <Button variant="contained" size="small" startIcon={<DeliveredIcon />} onClick={() => handleUpdateOrderStatus(order.id, currentStatusKey, DELIVERY_STATUSES.DELIVERED.key)} disabled={currentActionLoading}>{currentActionLoading ? <CircularProgress size={20}/> : "Marquer comme Livrée"}</Button>;
     }
+    return null;
   }
 
 
