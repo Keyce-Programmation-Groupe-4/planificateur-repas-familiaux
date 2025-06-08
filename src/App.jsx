@@ -21,6 +21,7 @@ import DeliveryTrackingPage from "./pages/delivery/DeliveryTrackingPage"
 import MyDeliveriesPage from "./pages/delivery/MyDeliveriesPage"
 import VendorsPage from "./pages/delivery/VendorsPage"
 import VendorProfilePage from "./pages/delivery/VendorProfilePage"
+import OrderReviewPage from "./pages/delivery/OrderReviewPage" // Added
 import VendorSignupPage from "./pages/vendor/VendorSignupPage"
 import AdminDashboard from "./pages/admin/AdminDashboard"
 import AdminUserManagement from "./pages/admin/AdminUserManagement"
@@ -172,6 +173,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <VendorProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/delivery/review/:orderId"
+            element={
+              <ProtectedRoute>
+                <OrderReviewPage />
               </ProtectedRoute>
             }
           />

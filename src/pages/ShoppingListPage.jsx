@@ -484,6 +484,7 @@ function ShoppingListPage() {
         // *** Using Cloud Function is recommended here for atomicity ***
         // For now, implement client-side update (less robust)
         setIsUpdatingStock(true) // Show indicator
+        // FUTURE_ROBUSTNESS: Stock updates should ideally be atomic or handled by a backend function to prevent race conditions if multiple users manage stock.
         const stockItemRef = doc(db, "families", familyId, "stockItems", itemToUpdate.ingredientId)
         const stockUpdateData = {
           ingredientName: itemToUpdate.name, // Ensure name is present

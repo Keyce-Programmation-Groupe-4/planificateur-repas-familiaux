@@ -1,0 +1,60 @@
+## Notification Events Summary
+
+This list outlines key events in the order lifecycle where notifications should be triggered for users and vendors.
+
+**For the User (Customer):**
+
+1.  **New Delivery Request Submitted by User:**
+    *   Trigger: User successfully submits a new delivery request.
+    *   Recipient: User who submitted the request.
+    *   Purpose: Confirming their request has been placed and is pending vendor action.
+    *   Current Placeholder: `alert` in `DeliveryRequestPage.jsx` (after vendor notification is logged).
+
+2.  **Vendor Confirmed/Adjusted Order (Action Required by User):**
+    *   Trigger: Vendor confirms availability/prices or makes adjustments to the order items.
+    *   Recipient: User (customer) whose order was updated.
+    *   Purpose: Inform user that their order has been reviewed by the vendor and requires their acceptance of any changes (prices, availability, substitutions). Direct them to `OrderReviewPage`.
+    *   Current Placeholder: Logged in `VendorOrderDashboard.jsx` (`handleConfirmOrder`).
+
+3.  **Vendor Rejected Order:**
+    *   Trigger: Vendor rejects the entire delivery request.
+    *   Recipient: User (customer) whose order was rejected.
+    *   Purpose: Inform user that their order cannot be fulfilled by the selected vendor and why (if reason provided).
+    *   Current Placeholder: Logged in `VendorOrderDashboard.jsx` (`handleRejectOrder`).
+
+4.  **Order Status Updated by Vendor (e.g., Shopping, Out for Delivery, Delivered):**
+    *   Trigger: Vendor changes the status of an active order.
+    *   Recipient: User (customer).
+    *   Purpose: Keep user informed about the progress of their order (e.g., "Your order is now being shopped," "Your order is out for delivery," "Your order has been delivered").
+    *   Current Placeholders: Logged in `VendorOrderDashboard.jsx` (`handleUpdateOrderStatus`) for "shopping", "out_for_delivery", "delivered".
+
+**For the Vendor:**
+
+1.  **New Delivery Request Received:**
+    *   Trigger: User successfully submits a new delivery request and selects this vendor.
+    *   Recipient: Selected Vendor.
+    *   Purpose: Notify vendor of a new incoming order request that requires their review and confirmation/adjustment. Direct them to `VendorOrderDashboard.jsx`.
+    *   Current Placeholder: Logged in `DeliveryRequestPage.jsx` (`handleSubmit`).
+
+2.  **User Accepted Order Adjustments:**
+    *   Trigger: User accepts the changes/final proposal made by the vendor.
+    *   Recipient: Vendor whose proposal was accepted.
+    *   Purpose: Inform vendor that the user has confirmed the order, and they can now proceed with shopping/preparation. Order moves to "confirmed" status.
+    *   Current Placeholder: Logged in `OrderReviewPage.jsx` (`handleAcceptOrder`).
+
+3.  **User Rejected Order Adjustments:**
+    *   Trigger: User rejects the changes/final proposal made by the vendor.
+    *   Recipient: Vendor whose proposal was rejected.
+    *   Purpose: Inform vendor that the user has rejected the order. The order is typically cancelled.
+    *   Current Placeholder: Logged in `OrderReviewPage.jsx` (`handleRejectOrder`).
+
+**General Notification System Considerations:**
+
+*   **Delivery Method:** How notifications are sent (in-app, email, SMS, push notifications).
+*   **User Preferences:** Allow users/vendors to manage their notification preferences.
+*   **Notification Content:** Ensure messages are clear, concise, and provide necessary context (e.g., Order ID, links to relevant pages).
+*   **Reliability:** Implement a robust system for queuing and sending notifications.
+*   **Error Handling:** What happens if a notification fails to send?
+*   **Idempotency:** Avoid sending duplicate notifications for the same event.
+*   **Batching:** Consider batching certain non-urgent notifications if appropriate.
+*   **Deep Linking:** Notifications should ideally deep-link users directly to the relevant order or page within the app.

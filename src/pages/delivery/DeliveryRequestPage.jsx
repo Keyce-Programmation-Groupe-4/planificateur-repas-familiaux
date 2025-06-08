@@ -63,16 +63,20 @@ function DeliveryRequestPage() {
         const docSnap = await getDoc(listDocRef)
         let currentShoppingList = null
         if (docSnap.exists()) {
-          currentShoppingList = docSnap.data()
-          setShoppingList(currentShoppingList)
-          // Extract categories
-          if (currentShoppingList && currentShoppingList.items) {
-            const categories = new Set(currentShoppingList.items.map(item => item.category).filter(Boolean))
-            setShoppingListCategories(Array.from(categories))
+          currentShoppingList = docSnap.data();
+          if (!currentShoppingList.items || currentShoppingList.items.length === 0) {
+            setError("Votre liste de courses est vide ou ne contient aucun article. Veuillez ajouter des articles avant de demander une livraison.");
+            setIsLoading(false); // Stop loading as this is a critical issue for proceeding
+            setShoppingList(null); // Clear any potentially incomplete list
+            return; // Stop further execution in fetchShoppingList
           }
+          setShoppingList(currentShoppingList);
+          const categories = new Set(currentShoppingList.items.map(item => item.category).filter(Boolean));
+          setShoppingListCategories(Array.from(categories));
         } else {
-          setError("Liste de courses introuvable.")
-          setShoppingListCategories([]) // Ensure it's an empty array if list not found
+          setError("Liste de courses introuvable. Impossible de continuer.");
+          setIsLoading(false);
+          return;
         }
 
         // Charger les vendeurs disponibles
@@ -176,8 +180,13 @@ function DeliveryRequestPage() {
 
     setIsLoading(true)
     setError(null)
-
+    // FUTURE_ROBUSTNESS: Implement transactional write if shopping list status needs update upon delivery request creation.
     try {
+      if (!shoppingList || !shoppingList.items || shoppingList.items.length === 0) {
+        setError("Impossible de créer une demande de livraison avec une liste de courses vide.");
+        setIsLoading(false);
+        return;
+      }
       // Créer la demande de livraison
       const deliveryRequest = {
         familyId,
@@ -204,14 +213,25 @@ function DeliveryRequestPage() {
       const deliveryRef = await addDoc(collection(db, "deliveryRequests"), deliveryRequest)
       console.log("Demande de livraison créée avec ID:", deliveryRef.id)
 
+      // NOTIFICATION POINT
+      console.log(`NOTIFICATION_POINT: New delivery request created. Notify vendor ${selectedVendor.id} and user ${currentUser.uid}. Order ID: ${deliveryRef.id}`);
+      alert("Placeholder: Vendor would be notified of your new request.");
+
+
       setSuccess(true)
       // Rediriger vers la page de suivi après 2 secondes
       setTimeout(() => {
         navigate(`/delivery/tracking/${deliveryRef.id}`)
       }, 2000)
     } catch (err) {
-      console.error("Erreur lors de la création de la demande:", err)
-      setError("Erreur lors de la création de la demande. Veuillez réessayer.")
+      console.error("Erreur détaillée lors de la création de la demande:", err);
+      let userErrorMessage = "Une erreur s'est produite lors de la création de votre demande de livraison. Veuillez réessayer.";
+      if (err.code === 'permission-denied') {
+        userErrorMessage = "Erreur de permission. Veuillez vérifier que vous êtes bien connecté et que vous avez les droits nécessaires.";
+      } else if (err.message.includes('network')) {
+        userErrorMessage = "Erreur de réseau. Veuillez vérifier votre connexion internet et réessayer.";
+      }
+      setError(userErrorMessage);
     } finally {
       setIsLoading(false)
     }

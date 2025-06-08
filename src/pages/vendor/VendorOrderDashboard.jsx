@@ -106,6 +106,7 @@ function VendorOrderDashboard() {
     }
     setIsLoading(true)
     setError("")
+    // FUTURE_ROBUSTNESS: Implement a more comprehensive vendor rating and reliability tracking system.
     try {
       const q = query(
         collection(db, "deliveryRequests"),
@@ -117,21 +118,42 @@ function VendorOrderDashboard() {
       const fetchedRequests = []
       for (const dRequestDoc of querySnapshot.docs) {
         const requestData = dRequestDoc.data()
-        let items = requestData.items || [] // Items might already be on the request from user confirmation
-        // If items are not on request (e.g. old structure or pending_vendor_confirmation), fetch from shopping list
-        if (requestData.status === "pending_vendor_confirmation" && (!items || items.length === 0)) {
+        let itemsToDisplay = []
+
+        if (requestData.status === "pending_vendor_confirmation") {
+          // For pending_vendor_confirmation, items are from the original shopping list
+          // These are used by the vendor to make adjustments.
+          itemsToDisplay = requestData.items || [] // This 'items' field should be populated from shopping list initially
+          if (!itemsToDisplay || itemsToDisplay.length === 0) {
+            // Fallback to fetch from shoppingList if not embedded (older structure or direct creation)
             const shoppingListRef = doc(db, "families", requestData.familyId, "shoppingLists", requestData.shoppingListId)
             const shoppingListSnap = await getDoc(shoppingListRef)
             if (shoppingListSnap.exists()) {
-              items = shoppingListSnap.data().items || []
+              itemsToDisplay = shoppingListSnap.data().items || []
             }
+          }
+        } else if (["confirmed", "shopping", "out_for_delivery"].includes(requestData.status)) {
+          // For active orders (confirmed by user, shopping, out_for_delivery),
+          // items displayed should be from vendorConfirmedItems.
+          // These items reflect what the user agreed to, including prices.
+          itemsToDisplay = requestData.vendorConfirmedItems || []
+          // We need to ensure the structure of vendorConfirmedItems matches what the UI expects for 'items'.
+          // For example, if the UI expects item.price, but vendorConfirmedItems has item.confirmedPrice.
+          // The current `handleConfirmOrder` already creates `vendorConfirmedItems` with properties like:
+          // itemId, name, quantity, unit, originalPrice, confirmedPrice, vendorNote, available.
+          // Let's ensure the rest of the component (especially the display parts for active orders)
+          // can handle this structure or adapt it.
+          // For the "Active Orders" tab, item details are not directly displayed in the main table,
+          // but if an expandable section or modal were added, this would be crucial.
+          // For now, populating `items` with `vendorConfirmedItems` is the main step.
         }
-        fetchedRequests.push({ id: dRequestDoc.id, ...requestData, items })
+        // Add the processed items array as 'items' to the request object
+        fetchedRequests.push({ id: dRequestDoc.id, ...requestData, items: itemsToDisplay })
       }
-      setRequests(fetchedRequests.sort((a,b) => (a.createdAt?.toDate() > b.createdAt?.toDate() ? -1 : 1))) // Sort by creation time
+      setRequests(fetchedRequests.sort((a,b) => (a.createdAt?.toDate() > b.createdAt?.toDate() ? -1 : 1)))
     } catch (err) {
-      console.error("Erreur lors du chargement des demandes:", err)
-      setError("Erreur lors du chargement des demandes. Veuillez réessayer.")
+      console.error("Erreur détaillée lors du chargement des demandes pour le dashboard vendeur:", err);
+      setError("Impossible de charger les commandes pour le moment. Veuillez vérifier votre connexion et réessayer. Si le problème persiste, contactez le support.");
     } finally {
       setIsLoading(false)
     }
@@ -243,10 +265,13 @@ function VendorOrderDashboard() {
       // setRequests(prev => prev.filter(r => r.id !== request.id)) // Optimistically remove or refetch
       fetchRequests(); // Refetch to get updated list
       showSnackbar("Commande confirmée et envoyée à l'utilisateur.", "success");
+      // NOTIFICATION POINT
+      console.log(`NOTIFICATION_POINT: Vendor confirmed/adjusted order. Notify user ${request.familyId}. Order ID: ${request.id}`);
     } catch (err) {
-      console.error("Erreur lors de la confirmation:", err)
-      setError(`Erreur lors de la confirmation: ${err.message}`)
-      showSnackbar(`Erreur lors de la confirmation: ${err.message}`, "error");
+      console.error("Erreur détaillée lors de la confirmation de la commande par le vendeur:", err);
+      const userMessage = `Erreur lors de la confirmation de la commande ${request.id.substring(0,4)}. Veuillez réessayer.`;
+      setError(userMessage); // Display error in main error alert
+      showSnackbar(userMessage, "error"); // Also show in snackbar for immediate feedback
     } finally {
       setActionLoading(prevState => ({ ...prevState, [request.id]: false }));
     }
@@ -272,10 +297,13 @@ function VendorOrderDashboard() {
       fetchRequests(); // Refetch
       handleCloseRejectDialog();
       showSnackbar("Commande rejetée.", "info");
+      // NOTIFICATION POINT
+      console.log(`NOTIFICATION_POINT: Vendor rejected order. Notify user ${currentRequestToReject.familyId}. Order ID: ${currentRequestToReject.id}`);
     } catch (err) {
-      console.error("Erreur lors du rejet:", err);
-      setError(`Erreur lors du rejet: ${err.message}`);
-      showSnackbar(`Erreur lors du rejet: ${err.message}`, "error");
+      console.error("Erreur détaillée lors du rejet de la commande par le vendeur:", err);
+      const userMessage = `Erreur lors du rejet de la commande ${currentRequestToReject.id.substring(0,4)}. Veuillez réessayer.`;
+      setError(userMessage);
+      showSnackbar(userMessage, "error");
     } finally {
       setActionLoading(prevState => ({ ...prevState, [currentRequestToReject.id]: false }));
     }
@@ -296,10 +324,17 @@ function VendorOrderDashboard() {
       });
       fetchRequests(); // Refetch to update lists
       showSnackbar(`Statut de la commande mis à jour à: ${newStatus.replace("_", " ").toUpperCase()}`, "success");
+      // NOTIFICATION POINT
+      const updatedRequest = requests.find(r => r.id === requestId); // Need to get familyId from the request
+      if (updatedRequest) {
+        console.log(`NOTIFICATION_POINT: Order status updated to ${newStatus}. Notify user ${updatedRequest.familyId}. Order ID: ${requestId}`);
+      }
+      // FUTURE_ROBUSTNESS: Consider adding a 'failed_delivery' or 'disputed' status and flow.
     } catch (err) {
-      console.error(`Erreur lors de la mise à jour du statut (${newStatus}):`, err);
-      setError(`Erreur lors de la mise à jour: ${err.message}`);
-      showSnackbar(`Erreur lors de la mise à jour: ${err.message}`, "error");
+      console.error(`Erreur détaillée lors de la mise à jour du statut (${newStatus}) pour la commande ${requestId}:`, err);
+      const userMessage = `Erreur lors du passage de la commande ${requestId.substring(0,4)} au statut ${newStatus.replace("_"," ")}. Veuillez réessayer.`;
+      setError(userMessage);
+      showSnackbar(userMessage, "error");
     } finally {
       setActionLoading(prevState => ({ ...prevState, [requestId]: false }));
     }

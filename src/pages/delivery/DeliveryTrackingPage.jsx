@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, Link } from "react-router-dom"
 import {
   Container,
   Box,
@@ -307,11 +307,37 @@ function DeliveryTrackingPage() {
   const isTerminalStatus = deliveryData?.status?.startsWith("cancelled") || deliveryData?.status === "delivered";
   const canCancelBeforeVendorAction = deliveryData?.status === "pending_vendor_confirmation";
 
-  // Cost related variables. Use finalOrderCost if available (after vendor confirmation)
-  const displayShoppingCost = deliveryData?.finalOrderCost !== undefined ? deliveryData.finalOrderCost - (deliveryData.deliveryFee || 0) : deliveryData?.initialOrderCost;
-  const costLabel = deliveryData?.finalOrderCost !== undefined ? "Coût confirmé des courses" : "Coût estimé des courses";
-  const totalOrderCost = (deliveryData?.finalOrderCost !== undefined ? deliveryData.finalOrderCost : (deliveryData?.initialOrderCost || 0) + (deliveryData?.deliveryFee || 0));
+  // Cost related variables
+  // Use finalAgreedCost if available (after user acceptance), then vendorFinalCost, then initial.
+  let costToDisplay = deliveryData?.initialOrderCost || 0;
+  let costLabel = "Coût estimé des courses";
+  if (deliveryData?.finalAgreedCost !== undefined) {
+    costToDisplay = deliveryData.finalAgreedCost - (deliveryData.deliveryFee || 0);
+    costLabel = "Coût final convenu des courses";
+  } else if (deliveryData?.vendorFinalCost !== undefined) {
+    costToDisplay = deliveryData.vendorFinalCost - (deliveryData.deliveryFee || 0);
+    costLabel = "Coût proposé par le vendeur";
+  }
 
+  const totalOrderCost = (costToDisplay || 0) + (deliveryData?.deliveryFee || 0);
+
+  const sortedStatusHistory = deliveryData?.statusHistory
+    ? [...deliveryData.statusHistory].sort((a, b) => {
+        const aTime = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 0;
+        const bTime = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 0;
+        return aTime - bTime; // Sorts oldest to newest
+      })
+    : [];
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return "Date inconnue";
+    // Firestore Timestamps need to be converted to JS Date objects
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleString("fr-FR", {
+      year: 'numeric', month: 'short', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
 
   return (
     <Container maxWidth="md" sx={{ py: 4 }}>
@@ -387,71 +413,37 @@ function DeliveryTrackingPage() {
         {/* Section for User Acceptance */}
         {deliveryData?.status === "pending_user_acceptance" && (
           <Paper elevation={2} sx={{ p: {xs:2, sm:3}, my:3, borderRadius:3, border: `1px solid ${theme.palette.info.main}`, background: alpha(theme.palette.info.light, 0.05) }}>
-            <Typography variant="h6" sx={{ mb: 2, fontWeight: 600, display: 'flex', alignItems: 'center', color: theme.palette.info.dark }}>
-              <Info sx={{mr:1}}/> Action Requise: Confirmez votre commande
+            <Typography variant="h6" sx={{ mb: 1, fontWeight: 600, display: 'flex', alignItems: 'center', color: theme.palette.info.dark }}>
+              <Info sx={{mr:1}}/> Action Requise
             </Typography>
-
-            <Typography variant="body1" sx={{mb:1}}>Le vendeur a confirmé les articles suivants. Veuillez vérifier les prix et la disponibilité.</Typography>
+            <Typography variant="body1" sx={{mb:2}}>
+              Le vendeur a mis à jour votre commande avec les prix finaux et la disponibilité des articles.
+              Veuillez examiner ces modifications avant de confirmer.
+            </Typography>
 
             {deliveryData.vendorOverallNote && (
                 <Alert severity="info" icon={<SpeakerNotes />} sx={{ my: 2, borderRadius: 2, background: alpha(theme.palette.info.main, 0.1) }}>
                     <strong>Note globale du vendeur:</strong> {deliveryData.vendorOverallNote}
                 </Alert>
             )}
+             <Typography variant="body1" sx={{my:2}}>
+              Coût final proposé par le vendeur : <strong>{(deliveryData.vendorFinalCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</strong>
+              {deliveryData.deliveryFee && ` (incluant ${deliveryData.deliveryFee.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })} de frais de livraison)`}.
+            </Typography>
 
-            {deliveryData.vendorConfirmedItems && deliveryData.vendorConfirmedItems.length > 0 ? (
-              <List dense sx={{mb:2, background: alpha(theme.palette.background.default, 0.5), borderRadius: 2}}>
-                {deliveryData.vendorConfirmedItems.map(item => (
-                  <ListItem key={item.itemId} divider>
-                    <ListItemText
-                      primaryTypographyProps={{fontWeight: item.confirmedPrice !== item.originalPrice ? 'bold' : 'normal'}}
-                      primary={`${item.name} (x${item.quantity} ${item.unit || ''})`}
-                      secondary={
-                        <>
-                          Prix confirmé: {item.confirmedPrice.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })} / unité
-                          {item.confirmedPrice !== item.originalPrice &&
-                            <Chip
-                              label={`Prix original: ${item.originalPrice.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}`}
-                              size="small"
-                              color={item.confirmedPrice > item.originalPrice ? "warning" : "success"}
-                              variant="outlined"
-                              sx={{ml:1, fontSize:'0.75rem', fontWeight: 'medium'}}
-                            />
-                          }
-                          {item.vendorNote && <Typography variant="caption" display="block" sx={{mt:0.5, fontStyle: 'italic'}}>Note vendeur: {item.vendorNote}</Typography>}
-                        </>
-                      }
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            ) : (
-              <Alert severity="warning" sx={{my: 2}}>Le vendeur n'a confirmé aucun article pour le moment.</Alert>
-            )}
-
-            <Typography variant="h6" sx={{mt:2, mb:1, fontWeight:'bold'}}>Coût Total Confirmé: {(deliveryData.finalOrderCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
-            <Typography variant="caption" display="block" sx={{mb:2}}>(Inclut les frais de livraison de {(deliveryData.deliveryFee || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })})</Typography>
-
-            <Stack direction={{xs: 'column', sm: 'row'}} spacing={2} justifyContent="flex-end">
-              <Button
-                variant="outlined"
-                color="error"
-                startIcon={<ThumbDownAlt />}
-                onClick={handleOpenRejectConfirmationDialog}
-                disabled={actionLoading}
-              >
-                Rejeter la Confirmation
-              </Button>
-              <Button
-                variant="contained"
-                color="success"
-                startIcon={<ThumbUpAlt />}
-                onClick={handleAcceptConfirmation}
-                disabled={actionLoading || !deliveryData.vendorConfirmedItems || deliveryData.vendorConfirmedItems.length === 0} // Disable if no items confirmed
-              >
-                {actionLoading && deliveryData.status === "pending_user_acceptance" ? <CircularProgress size={24} color="inherit"/> : "Accepter et Confirmer"}
-              </Button>
-            </Stack>
+            <Button
+              component={Link}
+              to={`/delivery/review/${deliveryId}`}
+              variant="contained"
+              color="primary"
+              fullWidth
+              sx={{ my: 2, py: 1.5, fontWeight: 'bold' }}
+            >
+              Examiner et Confirmer la Commande
+            </Button>
+            <Typography variant="caption" display="block" sx={{textAlign: 'center'}}>
+              Vous serez redirigé vers une page pour voir la comparaison détaillée des articles.
+            </Typography>
           </Paper>
         )}
 
@@ -533,7 +525,7 @@ function DeliveryTrackingPage() {
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
               <Typography variant="body2">{costLabel}</Typography>
               <Typography variant="body2">
-                {(displayShoppingCost || 0).toLocaleString("fr-FR", {
+                {(costToDisplay || 0).toLocaleString("fr-FR", {
                   style: "currency",
                   currency: "XAF",
                 })}
@@ -583,6 +575,45 @@ function DeliveryTrackingPage() {
           )}
         </Stack>
       </Paper>
+
+      {/* Status History Section */}
+      {sortedStatusHistory.length > 0 && (
+        <Paper elevation={0} sx={{ p: { xs: 2, sm: 3 }, mt: 3, borderRadius: 4, background: alpha(theme.palette.background.default, 0.5), border: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+          <Typography variant="h6" sx={{ mb: 2, fontWeight: 600 }}>
+            Historique des Statuts
+          </Typography>
+          <List dense>
+            {sortedStatusHistory.map((entry, index) => (
+              <ListItem key={index} divider={index < sortedStatusHistory.length - 1} sx={{py:1.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-start'}}>
+                <Box sx={{display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center'}}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 'medium', textTransform: 'capitalize' }}>
+                    {getStatusLabel(entry.status)}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatTimestamp(entry.timestamp)}
+                  </Typography>
+                </Box>
+                <Box sx={{width: '100%'}}>
+                  {entry.changedBy && (
+                    <Typography variant="caption" color="text.secondary" sx={{ mr: 1 }}>
+                      Par: {entry.changedBy === 'user' ? (currentUser?.uid === entry.userId ? 'Vous' : 'Utilisateur') : (entry.changedBy === 'vendor' ? 'Vendeur' : entry.changedBy)}
+                    </Typography>
+                  )}
+                  {entry.status === "cancelled_by_vendor" && deliveryData?.vendorRejectionReason && (
+                     <Typography variant="caption" color="error.main" sx={{ fontStyle: 'italic' }}>Raison: {deliveryData.vendorRejectionReason}</Typography>
+                  )}
+                  {entry.status === "cancelled_by_user" && entry.reason && (
+                     <Typography variant="caption" color="error.main" sx={{ fontStyle: 'italic' }}>Raison: {entry.reason}</Typography>
+                  )}
+                   {entry.status === "user_rejected_changes" && entry.reason && ( // For older entries if this status was used
+                     <Typography variant="caption" color="error.main" sx={{ fontStyle: 'italic' }}>Raison: {entry.reason}</Typography>
+                  )}
+                </Box>
+              </ListItem>
+            ))}
+          </List>
+        </Paper>
+      )}
 
       {/* User Rejection Confirmation Dialog */}
       <Dialog open={rejectConfirmDialogOpen} onClose={() => {if(!actionLoading) setRejectConfirmDialogOpen(false)}}>
