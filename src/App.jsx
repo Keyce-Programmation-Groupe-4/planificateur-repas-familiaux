@@ -15,6 +15,11 @@ import IngredientsPage from "./pages/IngredientsPage"
 import FamilyPage from "./pages/FamilyPage"
 import ProtectedRoute from "./components/ProtectedRoute"
 import AdminRoute from "./components/AdminRoute"
+import VendorLayout from "./components/VendorLayout";
+import VendorRoute from "./components/VendorRoute";
+import PendingApprovalPage from "./pages/vendor/PendingApprovalPage";
+import VendorOrderDashboard from "./pages/vendor/VendorOrderDashboard"; // Assuming this will be created
+import VendorDashboardProfilePage from "./pages/vendor/VendorProfilePage"; // Renamed import for clarity
 import { AuthProvider } from "./contexts/AuthContext"
 import DeliveryRequestPage from "./pages/delivery/DeliveryRequestPage"
 import DeliveryTrackingPage from "./pages/delivery/DeliveryTrackingPage"
@@ -184,6 +189,23 @@ function App() {
               </ProtectedRoute>
             }
           />
+        </Route>
+
+        {/* Vendor Pending Approval Page - accessible without full vendor rights yet */}
+        <Route path="/vendor/pending-approval" element={<PendingApprovalPage />} />
+
+        {/* Vendor Routes - Protected and uses VendorLayout */}
+        <Route
+          path="/vendor"
+          element={
+            <VendorRoute>
+              <VendorLayout />
+            </VendorRoute>
+          }
+        >
+          <Route path="dashboard" element={<VendorOrderDashboard />} />
+          <Route path="profile" element={<VendorDashboardProfilePage />} />
+          {/* Add other vendor-specific nested routes here, e.g., products, orders, etc. */}
         </Route>
 
         {/* Admin Routes - Not wrapped by the main Layout */}

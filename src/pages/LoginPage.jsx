@@ -86,8 +86,29 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      await createUserDocumentIfNeeded(userCredential.user)
+      const user = userCredential.user;
+      await createUserDocumentIfNeeded(user) // Ensure this is called with user object
+
+      // Vendor redirection logic
+      const vendorDocRef = doc(db, "vendors", user.uid);
+      const vendorDocSnap = await getDoc(vendorDocRef);
+
+      if (vendorDocSnap.exists()) {
+        const vendorData = vendorDocSnap.data();
+        if (vendorData.isApproved === true && vendorData.isActive === true) {
+          navigate("/vendor/dashboard", { replace: true });
+          setLoading(false); // Ensure loading is set to false
+          return;
+        } else {
+          navigate("/vendor/pending-approval", { replace: true });
+          setLoading(false); // Ensure loading is set to false
+          return;
+        }
+      }
+
+      // Default navigation if not a vendor or other cases
       navigate(from, { replace: true })
+      // setLoading(false); // Already handled by the main logic if no early return
     } catch (err) {
       console.error("Login Error:", err)
       if (err.code === "auth/user-not-found") {
@@ -112,8 +133,29 @@ export default function LoginPage() {
 
     try {
       const result = await signInWithPopup(auth, provider)
-      await createUserDocumentIfNeeded(result.user)
+      const user = result.user;
+      await createUserDocumentIfNeeded(user) // Ensure this is called with user object
+
+      // Vendor redirection logic
+      const vendorDocRef = doc(db, "vendors", user.uid);
+      const vendorDocSnap = await getDoc(vendorDocRef);
+
+      if (vendorDocSnap.exists()) {
+        const vendorData = vendorDocSnap.data();
+        if (vendorData.isApproved === true && vendorData.isActive === true) {
+          navigate("/vendor/dashboard", { replace: true });
+          setGoogleLoading(false); // Ensure loading is set to false
+          return;
+        } else {
+          navigate("/vendor/pending-approval", { replace: true });
+          setGoogleLoading(false); // Ensure loading is set to false
+          return;
+        }
+      }
+
+      // Default navigation if not a vendor or other cases
       navigate(from, { replace: true })
+      // setGoogleLoading(false); // Already handled by the main logic if no early return
     } catch (err) {
       console.error("Google Login Error:", err)
       if (err.code === "auth/popup-closed-by-user") {
