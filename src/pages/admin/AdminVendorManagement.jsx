@@ -31,6 +31,7 @@ import {
   InputLabel,  // Added
   Select,      // Added
   MenuItem,    // Added
+  Fade, // Added Fade
 } from "@mui/material"
 import {
   Storefront as StoreIcon,
@@ -290,10 +291,11 @@ function AdminVendorManagement() {
 
   return (
     <AdminLayout>
-      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-          <StoreIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+            <StoreIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
             Gestion des Vendeurs
           </Typography>
@@ -312,9 +314,9 @@ function AdminVendorManagement() {
       {vendors.length === 0 && !isLoading && !actionLoading ? (
         <Typography>Aucun vendeur trouvé.</Typography>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}` }}>
+        <TableContainer component={Paper}>
           <Table sx={{ minWidth: 750 }} aria-label="vendors table">
-            <TableHead sx={{ backgroundColor: theme.palette.grey[100] }}>
+            <TableHead sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold" }}>Nom</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Téléphone</TableCell>
@@ -491,6 +493,7 @@ function AdminVendorManagement() {
       </Snackbar>
 
       </Container>
+    </Fade>
     </AdminLayout>
   )
 }

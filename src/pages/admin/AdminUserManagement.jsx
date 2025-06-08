@@ -26,6 +26,8 @@ import {
   DialogTitle,
   Button,
   Snackbar,
+  Fade, // Added Fade
+  alpha, // Added alpha
 } from "@mui/material"
 import { People as PeopleIcon, MoreVert as MoreVertIcon } from "@mui/icons-material"
 import { db } from "../../firebaseConfig" // Assuming firebaseConfig is correctly set up
@@ -206,10 +208,11 @@ function AdminUserManagement() {
 
   return (
     <AdminLayout>
-      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
-        <Box sx={{ mb: 4, display: "flex", alignItems: "center" }}>
-          <PeopleIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Box sx={{ mb: 4, display: "flex", alignItems: "center" }}>
+            <PeopleIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+          <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Gestion des Utilisateurs
         </Typography>
       </Box>
@@ -217,9 +220,9 @@ function AdminUserManagement() {
       {users.length === 0 && !isLoading && !actionLoading ? (
         <Typography sx={{ textAlign: "center", mt: 4 }}>Aucun utilisateur trouvé.</Typography>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}` }}>
+        <TableContainer component={Paper}>
           <Table sx={{ minWidth: 750 }} aria-label="simple table"> {/* Increased minWidth for Actions */}
-            <TableHead sx={{ backgroundColor: theme.palette.grey[100] }}>
+            <TableHead sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold" }}>UID</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Email</TableCell>
@@ -327,6 +330,7 @@ function AdminUserManagement() {
       </Snackbar>
 
       </Container>
+    </Fade>
     </AdminLayout>
   )
 }

@@ -30,14 +30,20 @@ import {
   Select,
   FormControl,
   InputLabel,
-  Box as MUIBox, // Renamed Box to MUIBox to avoid conflict with our own Box component if any, or just for clarity
+  // Box as MUIBox, // Using Box directly
+  alpha, // Added alpha
+  Grid, // Added Grid
+  List, // Added List
+  ListItem, // Added ListItem
+  Stack, // Added Stack for status history
+  Fade, // Added Fade
 } from "@mui/material"
 import RefreshIcon from "@mui/icons-material/Refresh"
 import FilterListIcon from "@mui/icons-material/FilterList"
 import { EditNote as EditNoteIcon } from "@mui/icons-material"
-import { LocalShipping as DeliveryIcon, MoreVert as MoreVertIcon, EditNote as EditStatusIcon } from "@mui/icons-material"
+import { LocalShipping as DeliveryIcon, MoreVert as MoreVertIcon, EditNote as EditStatusIcon, ExpandLess as ExpandLessIcon, ExpandMore as ExpandMoreIcon } from "@mui/icons-material" // Added Expand icons
 import { db } from "../../firebaseConfig"
-import { collection, getDocs, query, doc, updateDoc, serverTimestamp } from "firebase/firestore" // Added doc, updateDoc, serverTimestamp
+import { collection, getDocs, query, doc, updateDoc, serverTimestamp, where } from "firebase/firestore" // Added doc, updateDoc, serverTimestamp, where
 import { orderBy as firestoreOrderBy } from "firebase/firestore"; // Import orderBy for sorting
 import { format } from "date-fns" // For formatting dates
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
@@ -280,10 +286,11 @@ function AdminDeliveryManagement() {
 
   return (
     <AdminLayout>
-      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
-          <DeliveryIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 600, display:'flex', alignItems:'center' }}>
+            <DeliveryIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           Gestion des Demandes de Livraison
         </Typography>
         <IconButton onClick={fetchDeliveryRequests} color="primary" disabled={isLoading}>
@@ -295,7 +302,7 @@ function AdminDeliveryManagement() {
 
       {error && !isLoading && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>} {/* Show specific fetch error here if any, even if table has old data */}
 
-      <Paper elevation={0} sx={{ p: 2, mb: 3, border: `1px solid ${theme.palette.divider}` }}>
+      <Paper sx={{ p: 2, mb: 3 }}>
         <FormControl fullWidth size="small">
           <InputLabel id="status-filter-label">Filtrer par statut</InputLabel>
           <Select
@@ -318,7 +325,7 @@ function AdminDeliveryManagement() {
 
       {isLoading && <CircularProgress sx={{display: 'block', margin: 'auto', mb:2}}/>}
 
-      <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
+      <TableContainer component={Paper}>
         <Table stickyHeader sx={{ minWidth: 900 }}> {/* stickyHeader is good for long tables */}
           <TableHead>
             <TableRow>
@@ -392,7 +399,7 @@ function AdminDeliveryManagement() {
                 <TableRow>
                   <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}> {/* Adjusted colSpan */}
                     <Collapse in={expandedRequestId === req.id} timeout="auto" unmountOnExit>
-                      <Box sx={{ margin: 1, p:2, backgroundColor: alpha(theme.palette.grey[50], 0.9), borderRadius: 2 }}>
+                      <Box sx={{ margin: 1, p:2, backgroundColor: theme.palette.background.accent, borderRadius: 2 }}>
                         <Typography variant="h6" gutterBottom component="div" sx={{borderBottom: `1px solid ${theme.palette.divider}`, pb:1, mb:1}}>
                           Détails de la Demande: <Chip label={req.id} size="small"/>
                         </Typography>
@@ -419,9 +426,9 @@ function AdminDeliveryManagement() {
                         {req.vendorConfirmedItems && req.vendorConfirmedItems.length > 0 && (
                           <>
                             <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight:'medium' }}>Articles Confirmés par Vendeur:</Typography>
-                            <TableContainer component={Paper} variant="outlined" sx={{maxHeight: 200, overflowY:'auto'}}>
+                            <TableContainer component={Paper} sx={{maxHeight: 200, overflowY:'auto'}}>
                                 <Table size="small" aria-label="confirmed items" dense>
-                                <TableHead sx={{backgroundColor: alpha(theme.palette.grey[200], 0.7)}}>
+                                <TableHead sx={{backgroundColor: alpha(theme.palette.primary.main, 0.05)}}>
                                     <TableRow>
                                     <TableCell>Article</TableCell>
                                     <TableCell align="right">Qté</TableCell>
@@ -451,7 +458,7 @@ function AdminDeliveryManagement() {
                         {req.statusHistory && req.statusHistory.length > 0 && (
                            <>
                             <Typography variant="subtitle1" sx={{ mt: 2, mb: 1, fontWeight:'medium' }}>Historique des Statuts:</Typography>
-                            <Paper variant="outlined" sx={{maxHeight: 150, overflowY:'auto', p:1}}>
+                            <Paper sx={{maxHeight: 150, overflowY:'auto', p:1}}>
                                 <List dense disablePadding>
                                 {req.statusHistory.slice().sort((a,b) => b.timestamp.seconds - a.timestamp.seconds).map((entry, index) => (
                                     <ListItem key={index} disableGutters dense sx={{borderBottom: index !== req.statusHistory.length -1 ? `1px dashed ${theme.palette.divider}`: 'none', pb:0.5, mb:0.5}}>
@@ -496,7 +503,7 @@ function AdminDeliveryManagement() {
       <Dialog open={statusUpdateDialogOpen} onClose={handleCloseStatusUpdateDialog} fullWidth maxWidth="xs">
         <DialogTitle>Mettre à jour le Statut</DialogTitle>
         <DialogContent>
-          <Box sx={{mt: 1}}> {/* Changed MUIBox to Box */}
+          <Box sx={{mt: 1}}>
             <Typography variant="body2" gutterBottom>
                 ID Demande: <Chip label={selectedDelivery?.id.substring(0,8)+"..."} size="small"/>
             </Typography>
@@ -541,6 +548,7 @@ function AdminDeliveryManagement() {
       </Snackbar>
 
       </Container>
+    </Fade>
     </AdminLayout>
   )
 }

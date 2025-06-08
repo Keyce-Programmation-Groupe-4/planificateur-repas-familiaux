@@ -28,6 +28,8 @@ import {
   IconButton, // Added
   Menu, // Added
   MenuItem, // Added
+  alpha, // Added alpha
+  Fade, // Added Fade
 } from "@mui/material"
 import {
   AddCircleOutline as AddIcon,
@@ -242,10 +244,11 @@ function AdminIngredientManagement() {
 
   return (
     <AdminLayout>
-      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-          <IngredientIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+            <IngredientIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
             Gestion des Ingrédients
           </Typography>
@@ -264,9 +267,9 @@ function AdminIngredientManagement() {
           Aucun ingrédient trouvé.
         </Typography>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}` }}>
+        <TableContainer component={Paper}>
           <Table sx={{ minWidth: 650 }} aria-label="ingredients table">
-            <TableHead sx={{ backgroundColor: theme.palette.grey[100] }}>
+            <TableHead sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold" }}>Nom de l'Ingrédient</TableCell>
                 <TableCell sx={{ fontWeight: "bold" }}>Catégorie</TableCell>
@@ -402,6 +405,7 @@ function AdminIngredientManagement() {
       </Dialog>
 
       </Container>
+    </Fade>
     </AdminLayout>
   )
 }

@@ -17,6 +17,7 @@ import {
   alpha,
   Stack,
   Avatar,
+  Fade, // Added Fade
   // IconButton, // Removed as vendor actions are gone
   // Menu, // Removed
   // MenuItem, // Removed
@@ -113,10 +114,11 @@ function AdminDashboard() {
     <AdminLayout>
       {/* Original Container content starts here, adjusted for new layout */}
       {/* The main Box wrapper and Toolbar spacer are removed, AdminLayout handles structure */}
-      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}> {/* Adjusted padding */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1, display: "flex", alignItems: "center" }}>
-            <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}> {/* Adjusted padding */}
+          <Box sx={{ mb: 4 }}>
+            <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1, display: "flex", alignItems: "center" }}>
+              <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
               Tableau de bord Admin
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -134,7 +136,7 @@ function AdminDashboard() {
           <Grid container spacing={3} sx={{ mb: 4 }}>
             {/* Total Vendors Stat Card */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={0} sx={{ border: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+              <Card>
                 <CardContent>
                   <Stack direction="row" alignItems="center" spacing={2}>
                     <Avatar sx={{ bgcolor: theme.palette.primary.main }}>
@@ -155,7 +157,7 @@ function AdminDashboard() {
 
             {/* Active Vendors Stat Card */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={0} sx={{ border: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+              <Card>
                 <CardContent>
                   <Stack direction="row" alignItems="center" spacing={2}>
                     <Avatar sx={{ bgcolor: theme.palette.success.main }}>
@@ -176,7 +178,7 @@ function AdminDashboard() {
 
             {/* Pending Vendors Stat Card */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={0} sx={{ border: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+              <Card>
                 <CardContent>
                   <Stack direction="row" alignItems="center" spacing={2}>
                     <Avatar sx={{ bgcolor: theme.palette.warning.main }}>
@@ -197,7 +199,7 @@ function AdminDashboard() {
 
             {/* Recent Deliveries Stat Card - Example */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card elevation={0} sx={{ border: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+              <Card>
                 <CardContent>
                   <Stack direction="row" alignItems="center" spacing={2}>
                     <Avatar sx={{ bgcolor: theme.palette.info.main }}>
@@ -221,7 +223,7 @@ function AdminDashboard() {
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
             Autres Informations
           </Typography>
-          <Paper elevation={0} sx={{ p:3, border: `1px solid ${alpha(theme.palette.divider, 0.1)}`, borderRadius: 2}}>
+          <Paper sx={{ p:3, borderRadius: theme.shape.borderRadius * 2}}>
             <Typography color="text.secondary">
               D'autres modules et visualisations de données seront ajoutés ici.
             </Typography>
@@ -230,6 +232,7 @@ function AdminDashboard() {
           {/* Vendor list and related menu/dialogs are REMOVED from here */}
 
         </Container>
+      </Fade>
     </AdminLayout>
   )
 }

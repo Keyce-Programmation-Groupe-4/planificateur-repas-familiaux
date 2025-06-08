@@ -32,6 +32,8 @@ import {
   Alert as MuiAlert, // For Snackbar messages
   AlertTitle,
   Grid,
+  Fade, // Added Fade
+  alpha, // Added alpha
 } from "@mui/material"
 import {
   RestaurantMenu as RestaurantMenuIcon,
@@ -342,10 +344,11 @@ function AdminRecipeManagement() {
 
   return (
     <AdminLayout>
-      <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
-        <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-          <RestaurantMenuIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
+      <Fade in={true} timeout={600}>
+        <Container maxWidth="xl" sx={{ py: { xs: 2, sm: 3 } }}>
+          <Box sx={{ mb: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+            <RestaurantMenuIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
           <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
             Gestion des Recettes
           </Typography>
@@ -353,7 +356,7 @@ function AdminRecipeManagement() {
       </Box>
 
       {/* CSV Upload Section */}
-      <Paper elevation={0} sx={{ p: 3, mb: 4, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+      <Paper sx={{ p: 3, mb: 4, borderRadius: 2 }}>
         <Typography variant="h6" gutterBottom sx={{ fontWeight: 500 }}>
           Ajout en Masse de Recettes Publiques via CSV
         </Typography>
@@ -420,7 +423,7 @@ function AdminRecipeManagement() {
 
       {/* Validation Results Section */}
       {validationResult && (
-        <Paper elevation={0} sx={{ p: 3, mt: 3, border: `1px solid ${theme.palette.divider}`, borderRadius: 2 }}>
+        <Paper sx={{ p: 3, mt: 3, borderRadius: 2 }}>
           <Typography variant="h6" gutterBottom>Résultats de la Validation CSV</Typography>
           <Typography variant="body1">
             Lignes totales du CSV (données): {validationResult.statistics.totalRows} |
@@ -431,7 +434,7 @@ function AdminRecipeManagement() {
           {validationResult.invalidRecipes.length > 0 && (
             <Box sx={{ my: 2 }}>
               <Typography variant="subtitle1" color="error" gutterBottom>Recettes Invalides (premières 10 erreurs):</Typography>
-              <TableContainer component={Paper} elevation={0} variant="outlined" sx={{maxHeight: 300, overflowY: 'auto'}}>
+              <TableContainer component={Paper} sx={{maxHeight: 300, overflowY: 'auto'}}>
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
@@ -459,7 +462,7 @@ function AdminRecipeManagement() {
           {validationResult.validRecipes.length > 0 && (
             <Box sx={{ my: 2 }}>
               <Typography variant="subtitle1" gutterBottom>Aperçu des Recettes Valides (premières 5):</Typography>
-               <TableContainer component={Paper} elevation={0} variant="outlined">
+               <TableContainer component={Paper}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
@@ -500,9 +503,9 @@ function AdminRecipeManagement() {
       ) : recipes.length === 0 && !isLoading && !actionLoading && !validationResult ? (
         <Typography sx={{ textAlign: "center", mt: 4 }}>Aucune recette trouvée.</Typography>
       ) : (
-        <TableContainer component={Paper} elevation={0} sx={{ mt: validationResult ? 3 : 0, border: `1px solid ${theme.palette.divider}` }}>
+        <TableContainer component={Paper} sx={{ mt: validationResult ? 3 : 0 }}>
           <Table sx={{ minWidth: 900 }} aria-label="recipes table">
-            <TableHead sx={{ backgroundColor: theme.palette.grey[100] }}>
+            <TableHead sx={{ backgroundColor: alpha(theme.palette.primary.main, 0.05) }}>
               <TableRow>
                 <TableCell sx={{ fontWeight: "bold", width: "5%" }}>Image</TableCell>
                 <TableCell sx={{ fontWeight: "bold", width: "25%" }}>Nom de la Recette</TableCell>
@@ -637,6 +640,7 @@ function AdminRecipeManagement() {
       </Snackbar>
 
       </Container>
+    </Fade>
     </AdminLayout>
   )
 }

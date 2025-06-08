@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, useTheme } from '@mui/material';
+import { Box, Drawer, List, ListItem, ListItemButton, ListItemIcon, ListItemText, Toolbar, Typography, useTheme, alpha } from '@mui/material';
 import { Link as RouterLink, useLocation } from 'react-router-dom';
 import {
   Dashboard as DashboardIcon,
@@ -35,7 +35,7 @@ function AdminLayout({ children }) {
             width: drawerWidth,
             boxSizing: 'border-box',
             // Adding some basic styling for the drawer paper
-            backgroundColor: theme.palette.grey[100], // A light grey background
+            backgroundColor: theme.palette.background.accent, // A light grey background
             borderRight: `1px solid ${theme.palette.divider}`,
           },
         }}
@@ -63,14 +63,16 @@ function AdminLayout({ children }) {
                       minHeight: 48,
                       justifyContent: 'initial',
                       px: 2.5,
+                      py: 1.2, // Added vertical padding
                       mb: 0.5, // Margin bottom for spacing
-                      borderRadius: '4px', // Rounded corners
+                      borderRadius: theme.shape.borderRadius * 1.5, // Updated border radius
                       margin: theme.spacing(0.5, 1), // Margin around items
-                      backgroundColor: isActive ? theme.palette.primary.main : 'transparent',
-                      color: isActive ? theme.palette.primary.contrastText : theme.palette.text.primary,
+                      backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.15) : 'transparent',
+                      color: isActive ? theme.palette.primary.main : theme.palette.text.primary,
+                      border: isActive ? `1px solid ${alpha(theme.palette.primary.main, 0.3)}` : '1px solid transparent', // Added border
                       '&:hover': {
-                        backgroundColor: isActive ? theme.palette.primary.dark : theme.palette.action.hover,
-                        color: isActive ? theme.palette.primary.contrastText : theme.palette.text.primary,
+                        backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.25) : alpha(theme.palette.primary.main, 0.08),
+                        transform: 'translateX(2px)', // Added transform
                       },
                     }}
                   >
@@ -79,7 +81,7 @@ function AdminLayout({ children }) {
                         minWidth: 0,
                         mr: 3, // Margin right for icon
                         justifyContent: 'center',
-                        color: isActive ? theme.palette.primary.contrastText : theme.palette.text.secondary,
+                        color: isActive ? theme.palette.primary.main : theme.palette.text.secondary, // Updated color
                       }}
                     >
                       {item.icon}
@@ -100,8 +102,8 @@ function AdminLayout({ children }) {
         component="main"
         sx={{
           flexGrow: 1,
-          bgcolor: 'background.default',
-          p: 3,
+          bgcolor: theme.palette.background.default,
+          p: { xs: 2, sm: 3 },
           width: { sm: `calc(100% - ${drawerWidth}px)` },
           marginLeft: `${drawerWidth}px`, // Ensure content doesn't go under the drawer if drawer is not 'persistent' in the traditional sense in some setups
           mt: 0 // Assuming no global AppBar for admin, so no need for Toolbar spacer here.
