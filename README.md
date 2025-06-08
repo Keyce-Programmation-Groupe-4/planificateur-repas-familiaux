@@ -171,7 +171,6 @@ firebase deploy --only functions
 ## ✨ Fonctionnalités envisagées
 
 - 🥦 **Gestion affinée des régimes et allergies**: Prise en compte détaillée des besoins nutritionnels spécifiques (sans gluten, végétarien, diabète, etc.) pour chaque membre de la famille.
-- 🥫 **Suivi de l'inventaire des provisions**: Permet de noter les aliments disponibles à la maison pour éviter les achats inutiles et réduire le gaspillage.
 - 🎤 **Saisie vocale**: Ajout de recettes, d'ingrédients à une recette, ou d'éléments à la liste de courses en utilisant la voix pour plus de rapidité et de confort.
 - 💡 **Module de suggestion de recettes intelligent**: Propose des idées de repas basées sur les habitudes alimentaires, les ingrédients disponibles en stock, les préférences et les régimes.
 - 📊 **Statistiques nutritionnelles**: Fournit des informations sur l'équilibre alimentaire des menus planifiés.
