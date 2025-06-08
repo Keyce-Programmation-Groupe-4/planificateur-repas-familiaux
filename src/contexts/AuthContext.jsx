@@ -66,6 +66,7 @@ export default function AuthProvider({ children }) {
                     uid: currentUser.uid,
                     email: currentUser.email,
                     ...userDocSnap.data(),
+                    dietaryRestrictions: userDocSnap.data()?.dietaryRestrictions || [],
                     isVendor: false
                   });
                 } else {
@@ -105,6 +106,7 @@ export default function AuthProvider({ children }) {
                   uid: currentUser.uid,
                   email: currentUser.email,
                   ...userDocSnap.data(),
+                  dietaryRestrictions: userDocSnap.data()?.dietaryRestrictions || [],
                   isVendor: false
                 });
               } else {
