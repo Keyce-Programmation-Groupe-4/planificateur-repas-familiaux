@@ -20,6 +20,7 @@ import VendorRoute from "./components/VendorRoute";
 import PendingApprovalPage from "./pages/vendor/PendingApprovalPage";
 import VendorOrderDashboard from "./pages/vendor/VendorOrderDashboard"; // Assuming this will be created
 import VendorDashboardProfilePage from "./pages/vendor/VendorProfilePage"; // Renamed import for clarity
+import VendorProductsPage from "./pages/vendor/VendorProductsPage"; // Added for vendor products
 import { AuthProvider } from "./contexts/AuthContext"
 import DeliveryRequestPage from "./pages/delivery/DeliveryRequestPage"
 import DeliveryTrackingPage from "./pages/delivery/DeliveryTrackingPage"
@@ -205,6 +206,7 @@ function App() {
         >
           <Route path="dashboard" element={<VendorOrderDashboard />} />
           <Route path="profile" element={<VendorDashboardProfilePage />} />
+          <Route path="products" element={<VendorProductsPage />} />
           {/* Add other vendor-specific nested routes here, e.g., products, orders, etc. */}
         </Route>
 

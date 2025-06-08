@@ -23,6 +23,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import DashboardIcon from "@mui/icons-material/Dashboard";
 import PersonIcon from "@mui/icons-material/Person";
 import LogoutIcon from "@mui/icons-material/Logout";
+import InventoryIcon from "@mui/icons-material/Inventory"; // Added for Products
 import { useState } from "react";
 
 const drawerWidth = 240;
@@ -69,6 +70,14 @@ function VendorLayout() {
               <PersonIcon />
             </ListItemIcon>
             <ListItemText primary="Profil Vendeur" />
+          </ListItemButton>
+        </ListItem>
+        <ListItem disablePadding component={RouterLink} to="/vendor/products" sx={{ color: 'text.primary' }}>
+          <ListItemButton>
+            <ListItemIcon>
+              <InventoryIcon />
+            </ListItemIcon>
+            <ListItemText primary="Mes Produits" />
           </ListItemButton>
         </ListItem>
         {/* Add more vendor-specific links here as needed */}
