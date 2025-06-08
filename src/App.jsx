@@ -145,7 +145,7 @@ function App() {
             }
           />
           <Route
-            path="/delivery/tracking/:id"
+            path="/delivery/tracking/:deliveryId"
             element={
               <ProtectedRoute>
                 <DeliveryTrackingPage />

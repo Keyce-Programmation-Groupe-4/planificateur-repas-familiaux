@@ -204,7 +204,7 @@ function DeliveryRequestPage() {
         statusHistory: [
           {
             status: "pending_vendor_confirmation",
-            timestamp: serverTimestamp(),
+            timestamp: new Date(),
             changedBy: "user" // Assuming the user creates the request
           }
         ],
@@ -217,11 +217,11 @@ function DeliveryRequestPage() {
       console.log(`NOTIFICATION_POINT: New delivery request created. Notify vendor ${selectedVendor.id} and user ${currentUser.uid}. Order ID: ${deliveryRef.id}`);
       alert("Placeholder: Vendor would be notified of your new request.");
 
-
+      const newDeliveryId = deliveryRef.id; // Capture the ID here
       setSuccess(true)
       // Rediriger vers la page de suivi après 2 secondes
       setTimeout(() => {
-        navigate(`/delivery/tracking/${deliveryRef.id}`)
+        navigate(`/delivery/tracking/${newDeliveryId}`); // Use the new variable
       }, 2000)
     } catch (err) {
       console.error("Erreur détaillée lors de la création de la demande:", err);

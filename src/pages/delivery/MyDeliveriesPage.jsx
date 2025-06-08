@@ -102,7 +102,9 @@ function MyDeliveriesPage() {
   const getFilteredDeliveries = () => {
     switch (activeTab) {
       case 0: // Actives
-        return deliveries.filter((d) => ["pending", "accepted", "shopping", "delivering"].includes(d.status))
+        return deliveries.filter((d) => ["pending", "accepted", "shopping",
+           "delivering", "pending_vendor_confirmation", "pending_user_acceptance",
+           "shopping", "out_for_delivery"].includes(d.status))
       case 1: // Terminées
         return deliveries.filter((d) => d.status === "delivered")
       case 2: // Annulées
