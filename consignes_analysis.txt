@@ -1,0 +1,73 @@
+## Analyse du fichier consignes.txt
+
+**1. Project Vision/Goal:**
+
+*   L'objectif principal est de créer une application pour la gestion des repas au sein de la famille ("gérer les questions de plat").
+*   Elle vise à simplifier la planification des repas et des courses pour la personne en charge (souvent la mère/grand-mère, mais ouverte à tous les membres de la famille).
+*   À long terme, l'application pourrait aider à comprendre les habitudes alimentaires, gérer les régimes spécifiques et potentiellement optimiser les achats (achats groupés, réduction du gaspillage).
+
+**2. Core Functionalities (mentioned or implied):**
+
+*   **Planification des repas:**
+    *   Configurer la famille et ses membres.
+    *   Enregistrer/définir les plats habituels de la famille ("plats de la bouchée de Paris", "plats qu'on a à la suite de Paris").
+    *   Programmer les plats sur une période (semaine, mois, jour).
+    *   Gérer les ingrédients par plat (nom, quantité, unité).
+*   **Liste de courses:**
+    *   Générer automatiquement la liste de courses à partir des plats programmés.
+    *   Permettre à la mère de donner facilement sa liste de courses (potentiellement par dictée vocale).
+*   **Gestion d'inventaire (implicite):**
+    *   Suivre ce qui est acheté et consommé ("Chaque alucan qu'on achètera... et les quantités", "combien on a pour paillé, et ici, la semaine prochaine, on va pouvoir l'orillage").
+    *   Éviter d'acheter des choses déjà en stock ("Parfois, la maman achète une poisson en palais, et c'est qu'il y a encore une poisson au studio").
+*   **Personnalisation et Régimes:**
+    *   Prendre en compte les besoins nutritionnels spécifiques de chaque membre de la famille (bébé, grand-père, personne malade/convalescente, diabétique).
+    *   Adapter les repas en fonction des régimes ("Le jet, c'est le régime. Si vous voulez contrôler ce que tu manges").
+*   **Collaboration familiale:**
+    *   Partager la programmation des repas avec les membres de la famille.
+    *   Permettre à différents membres de la famille d'utiliser l'application.
+    *   Système de vote pour la programmation des plats.
+*   **Facilité d'utilisation:**
+    *   Interaction simplifiée, notamment pour les personnes moins à l'aise avec la technologie (ex: "maman").
+    *   Saisie par dictée vocale ("On l'écrit avec le dic").
+    *   Reconnaissance de caractères pour les listes écrites sur papier.
+*   **Potentiel d'achats groupés/livraison (vision étendue):**
+    *   Optimiser les achats en regroupant les demandes des familles ("yangotisation de ces marchés-là").
+    *   Partenariats avec des supermarchés pour la livraison.
+*   **Suivi et Analyse (vision étendue):**
+    *   Analyser les habitudes de consommation sur le long terme ("savoir tout ce que tu as mangé dans ta vie").
+    *   Identifier des carences ou excès alimentaires.
+
+**3. Target Audience:**
+
+*   Les familles ("ménages de famille").
+*   Principalement la personne en charge de la planification des repas et des courses (souvent "la maman", "la grande-mère", mais aussi "mon père" ou toute personne désignée dans la famille).
+*   Peut s'étendre aux jeunes filles qui apprennent à cuisiner ou gèrent un foyer.
+
+**4. Unique Selling Points/Philosophy:**
+
+*   **Simplicité et facilité d'utilisation extrême:** Conçue pour être accessible même aux personnes qui ne sont pas à l'aise avec la technologie, grâce à des interactions intuitives comme la dictée vocale. ("Il faut simplifier autant que possible l'interaction de l'extrême-mère, tout en gardant toute la puissance").
+*   **Adaptabilité aux besoins réels de la famille:** Prise en compte des préférences, des régimes, des besoins spécifiques de chaque membre.
+*   **Collaboration familiale:** Impliquer toute la famille dans la gestion des repas.
+*   **Réduction du gaspillage alimentaire:** Meilleure gestion des stocks et des achats.
+*   **Santé et bien-être:** Aider à mieux manger en fonction des besoins individuels et à suivre des régimes.
+*   **Approche "intelligente":** L'application doit apprendre et anticiper (reconnaissance de caractères, suggestions basées sur les habitudes).
+*   **Humanisation:** L'aspect humain et l'interaction naturelle sont importants.
+
+**5. Key phrases or terms (French):**
+
+*   "Questions de plat" (gestion/planification des repas)
+*   "Liste du marché" (liste de courses)
+*   "Programmation des plats"
+*   "Gérer les repas de famille"
+*   "Simplifier l'interaction"
+*   "Dictée vocale" / "On l'écrit avec le dic"
+*   "Besoins nutritionnels"
+*   "Yangotisation" (concept d'achats groupés/optimisation)
+*   "Réduire le gaspillage"
+*   "Configurer la famille"
+*   "Plats de la bouchée de Paris" (expression pour les plats habituels/locaux)
+*   "Suivi de la consommation"
+*   "Faciliter la vie de la maman"
+*   "Application utile et pas difficile à manipuler"
+*   "PWA (Progressive Web App)"
+*   "React et Firebase" (stack technique imposée)
