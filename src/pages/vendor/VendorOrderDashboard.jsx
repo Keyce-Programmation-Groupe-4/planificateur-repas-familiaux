@@ -137,16 +137,10 @@ function VendorOrderDashboard() {
         let itemsToDisplay = [];
 
         if (requestData.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) {
-          itemsToDisplay = requestData.items || [];
-          if (!itemsToDisplay || itemsToDisplay.length === 0) {
-            const shoppingListRef = doc(db, "families", requestData.familyId, "shoppingLists", requestData.shoppingListId);
-            const shoppingListSnap = await getDoc(shoppingListRef);
-            if (shoppingListSnap.exists()) {
-              itemsToDisplay = shoppingListSnap.data().items || [];
-            }
-          }
+          // Use requestedItems directly as it should be self-contained
+          itemsToDisplay = requestData.requestedItems || [];
         } else if ([
-            DELIVERY_STATUSES.CONFIRMED.key,
+            DELIVERY_STATUSES.CONFIRMED.key, // This state might be PENDING_USER_ACCEPTANCE now
             DELIVERY_STATUSES.SHOPPING.key,
             DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
           ].includes(requestData.status)) {
@@ -184,10 +178,11 @@ function VendorOrderDashboard() {
       const request = requests.find(r => r.id === requestId);
       if (request && !itemChanges[requestId]) {
         const initialChanges = {};
-        (request.items || []).forEach(item => { 
-          initialChanges[item.id || item.name] = {
+        // Use requestedItems for initial setup, keying by itemId
+        (request.requestedItems || []).forEach(item => {
+          initialChanges[item.itemId || item.name] = { // Use itemId as key
             available: true,
-            price: item.price,
+            pricePerUnit: '', // Initialize for vendor's per-unit price input
             note: ""
           };
         });
@@ -229,57 +224,71 @@ function VendorOrderDashboard() {
     setActionLoading(prevState => ({ ...prevState, [request.id]: true }));
     setError("");
     const currentItemChanges = itemChanges[request.id] || {};
-    const itemsToProcess = Array.isArray(request.items) ? request.items : [];
+    // Use requestedItems as the source for processing
+    const itemsToProcess = Array.isArray(request.requestedItems) ? request.requestedItems : [];
     
-    const confirmedItems = itemsToProcess
-      .filter(item => currentItemChanges[item.id || item.name]?.available)
-      .map(item => {
-        const changes = currentItemChanges[item.id || item.name];
-        let effectivePrice = Number(item.price || 0); 
-        if (changes?.price !== undefined) {
-            const parsedChangedPrice = Number(changes.price);
-            if (!isNaN(parsedChangedPrice)) {
-                effectivePrice = parsedChangedPrice;
-            } else {
-                console.warn(`Invalid changed price for item ${item.name}: '${changes.price}'. Using original price: ${item.price}`);
-            }
-        }
+    const confirmedItems = itemsToProcess.map(item => {
+        const itemKey = item.itemId || item.name; // Key by itemId
+        const changes = currentItemChanges[itemKey];
+
+        const vendorPricePerUnit = Number(changes?.pricePerUnit || 0);
+        const vendorConfirmedQuantity = Number(item.quantity || 0); // From requestedItems (which is netQuantity)
+        const calculatedVendorLinePrice = vendorPricePerUnit * vendorConfirmedQuantity;
+
         return {
-          itemId: item.id || item.name,
+          itemId: item.itemId,
           name: item.name,
-          quantity: Number(item.quantity || 0), 
+          quantity: vendorConfirmedQuantity,
           unit: item.unit || '',
-          originalPrice: Number(item.price || 0), 
-          confirmedPrice: effectivePrice, 
-          vendorNote: changes?.note || "",
-          available: true,
+          originalEstimatedPrice: Number(item.originalEstimatedPrice || 0), // Family's theoretical cost for the line
+          vendorPrice: calculatedVendorLinePrice, // Vendor's total price for this line
+          // vendorPricePerUnit: vendorPricePerUnit, // Optionally store this for transparency
+          availabilityStatus: changes?.available ? 'available' : 'unavailable',
+          vendorItemNote: changes?.note || "",
         };
       });
 
-    if (confirmedItems.length === 0) {
-      setError("Vous devez confirmer au moins un article pour confirmer la commande.");
-      setActionLoading(prevState => ({ ...prevState, [request.id]: false })); 
-      return;
-    }
+    // Calculate vendorItemTotalCost (sum of available items * vendorPrice)
+    const vendorItemTotalCost = confirmedItems.reduce((sum, currentItem) => {
+      if (currentItem.availabilityStatus === 'available' || currentItem.availabilityStatus === 'substituted_by_vendor') {
+        return sum + Number(currentItem.vendorPrice || 0); // currentItem.vendorPrice is now the line total
+      }
+      return sum;
+    }, 0);
 
-    const finalOrderCost = confirmedItems.reduce((sum, item) => {
-        const itemQuantity = Number(item.quantity || 0);
-        const itemPrice = Number(item.confirmedPrice || 0); 
-        const itemCost = itemPrice * itemQuantity;
-        return sum + itemCost;
-    }, 0) + (Number(request.deliveryFee) || 0); 
+    // Calculate vendorProposedTotalCost (vendorItemTotalCost + deliveryFee)
+    const deliveryFee = Number(request.deliveryFee) || 0;
+    const vendorProposedTotalCost = vendorItemTotalCost + deliveryFee;
+
+
+    if (confirmedItems.filter(item => item.availabilityStatus === 'available' || item.availabilityStatus === 'substituted_by_vendor').length === 0 && itemsToProcess.length > 0) {
+      // If all items were marked unavailable, but there were items initially, prompt vendor.
+      // This logic might need adjustment based on desired UX. For now, allow confirming with all items unavailable.
+      // setError("Vous ne pouvez pas confirmer une commande avec tous les articles marqués comme non disponibles. Veuillez en rejeter la commande si aucun article n'est disponible.");
+      // setActionLoading(prevState => ({ ...prevState, [request.id]: false }));
+      // return;
+       console.warn(`Vendor is confirming an order (${request.id}) where all items are marked as unavailable. This will result in a zero item cost order.`);
+    }
 
     const updateData = {
       status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
-      vendorConfirmedItems: confirmedItems,
-      finalOrderCost: finalOrderCost,
-      vendorOverallNote: overallNotes[request.id] || "", 
+      vendorConfirmedItems: confirmedItems, // Updated structure
+      vendorItemTotalCost: vendorItemTotalCost, // New field
+      vendorProposedTotalCost: vendorProposedTotalCost, // New field
+      vendorOverallNote: overallNotes[request.id] || "",
       statusHistory: [
         ...(request.statusHistory || []),
-        { status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key, timestamp: new Date(), changedBy: "vendor" }
+        {
+          status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
+          timestamp: new Date(),
+          changedBy: "vendor",
+          userId: currentUser?.uid // Add current user's UID
+        }
       ],
       updatedAt: serverTimestamp(),
     };
+    // Remove old finalOrderCost if it exists in request object data, though not strictly needed here as we are setting specific fields.
+    // delete updateData.finalOrderCost; // Not needed as we are defining the object fresh
 
     console.log("Data for updateDoc (handleConfirmOrder):", JSON.parse(JSON.stringify(updateData)));
 
@@ -311,7 +320,12 @@ function VendorOrderDashboard() {
         vendorRejectionReason: rejectionReason.trim() || "Non spécifiée",
         statusHistory: [
           ...(currentRequestToReject.statusHistory || []),
-          { status: DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key, timestamp: new Date(), changedBy: "vendor" }
+          {
+            status: DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key,
+            timestamp: new Date(),
+            changedBy: "vendor",
+            userId: currentUser?.uid // Add current user's UID
+          }
         ],
         updatedAt: serverTimestamp(),
       });
@@ -338,7 +352,12 @@ function VendorOrderDashboard() {
         status: newStatusKey,
         statusHistory: [
           ...(requests.find(r => r.id === requestId)?.statusHistory || []),
-          { status: newStatusKey, timestamp: new Date(), changedBy: "vendor" }
+          {
+            status: newStatusKey,
+            timestamp: new Date(),
+            changedBy: "vendor",
+            userId: currentUser?.uid // Add current user's UID
+          }
         ],
         updatedAt: serverTimestamp(),
       });
@@ -451,7 +470,7 @@ function VendorOrderDashboard() {
       if (statusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) icon = <PendingIcon/>;
       else if (statusKey === DELIVERY_STATUSES.CONFIRMED.key) icon = <CheckCircleOutlineIcon/>;
       else if (statusKey === DELIVERY_STATUSES.SHOPPING.key) icon = <InProgressIcon/>;
-      else if (statusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) icon = <LocalShippingOutlined/>;
+      else if (statusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) icon = <OutForDeliveryIcon/>;
       else if (statusKey === DELIVERY_STATUSES.DELIVERED.key) icon = <DeliveredIcon/>; 
       return <Chip icon={icon} label={statusObj.adminLabel || statusObj.label} color={statusObj.color || 'default'} size="small"/>;
     }
@@ -643,26 +662,29 @@ function VendorOrderDashboard() {
                                 </Grid>
                                  <Grid item xs={12} md={6}>
                                     <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Frais de livraison (initiaux):</Typography>
-                                    <Typography variant="body2">{request.deliveryFee?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
+                                    <Typography variant="body2">{(Number(request.deliveryFee) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
                                 </Grid>
                               </Grid>
                               <Typography variant="subtitle1" gutterBottom sx={{ mt: 3, fontWeight: 'medium' }}>Articles Demandés:</Typography>
-                              {Array.isArray(request.items) && request.items.map((item, index) => {
-                                const itemId = item.id || item.name;
-                                const currentItemState = itemChanges[request.id]?.[itemId] || { available: true, price: item.price, note: "" };
+                              {/* Iterate over request.requestedItems */}
+                              {Array.isArray(request.requestedItems) && request.requestedItems.map((item, index) => {
+                                const itemKey = item.itemId || item.name; // Use itemId as the primary key
+                                const currentItemState = itemChanges[request.id]?.[itemKey] || { available: true, pricePerUnit: '', note: "" };
                                 return (
-                                <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
+                                <Paper key={item.itemId || index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
                                   <Grid container spacing={2} alignItems="center">
                                     <Grid item xs={12} sm={4}>
                                       <Typography variant="body1" sx={{fontWeight:'medium'}}>{item.name}</Typography>
-                                      <Typography variant="caption" color="textSecondary">{item.quantity} {item.unit || 'unité(s)'} - Prix initial: {item.price?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
+                                      <Typography variant="caption" color="textSecondary">
+                                        {item.quantity} {item.unit || 'unité(s)'} - Prix estimé famille (total ligne): {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
+                                      </Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={2}>
                                       <FormControlLabel
                                         control={
                                           <Checkbox
-                                            checked={currentItemState.available}
-                                            onChange={(e) => handleItemChange(request.id, itemId, 'available', e.target.checked)}
+                                            checked={!!currentItemState.available} // Ensure boolean
+                                            onChange={(e) => handleItemChange(request.id, itemKey, 'available', e.target.checked)}
                                             size="small"
                                           />
                                         }
@@ -671,14 +693,17 @@ function VendorOrderDashboard() {
                                     </Grid>
                                     <Grid item xs={12} sm={3}>
                                       <TextField
-                                        label="Prix final/unité"
+                                        label="Votre Prix/Unité"
                                         type="number"
                                         size="small"
                                         fullWidth
-                                        value={currentItemState.price}
-                                        onChange={(e) => handleItemChange(request.id, itemId, 'price', parseFloat(e.target.value))}
+                                        value={currentItemState.pricePerUnit === undefined ? '' : currentItemState.pricePerUnit}
+                                        onChange={(e) => handleItemChange(request.id, itemKey, 'pricePerUnit', e.target.value === '' ? '' : parseFloat(e.target.value))}
                                         disabled={!currentItemState.available || (vendorType === 'storefront' /* && !item.allowPriceAdjustment - add this if such field exists */)}
-                                        InputProps={{ inputProps: { min: 0 } }}
+                                        InputProps={{
+                                          inputProps: { min: 0, step: "any" }, // allow decimals
+                                          startAdornment: <InputAdornment position="start">XAF</InputAdornment>,
+                                        }}
                                       />
                                     </Grid>
                                     <Grid item xs={12} sm={3}>
@@ -687,8 +712,8 @@ function VendorOrderDashboard() {
                                         type="text"
                                         size="small"
                                         fullWidth
-                                        value={currentItemState.note}
-                                        onChange={(e) => handleItemChange(request.id, itemId, 'note', e.target.value)}
+                                        value={currentItemState.note || ""} // Ensure controlled component
+                                        onChange={(e) => handleItemChange(request.id, itemKey, 'note', e.target.value)}
                                         disabled={!currentItemState.available}
                                       />
                                     </Grid>

@@ -27,6 +27,59 @@ function DeliveryStatusCard({ delivery, vendor, onTrack, onCancel }) {
     return `${dateString} à ${timeString || ""}`
   }
 
+  let displayedTotalValue = 0;
+  let totalLabel = "Total"; // Default label
+
+  if (delivery) { // Ensure delivery object exists
+    switch (delivery.status) {
+      case DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key:
+        displayedTotalValue = delivery.initialTotalEstimatedCost || 0;
+        totalLabel = "Total Estimé";
+        break;
+      case DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key:
+        displayedTotalValue = delivery.vendorProposedTotalCost || 0;
+        totalLabel = "Total Proposé";
+        break;
+      case DELIVERY_STATUSES.CONFIRMED.key:
+      case DELIVERY_STATUSES.SHOPPING.key:
+      case DELIVERY_STATUSES.OUT_FOR_DELIVERY.key:
+      case DELIVERY_STATUSES.DELIVERED.key:
+        displayedTotalValue = delivery.finalAgreedTotalCost || 0;
+        // Fallback logic for completed orders if finalAgreedTotalCost is somehow missing
+        if (!displayedTotalValue && delivery.vendorProposedTotalCost) {
+          displayedTotalValue = delivery.vendorProposedTotalCost;
+        } else if (!displayedTotalValue && delivery.initialTotalEstimatedCost) {
+           displayedTotalValue = delivery.initialTotalEstimatedCost;
+        }
+        totalLabel = "Total Final";
+        break;
+      default: // For cancelled states or other unhandled states
+        // Attempt to show the most relevant known cost, or the initial estimate
+        if (delivery.finalAgreedTotalCost) {
+          displayedTotalValue = delivery.finalAgreedTotalCost;
+          totalLabel = "Total Final";
+        } else if (delivery.vendorProposedTotalCost) {
+          displayedTotalValue = delivery.vendorProposedTotalCost;
+          totalLabel = "Total Proposé";
+        } else if (delivery.initialTotalEstimatedCost) {
+          displayedTotalValue = delivery.initialTotalEstimatedCost;
+          totalLabel = "Total Estimé";
+        } else {
+          // Fallback if no cost fields are present (should be rare)
+          displayedTotalValue = delivery.deliveryFee || 0; // At least show delivery fee if nothing else
+          totalLabel = "Frais Livraison";
+          // If even deliveryFee is not there, it will show 0 with "Frais Livraison" or "Total"
+          // Consider if a more specific "N/A" or "Inconnu" is better if all costs are zero/undefined
+        }
+        // If the status implies cancellation, perhaps a specific label or no cost shown?
+        // For now, the above logic will show the latest known cost or initial.
+        if (delivery.status && delivery.status.toLowerCase().includes('cancelled')) {
+            totalLabel = `Total (Annulé)`;
+        }
+        break;
+    }
+  }
+
   return (
     <Card
       elevation={0}
@@ -88,10 +141,10 @@ function DeliveryStatusCard({ delivery, vendor, onTrack, onCancel }) {
 
         <Box sx={{ display: "flex", justifyContent: "space-between" }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-            Total
+            {totalLabel}
           </Typography>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
-            {((delivery.totalCost || 0) + (delivery.deliveryFee || 0)).toLocaleString("fr-FR", {
+            {(displayedTotalValue || 0).toLocaleString("fr-FR", {
               style: "currency",
               currency: "XAF",
             })}

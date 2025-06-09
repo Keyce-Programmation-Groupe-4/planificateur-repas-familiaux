@@ -30,7 +30,7 @@ import {
   Divider,
   Grid, // For layout within acceptance section
   Stack, // For button layout
-  // IconButton, // If using icon buttons for rating for example
+  IconButton, // If using icon buttons for rating for example
 } from "@mui/material"
 import {
   LocalShipping,
@@ -71,9 +71,8 @@ function DeliveryTrackingPage() {
   const [comment, setComment] = useState("")
   const [isSubmittingRating, setIsSubmittingRating] = useState(false)
 
-  // States for user confirmation flow
-  const [userRejectionReason, setUserRejectionReason] = useState("")
-  const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false)
+  // const [userRejectionReason, setUserRejectionReason] = useState("") // Removed
+  // const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false) // Removed
   const [actionLoading, setActionLoading] = useState(false) // For disabling buttons during Firestore updates
 
   useEffect(() => {
@@ -161,7 +160,7 @@ function DeliveryTrackingPage() {
         status: newStatusKey, // Ensure this is the key string
         statusHistory: [
           ...(deliveryData.statusHistory || []),
-          { status: newStatusKey, timestamp: serverTimestamp(), changedBy: "user" }, // Assume 'user' for actions from this page
+          { status: newStatusKey, timestamp: serverTimestamp(), changedBy: "user", userId: currentUser?.uid },
         ],
         ...extraData, // For things like rejection reasons or final costs
         updatedAt: serverTimestamp(),
@@ -177,27 +176,7 @@ function DeliveryTrackingPage() {
     }
   };
 
-  const handleAcceptConfirmation = async () => {
-    await updateDeliveryStatus(DELIVERY_STATUSES.CONFIRMED.key);
-  };
-
-  const handleOpenRejectConfirmationDialog = () => {
-    setUserRejectionReason(""); // Clear previous reason before opening dialog
-    setRejectConfirmDialogOpen(true);
-  };
-
-  const handleRejectConfirmation = async () => {
-    if (!userRejectionReason.trim()) {
-        setError("La raison du rejet est obligatoire.");
-        return;
-    }
-    const success = await updateDeliveryStatus(DELIVERY_STATUSES.CANCELLED_BY_USER.key, {
-      userRejectionReason: userRejectionReason.trim(),
-    });
-    if (success) {
-      setRejectConfirmDialogOpen(false); // Close dialog on successful rejection
-    }
-  };
+  // Redundant handlers removed as this logic is now on OrderReviewPage.jsx
 
   const handleCancelDeliveryBeforeVendorConfirmation = async () => {
     if (!deliveryId || !deliveryData) return;
@@ -284,19 +263,37 @@ function DeliveryTrackingPage() {
 
   const canCancelBeforeVendorAction = currentStatusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key;
 
-  // Cost related variables
-  // Use finalAgreedCost if available (after user acceptance), then vendorFinalCost, then initial.
-  let costToDisplay = deliveryData?.initialOrderCost || 0;
-  let costLabel = "Coût estimé des courses";
-  if (deliveryData?.finalAgreedCost !== undefined) {
-    costToDisplay = deliveryData.finalAgreedCost - (deliveryData.deliveryFee || 0);
-    costLabel = "Coût final convenu des courses";
-  } else if (deliveryData?.vendorFinalCost !== undefined) {
-    costToDisplay = deliveryData.vendorFinalCost - (deliveryData.deliveryFee || 0);
-    costLabel = "Coût proposé par le vendeur";
-  }
+  // New Cost related variables
+  let displayedItemCost = 0;
+  let displayedTotalCost = 0;
+  let itemCostLabel = "Coût des articles";
 
-  const totalOrderCost = (costToDisplay || 0) + (deliveryData?.deliveryFee || 0);
+  if (deliveryData) {
+    if (deliveryData.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) {
+      displayedItemCost = deliveryData.initialItemTotalCost || 0;
+      displayedTotalCost = deliveryData.initialTotalEstimatedCost || 0;
+      itemCostLabel = "Coût estimé des articles";
+    } else if (deliveryData.status === DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key) {
+      displayedItemCost = deliveryData.vendorItemTotalCost || 0;
+      displayedTotalCost = deliveryData.vendorProposedTotalCost || 0;
+      itemCostLabel = "Coût des articles (proposé par vendeur)";
+    } else { // Confirmed, shopping, out_for_delivery, delivered, and other non-cancelled terminal states
+      displayedItemCost = deliveryData.finalAgreedItemTotalCost || deliveryData.vendorItemTotalCost || deliveryData.initialItemTotalCost || 0; // Fallback chain
+      displayedTotalCost = deliveryData.finalAgreedTotalCost || deliveryData.vendorProposedTotalCost || deliveryData.initialTotalEstimatedCost || 0; // Fallback chain
+      itemCostLabel = "Coût final convenu des articles";
+      // If finalAgreedTotalCost is explicitly present, use its corresponding item cost label.
+      // If it's not, but vendorProposedTotalCost is, and status is confirmed or later, it implies vendor's proposal was accepted.
+      if (deliveryData.finalAgreedTotalCost !== undefined) {
+         itemCostLabel = "Coût final convenu des articles";
+      } else if (deliveryData.vendorProposedTotalCost !== undefined &&
+                 (currentStatusKey === DELIVERY_STATUSES.CONFIRMED.key ||
+                  currentStatusKey === DELIVERY_STATUSES.SHOPPING.key ||
+                  currentStatusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key ||
+                  currentStatusKey === DELIVERY_STATUSES.DELIVERED.key)) {
+        itemCostLabel = "Coût des articles (convenu)"; // Or "Coût des articles (accepté par l'utilisateur)"
+      }
+    }
+  }
 
   const sortedStatusHistory = deliveryData?.statusHistory
     ? [...deliveryData.statusHistory].sort((a, b) => {
@@ -404,8 +401,8 @@ function DeliveryTrackingPage() {
                 </Alert>
             )}
              <Typography variant="body1" sx={{my:2}}>
-              Coût final proposé par le vendeur : <strong>{(deliveryData.vendorFinalCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</strong>
-              {deliveryData.deliveryFee && ` (incluant ${deliveryData.deliveryFee.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })} de frais de livraison)`}.
+              Coût total proposé par le vendeur : <strong>{(deliveryData.vendorProposedTotalCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</strong>
+              {deliveryData.deliveryFee !== undefined && ` (incluant ${(Number(deliveryData.deliveryFee) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })} de frais de livraison)`}.
             </Typography>
 
             <Button
@@ -500,9 +497,9 @@ function DeliveryTrackingPage() {
             </Typography>
 
             <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1 }}>
-              <Typography variant="body2">{costLabel}</Typography>
+              <Typography variant="body2">{itemCostLabel}</Typography>
               <Typography variant="body2">
-                {(costToDisplay || 0).toLocaleString("fr-FR", {
+                {(displayedItemCost).toLocaleString("fr-FR", {
                   style: "currency",
                   currency: "XAF",
                 })}
@@ -524,7 +521,7 @@ function DeliveryTrackingPage() {
                 Total à Payer
               </Typography>
               <Typography variant="subtitle1" sx={{ fontWeight: 600, color: theme.palette.primary.main }}>
-                {totalOrderCost.toLocaleString("fr-FR", {
+                {(displayedTotalCost).toLocaleString("fr-FR", {
                   style: "currency",
                   currency: "XAF",
                 })}
@@ -592,44 +589,7 @@ function DeliveryTrackingPage() {
         </Paper>
       )}
 
-      {/* User Rejection Confirmation Dialog */}
-      <Dialog open={rejectConfirmDialogOpen} onClose={() => {if(!actionLoading) setRejectConfirmDialogOpen(false)}}>
-        <DialogTitle>Rejeter la Confirmation du Vendeur</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{mb:2}}>
-            Si vous rejetez, la commande sera annulée. Veuillez indiquer la raison de votre rejet.
-            Cela aidera le vendeur à comprendre votre décision.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            id="userRejectionReason"
-            label="Raison du rejet (obligatoire)"
-            type="text"
-            fullWidth
-            multiline
-            rows={3}
-            variant="outlined"
-            value={userRejectionReason}
-            onChange={(e) => setUserRejectionReason(e.target.value)}
-            // Basic error display for empty reason
-            error={actionLoading && !userRejectionReason.trim()}
-            helperText={actionLoading && !userRejectionReason.trim() ? "La raison est requise pour rejeter." : ""}
-          />
-        </DialogContent>
-        <DialogActions sx={{p: {xs:2, sm:3}}}>
-          <Button onClick={() => setRejectConfirmDialogOpen(false)} color="secondary" disabled={actionLoading}>Annuler</Button>
-          <Button
-            onClick={handleRejectConfirmation}
-            color="error"
-            variant="contained"
-            disabled={actionLoading || !userRejectionReason.trim()} // Disable if no reason or loading
-            startIcon={<ThumbDownAlt/>}
-          >
-            {actionLoading ? <CircularProgress size={24} color="inherit"/> : "Rejeter et Annuler la Commande"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* User Rejection Confirmation Dialog Removed */}
 
 
       {/* Rating Dialog (existing) - converted to MUI Dialog for consistency */}

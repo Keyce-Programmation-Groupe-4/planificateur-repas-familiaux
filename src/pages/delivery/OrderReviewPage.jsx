@@ -25,60 +25,65 @@ import { useAuth } from '../../contexts/AuthContext';
 const OrderReviewPage = () => {
   const { orderId } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, userData } = useAuth(); // Added userData
 
   const [orderDetails, setOrderDetails] = useState(null);
-  const [initialItems, setInitialItems] = useState([]);
+  // const [initialItems, setInitialItems] = useState([]); // To be removed if not needed after getCombinedItems refactor
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [vendorName, setVendorName] = useState('Loading...');
   const [accepting, setAccepting] = useState(false);
   const [rejecting, setRejecting] = useState(false);
 
-  // Helper function to combine initial and vendor-confirmed items
   const getCombinedItems = () => {
-    if (!orderDetails) return [];
-
+    if (!orderDetails || !orderDetails.requestedItems) return [];
     const combined = new Map();
     const vendorItems = orderDetails.vendorConfirmedItems || [];
 
-    // Process initial items
-    initialItems.forEach(item => {
-      combined.set(item.name.toLowerCase(), {
-        name: item.name,
-        originalQty: item.quantity,
-        originalUnit: item.unit,
-        // originalPrice: item.price, // Assuming initial items don't have price, or it needs to be calculated/fetched
-        confirmedQty: '-',
-        confirmedPrice: '-',
-        vendorNote: '-',
-        availability: 'N/A',
+    // Process requested items from the orderDetails object
+    (orderDetails.requestedItems || []).forEach(reqItem => {
+      combined.set(reqItem.itemId, {
+        itemId: reqItem.itemId,
+        name: reqItem.name,
+        originalQuantity: reqItem.quantity,
+        originalUnit: reqItem.unit,
+        originalEstimatedPrice: reqItem.originalEstimatedPrice,
+        // Initialize vendor fields
+        confirmedQuantity: '-',
+        vendorPrice: '-',
+        vendorItemNote: '-',
+        availabilityStatus: 'pending_update', // Default if not in vendorItems
+        isSubstituted: false,
       });
     });
 
-    // Process vendor-confirmed items and update/add to combined list
+    // Update with vendor-confirmed items
     vendorItems.forEach(vItem => {
-      const key = vItem.name.toLowerCase();
-      const existing = combined.get(key);
-      if (existing) {
-        combined.set(key, {
+      if (combined.has(vItem.itemId)) {
+        const existing = combined.get(vItem.itemId);
+        combined.set(vItem.itemId, {
           ...existing,
-          confirmedQty: vItem.quantity !== undefined ? vItem.quantity : (vItem.unavailable ? 0 : existing.originalQty),
-          confirmedPrice: vItem.price !== undefined ? vItem.price : '-',
-          vendorNote: vItem.notes || '-',
-          availability: vItem.unavailable ? 'Unavailable' : (vItem.substituted ? `Substituted (was ${existing.name})` : 'Available'),
-          name: vItem.substituted ? vItem.name : existing.name, // Use vendor name if substituted
+          name: vItem.name, // Vendor might change name on substitution
+          confirmedQuantity: vItem.quantity,
+          vendorPrice: vItem.vendorPrice,
+          vendorItemNote: vItem.vendorItemNote || '-',
+          availabilityStatus: vItem.availabilityStatus || 'unavailable',
+          // Assuming isSubstituted might be a boolean flag on vItem or derived if name changes
+          isSubstituted: existing.name.toLowerCase() !== vItem.name.toLowerCase() && vItem.availabilityStatus === 'substituted_by_vendor',
         });
       } else {
-        // Item added by vendor (e.g. substitution not matched by name)
-        combined.set(key, {
+        // Item added by vendor (less common, but handle)
+        combined.set(vItem.itemId, {
+          itemId: vItem.itemId,
           name: vItem.name,
-          originalQty: '-',
+          originalQuantity: '-',
           originalUnit: '-',
-          confirmedQty: vItem.quantity !== undefined ? vItem.quantity : (vItem.unavailable ? 0 : '-'),
-          confirmedPrice: vItem.price !== undefined ? vItem.price : '-',
-          vendorNote: vItem.notes || '-',
-          availability: vItem.unavailable ? 'Unavailable' : (vItem.substituted ? 'Substituted' : 'New Item'),
+          originalEstimatedPrice: '-', // No original estimate if purely vendor added
+          confirmedQuantity: vItem.quantity,
+          vendorPrice: vItem.vendorPrice,
+          vendorItemNote: vItem.vendorItemNote || '-',
+          availabilityStatus: vItem.availabilityStatus || 'available',
+          isSubstituted: vItem.availabilityStatus === 'substituted_by_vendor',
         });
       }
     });
@@ -88,13 +93,12 @@ const OrderReviewPage = () => {
 
   useEffect(() => {
     const fetchOrderDetails = async () => {
-      if (!currentUser) {
-        setError("You must be logged in to view this page.");
+      if (!currentUser || !userData?.familyId) { // Check for userData.familyId
+        setError("You must be logged in and have a family ID to view this page.");
         setLoading(false);
         return;
       }
 
-      // Initial loading set here, subsequent loading for actions will be separate
       setLoading(true);
       setError('');
       try {
@@ -103,73 +107,34 @@ const OrderReviewPage = () => {
 
         if (orderSnap.exists()) {
           const orderData = orderSnap.data();
-          console.log(orderData);
-          console.log(currentUser);
-          // if (orderData.userId !== currentUser.uid) {
-          //   setError("You are not authorized to view this order.");
-          //   setOrderDetails(null);
-          // } else 
-          if (orderData.status !== 'pending_user_acceptance') {
-            // Allow viewing details even if not in pending_user_acceptance, but disable actions later
-            setOrderDetails({ id: orderSnap.id, ...orderData });
-            setError(`This order is not awaiting your review (status: ${orderData.status.replace(/_/g, ' ')}). Actions will be disabled.`);
-            // Fetch vendor and item details anyway for viewing
-             if (orderData.vendorId) {
-              const vendorRef = doc(db, 'vendors', orderData.vendorId);
-              const vendorSnap = await getDoc(vendorRef);
-              if (vendorSnap.exists()) {
-                setVendorName(vendorSnap.data().name || 'Unnamed Vendor');
-              } else {
-                setVendorName('Vendor not found');
-              }
-            } else {
-              setVendorName('Vendor ID not specified');
-            }
-            if (orderData.familyId && orderData.shoppingListId) {
-              const listDocRef = doc(db, 'families', orderData.familyId, 'shoppingLists', orderData.shoppingListId);
-              const listSnap = await getDoc(listDocRef);
-              if (listSnap.exists()) setInitialItems(listSnap.data().items || []);
-              else console.warn("Original shopping list not found for non-actionable order.");
-            }
 
-          } else {
-            const fullOrderDetails = { id: orderSnap.id, ...orderData };
-            setOrderDetails(fullOrderDetails);
-
-            // Fetch vendor details
-            if (fullOrderDetails.vendorId) {
-              const vendorRef = doc(db, 'vendors', fullOrderDetails.vendorId);
-              const vendorSnap = await getDoc(vendorRef);
-              if (vendorSnap.exists()) {
-                setVendorName(vendorSnap.data().name || 'Unnamed Vendor');
-              } else {
-                setVendorName('Vendor not found');
-              }
-            } else {
-              setVendorName('Vendor ID not specified');
-            }
-
-            // Fetch initial shopping list items
-            if (fullOrderDetails.familyId && fullOrderDetails.shoppingListId) {
-              try {
-                const listDocRef = doc(db, 'families', fullOrderDetails.familyId, 'shoppingLists', fullOrderDetails.shoppingListId);
-                const listSnap = await getDoc(listDocRef);
-                if (listSnap.exists()) {
-                  setInitialItems(listSnap.data().items || []);
-                } else {
-                  console.warn("Original shopping list not found.");
-                  setInitialItems([]); // Or handle as an error for the user
-                }
-              } catch (listError) {
-                console.error("Error fetching initial shopping list:", listError);
-                // setError("Could not load original shopping list items."); // Optional: depends on how critical this is
-                setInitialItems([]);
-              }
-            } else {
-              console.warn("Missing familyId or shoppingListId in order details.");
-              setInitialItems([]);
-            }
+          if (orderData.familyId !== userData.familyId) { // Authorization check
+            setError("You are not authorized to view this order.");
+            setOrderDetails(null);
+            setLoading(false);
+            return;
           }
+
+          // Set order details first
+          setOrderDetails({ id: orderSnap.id, ...orderData });
+
+          if (orderData.status !== 'pending_user_acceptance') {
+            setError(`This order is not awaiting your review (status: ${orderData.status.replace(/_/g, ' ')}). Actions will be disabled.`);
+          }
+          // Fetch vendor details (common for both cases if order exists)
+          if (orderData.vendorId) {
+            const vendorRef = doc(db, 'vendors', orderData.vendorId);
+            const vendorSnap = await getDoc(vendorRef);
+            if (vendorSnap.exists()) {
+              setVendorName(vendorSnap.data().name || 'Unnamed Vendor');
+            } else {
+              setVendorName('Vendor not found');
+            }
+          } else {
+            setVendorName('Vendor ID not specified');
+          }
+          // The initialItems state and its separate fetch can be removed
+          // as requestedItems is now part of orderDetails and used by getCombinedItems.
         } else {
           setError('Order not found. It may have been deleted or the ID is incorrect.');
           setOrderDetails(null);
@@ -184,7 +149,7 @@ const OrderReviewPage = () => {
     };
 
     fetchOrderDetails();
-  }, [orderId, currentUser, navigate]); // Removed initialItems from here, it's fetched inside
+  }, [orderId, currentUser, userData, navigate]); // Added userData to dependencies
 
   const handleAcceptOrder = async () => {
     if (!orderDetails || orderDetails.status !== 'pending_user_acceptance') {
@@ -199,22 +164,28 @@ const OrderReviewPage = () => {
       const newStatus = 'confirmed'; // Updated status
       const newStatusHistoryEntry = {
         status: newStatus,
-        timestamp: serverTimestamp(),
+        timestamp: new Date(),
         changedBy: 'user',
         userId: currentUser.uid,
       };
 
       await updateDoc(orderRef, {
-        status: newStatus,
-        finalAgreedCost: orderDetails.vendorFinalCost,
+        status: 'confirmed', // Directly set to 'confirmed'
+        finalAgreedItemTotalCost: orderDetails.vendorItemTotalCost, // New field
+        finalAgreedTotalCost: orderDetails.vendorProposedTotalCost, // New field
         statusHistory: [...(orderDetails.statusHistory || []), newStatusHistoryEntry],
         updatedAt: serverTimestamp(),
       });
 
-      setOrderDetails(prev => ({ ...prev, status: newStatus, finalAgreedCost: prev.vendorFinalCost }));
+      setOrderDetails(prev => ({
+        ...prev,
+        status: 'confirmed',
+        finalAgreedItemTotalCost: prev.vendorItemTotalCost,
+        finalAgreedTotalCost: prev.vendorProposedTotalCost
+      }));
       alert('Commande acceptée et confirmée ! Vous allez être redirigé vers le suivi.');
       // NOTIFICATION POINT
-      console.log(`NOTIFICATION_POINT: User accepted order adjustments. Notify vendor ${orderDetails.vendorId}. Order ID: ${orderId}`);
+      // console.log(`NOTIFICATION_POINT: User accepted order adjustments. Notify vendor ${orderDetails.vendorId}. Order ID: ${orderId}`); // Keep if needed
       setError('');
       navigate(`/delivery/tracking/${orderId}`);
     } catch (err) {
@@ -237,7 +208,7 @@ const OrderReviewPage = () => {
       const newStatus = 'cancelled_by_user'; // Updated status
       const newStatusHistoryEntry = {
         status: newStatus,
-        timestamp: serverTimestamp(),
+        timestamp: new Date(),
         changedBy: 'user',
         userId: currentUser.uid,
         reason: "User rejected vendor's proposed changes.",
@@ -304,13 +275,13 @@ const OrderReviewPage = () => {
           Vendor Name: {vendorName}
         </Typography>
         <Typography variant="body1" sx={{ mt: 1 }}>
-          Delivery Address: {orderDetails.deliveryAddress?.fullAddress || 'Not specified'}
+          Delivery Address: {orderDetails.deliveryAddress?.fullAddress || orderDetails.deliveryAddress || 'Not specified'}
         </Typography>
         <Typography variant="body1" sx={{ mt: 1 }}>
-          Original Estimated Cost: ${orderDetails.originalEstimatedCost?.toFixed(2) || 'N/A'}
+          Your Total Estimated Cost: {(orderDetails.initialTotalEstimatedCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
         </Typography>
         <Typography variant="body1" color="primary" sx={{ mt: 1, fontWeight: 'bold' }}>
-          Vendor's Final Proposed Cost: ${orderDetails.vendorFinalCost?.toFixed(2) || 'N/A'}
+          Vendor's Proposed Total Cost: {(orderDetails.vendorProposedTotalCost || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
         </Typography>
 
         <Divider sx={{ my: 3 }} />
@@ -318,45 +289,45 @@ const OrderReviewPage = () => {
         <Typography variant="h5" gutterBottom sx={{ mt: 3 }}>
           Item Comparison
         </Typography>
-        {/* Placeholder for Items Table */}
         <TableContainer component={Paper} sx={{ mt: 2 }}>
           <Table>
             <TableHead>
               <TableRow>
                 <TableCell>Item Name</TableCell>
-                <TableCell align="right">Original Qty</TableCell>
-                <TableCell align="right">Confirmed Qty</TableCell>
-                <TableCell align="right">Original Price</TableCell>
-                <TableCell align="right">Confirmed Price</TableCell>
+                <TableCell align="right">Your Qty</TableCell>
+                <TableCell align="right">Vendor Qty</TableCell>
+                <TableCell align="right">Votre Est. Ligne</TableCell>
+                <TableCell align="right">Prix Vendeur Ligne</TableCell>
                 <TableCell>Vendor Note</TableCell>
-                <TableCell>Availability</TableCell>
+                <TableCell>Status</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {getCombinedItems().length > 0 ? (
-                getCombinedItems().map((item, index) => (
-                  <TableRow key={index} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                getCombinedItems().map((item) => (
+                  <TableRow key={item.itemId} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
                     <TableCell component="th" scope="row">
                       {item.name}
-                      {item.originalUnit && <Typography variant="caption" sx={{ ml: 0.5 }}>({item.originalUnit})</Typography>}
+                      {item.isSubstituted && <Chip label="Substituted" size="small" color="warning" sx={{ ml: 1 }} />}
+                      {item.originalUnit && !item.isSubstituted && <Typography variant="caption" sx={{ ml: 0.5 }}>({item.originalUnit})</Typography>}
+                       {item.isSubstituted && item.originalUnit && <Typography variant="caption" sx={{ ml: 0.5 }}>(was {item.originalUnit})</Typography>}
                     </TableCell>
-                    <TableCell align="right">{item.originalQty}</TableCell>
+                    <TableCell align="right">{item.originalQuantity}</TableCell>
+                    <TableCell align="right">{item.confirmedQuantity}</TableCell>
                     <TableCell align="right">
-                      {item.confirmedQty}
-                      {item.availability === 'Unavailable' && <Chip label="Unavailable" size="small" color="error" sx={{ ml: 1 }} />}
-                      {item.availability === 'Substituted' && <Chip label="Substituted" size="small" color="warning" sx={{ ml: 1 }} />}
-                    </TableCell>
-                    <TableCell align="right">
-                      {/* Assuming no individual original prices for now */}
-                      N/A
+                      {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
                     </TableCell>
                     <TableCell align="right">
-                      {typeof item.confirmedPrice === 'number' ? `$${item.confirmedPrice.toFixed(2)}` : item.confirmedPrice}
+                      {typeof item.vendorPrice === 'number'
+                        ? (item.vendorPrice).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })
+                        : item.vendorPrice}
                     </TableCell>
-                    <TableCell>{item.vendorNote}</TableCell>
+                    <TableCell>{item.vendorItemNote}</TableCell>
                     <TableCell>
-                      {item.availability === 'Available' && <Chip label="Available" size="small" color="success" />}
-                      {/* Other statuses handled inline with quantity or as separate chips */}
+                      {item.availabilityStatus === 'available' && <Chip label="Available" size="small" color="success" />}
+                      {item.availabilityStatus === 'unavailable' && <Chip label="Unavailable" size="small" color="error" />}
+                      {item.availabilityStatus === 'substituted_by_vendor' && <Chip label="Substituted" size="small" color="warning" />}
+                      {item.availabilityStatus === 'pending_update' && <Chip label="Pending" size="small" />}
                     </TableCell>
                   </TableRow>
                 ))
