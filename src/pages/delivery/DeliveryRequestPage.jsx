@@ -47,6 +47,13 @@ function DeliveryRequestPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
 
+  // New state variables
+  const [currentInitialItemTotalCost, setCurrentInitialItemTotalCost] = useState(0);
+  const [currentDeliveryFee, setCurrentDeliveryFee] = useState(0);
+  const [currentInitialTotalEstimatedCost, setCurrentInitialTotalEstimatedCost] = useState(0);
+  const [currentRequestedItems, setCurrentRequestedItems] = useState([]);
+
+
   // Récupérer l'ID de la liste de courses depuis sessionStorage
   const shoppingListId = sessionStorage.getItem("currentShoppingListId")
 
@@ -127,6 +134,33 @@ function DeliveryRequestPage() {
   // For now, this setup implies fetchShoppingList completes fully, including category extraction and sorting.
   }, [familyId, shoppingListId])
 
+  // useEffect for calculating costs and requested items
+  useEffect(() => {
+    let calculatedInitialItemTotalCost = 0;
+    let calculatedRequestedItems = [];
+
+    if (shoppingList && shoppingList.items) {
+      calculatedInitialItemTotalCost = shoppingList.items.reduce(
+        (total, item) => total + (item.price || 0) * (item.quantity || 0),
+        0
+      );
+      calculatedRequestedItems = shoppingList.items.map(item => ({
+        itemId: item.id, // Assuming item.id is the unique identifier for the item
+        name: item.name,
+        quantity: item.quantity,
+        unit: item.unit,
+        originalEstimatedPrice: item.price || 0,
+      }));
+    }
+    setCurrentInitialItemTotalCost(calculatedInitialItemTotalCost);
+    setCurrentRequestedItems(calculatedRequestedItems);
+
+    const calculatedDeliveryFee = selectedVendor?.baseFee || 0;
+    setCurrentDeliveryFee(calculatedDeliveryFee);
+
+    setCurrentInitialTotalEstimatedCost(calculatedInitialItemTotalCost + calculatedDeliveryFee);
+  }, [shoppingList, selectedVendor]); // Removed currentInitialItemTotalCost and currentDeliveryFee from deps to avoid potential loops if not careful, calculation is direct.
+
 
   const sortVendorsBySpecialtyMatch = (vendors, categories) => {
     if (!categories || categories.length === 0) {
@@ -192,20 +226,24 @@ function DeliveryRequestPage() {
         familyId,
         shoppingListId,
         vendorId: selectedVendor.id,
-        status: "pending_vendor_confirmation", // Updated status
+        requestedByUserId: currentUser?.uid, // Added requestedByUserId
+        status: "pending_vendor_confirmation",
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(), // Added for consistency
+        updatedAt: serverTimestamp(),
         deliveryAddress,
         deliveryInstructions,
         requestedDate: deliveryDate,
         requestedTime: deliveryTime,
-        initialOrderCost: shoppingList.totalActualCost || 0, // Renamed for clarity
-        deliveryFee: selectedVendor.baseFee || 0,
+        initialItemTotalCost: currentInitialItemTotalCost, // Use new state variable
+        deliveryFee: currentDeliveryFee, // Use new state variable
+        initialTotalEstimatedCost: currentInitialTotalEstimatedCost, // Use new state variable
+        requestedItems: currentRequestedItems, // Use new state variable
         statusHistory: [
           {
             status: "pending_vendor_confirmation",
             timestamp: new Date(),
-            changedBy: "user" // Assuming the user creates the request
+            changedBy: "user", // Assuming the user creates the request
+            userId: currentUser?.uid // Added userId
           }
         ],
       }
@@ -446,8 +484,7 @@ function DeliveryRequestPage() {
                     Frais de livraison
                   </Typography>
                   <Typography>
-                    {selectedVendor?.baseFee?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" }) ||
-                      "Non défini"}
+                    {currentDeliveryFee.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
                   </Typography>
                 </Box>
 
@@ -456,7 +493,7 @@ function DeliveryRequestPage() {
                     Coût estimé des courses
                   </Typography>
                   <Typography>
-                    {(shoppingList?.totalActualCost || 0).toLocaleString("fr-FR", {
+                    {currentInitialItemTotalCost.toLocaleString("fr-FR", {
                       style: "currency",
                       currency: "XAF",
                     })}
@@ -470,7 +507,7 @@ function DeliveryRequestPage() {
                     Total estimé
                   </Typography>
                   <Typography variant="h6" sx={{ color: theme.palette.primary.main }}>
-                    {((shoppingList?.totalActualCost || 0) + (selectedVendor?.baseFee || 0)).toLocaleString("fr-FR", {
+                    {currentInitialTotalEstimatedCost.toLocaleString("fr-FR", {
                       style: "currency",
                       currency: "XAF",
                     })}
