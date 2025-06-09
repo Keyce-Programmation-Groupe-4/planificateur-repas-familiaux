@@ -182,7 +182,7 @@ function VendorOrderDashboard() {
         (request.requestedItems || []).forEach(item => {
           initialChanges[item.itemId || item.name] = { // Use itemId as key
             available: true,
-            price: item.originalEstimatedPrice, // Default to originalEstimatedPrice
+            pricePerUnit: '', // Initialize for vendor's per-unit price input
             note: ""
           };
         });
@@ -228,40 +228,38 @@ function VendorOrderDashboard() {
     const itemsToProcess = Array.isArray(request.requestedItems) ? request.requestedItems : [];
     
     const confirmedItems = itemsToProcess.map(item => {
-        const changes = currentItemChanges[item.itemId || item.name]; // Key by itemId
-        let effectivePrice = Number(item.originalEstimatedPrice || 0); // Default to original
+        const itemKey = item.itemId || item.name; // Key by itemId
+        const changes = currentItemChanges[itemKey];
 
-        if (changes?.price !== undefined && changes?.price !== null && changes?.price !== '') {
-            const parsedChangedPrice = Number(changes.price);
-            if (!isNaN(parsedChangedPrice)) {
-                effectivePrice = parsedChangedPrice;
-            } else {
-                console.warn(`Invalid changed price for item ${item.name}: '${changes.price}'. Using original estimated price: ${item.originalEstimatedPrice}`);
-            }
-        }
+        const vendorPricePerUnit = Number(changes?.pricePerUnit || 0);
+        const vendorConfirmedQuantity = Number(item.quantity || 0); // From requestedItems (which is netQuantity)
+        const calculatedVendorLinePrice = vendorPricePerUnit * vendorConfirmedQuantity;
 
         return {
-          itemId: item.itemId, // Use itemId
+          itemId: item.itemId,
           name: item.name,
-          quantity: Number(item.quantity || 0),
+          quantity: vendorConfirmedQuantity,
           unit: item.unit || '',
-          originalEstimatedPrice: Number(item.originalEstimatedPrice || 0), // Store original estimate
-          vendorPrice: effectivePrice, // Vendor's final price for this item
-          availabilityStatus: changes?.available ? 'available' : 'unavailable', // New field
-          vendorItemNote: changes?.note || "", // Existing field
+          originalEstimatedPrice: Number(item.originalEstimatedPrice || 0), // Family's theoretical cost for the line
+          vendorPrice: calculatedVendorLinePrice, // Vendor's total price for this line
+          // vendorPricePerUnit: vendorPricePerUnit, // Optionally store this for transparency
+          availabilityStatus: changes?.available ? 'available' : 'unavailable',
+          vendorItemNote: changes?.note || "",
         };
       });
 
     // Calculate vendorItemTotalCost (sum of available items * vendorPrice)
     const vendorItemTotalCost = confirmedItems.reduce((sum, currentItem) => {
-      if (currentItem.availabilityStatus === 'available' || currentItem.availabilityStatus === 'substituted_by_vendor') { // Consider substituted items as available for cost calculation
-        return sum + (Number(currentItem.vendorPrice || 0) * Number(currentItem.quantity || 0));
+      if (currentItem.availabilityStatus === 'available' || currentItem.availabilityStatus === 'substituted_by_vendor') {
+        return sum + Number(currentItem.vendorPrice || 0); // currentItem.vendorPrice is now the line total
       }
       return sum;
     }, 0);
 
     // Calculate vendorProposedTotalCost (vendorItemTotalCost + deliveryFee)
-    const vendorProposedTotalCost = vendorItemTotalCost + (Number(request.deliveryFee) || 0);
+    const deliveryFee = Number(request.deliveryFee) || 0;
+    const vendorProposedTotalCost = vendorItemTotalCost + deliveryFee;
+
 
     if (confirmedItems.filter(item => item.availabilityStatus === 'available' || item.availabilityStatus === 'substituted_by_vendor').length === 0 && itemsToProcess.length > 0) {
       // If all items were marked unavailable, but there were items initially, prompt vendor.
@@ -671,14 +669,15 @@ function VendorOrderDashboard() {
                               {/* Iterate over request.requestedItems */}
                               {Array.isArray(request.requestedItems) && request.requestedItems.map((item, index) => {
                                 const itemKey = item.itemId || item.name; // Use itemId as the primary key
-                                const currentItemState = itemChanges[request.id]?.[itemKey] || { available: true, price: item.originalEstimatedPrice, note: "" };
+                                const currentItemState = itemChanges[request.id]?.[itemKey] || { available: true, pricePerUnit: '', note: "" };
                                 return (
                                 <Paper key={item.itemId || index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
                                   <Grid container spacing={2} alignItems="center">
                                     <Grid item xs={12} sm={4}>
                                       <Typography variant="body1" sx={{fontWeight:'medium'}}>{item.name}</Typography>
-                                      {/* Display originalEstimatedPrice */}
-                                      <Typography variant="caption" color="textSecondary">{item.quantity} {item.unit || 'unité(s)'} - Prix estimé famille: {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
+                                      <Typography variant="caption" color="textSecondary">
+                                        {item.quantity} {item.unit || 'unité(s)'} - Prix estimé famille (total ligne): {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
+                                      </Typography>
                                     </Grid>
                                     <Grid item xs={12} sm={2}>
                                       <FormControlLabel
@@ -694,16 +693,16 @@ function VendorOrderDashboard() {
                                     </Grid>
                                     <Grid item xs={12} sm={3}>
                                       <TextField
-                                        label="Prix final/unité"
+                                        label="Votre Prix/Unité"
                                         type="number"
                                         size="small"
                                         fullWidth
-                                        value={currentItemState.price === undefined || currentItemState.price === null || String(currentItemState.price).trim() === '' ? '' : Number(currentItemState.price)}
-                                        onChange={(e) => handleItemChange(request.id, itemKey, 'price', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                        value={currentItemState.pricePerUnit === undefined ? '' : currentItemState.pricePerUnit}
+                                        onChange={(e) => handleItemChange(request.id, itemKey, 'pricePerUnit', e.target.value === '' ? '' : parseFloat(e.target.value))}
                                         disabled={!currentItemState.available || (vendorType === 'storefront' /* && !item.allowPriceAdjustment - add this if such field exists */)}
                                         InputProps={{
                                           inputProps: { min: 0, step: "any" }, // allow decimals
-                                          startAdornment: <InputAdornment position="start">XAF</InputAdornment>, // Added currency symbol
+                                          startAdornment: <InputAdornment position="start">XAF</InputAdornment>,
                                         }}
                                       />
                                     </Grid>

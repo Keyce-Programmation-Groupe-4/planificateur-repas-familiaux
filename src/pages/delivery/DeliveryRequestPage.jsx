@@ -139,27 +139,43 @@ function DeliveryRequestPage() {
     let calculatedInitialItemTotalCost = 0;
     let calculatedRequestedItems = [];
 
-    if (shoppingList && shoppingList.items) {
-      calculatedInitialItemTotalCost = shoppingList.items.reduce(
-        (total, item) => total + (item.price || 0) * (item.quantity || 0),
-        0
-      );
-      calculatedRequestedItems = shoppingList.items.map(item => ({
-        itemId: item.id, // Assuming item.id is the unique identifier for the item
-        name: item.name,
-        quantity: item.quantity,
-        unit: item.unit,
-        originalEstimatedPrice: item.price || 0,
-      }));
+    if (shoppingList) {
+      if (typeof shoppingList.totalTheoreticalCost === 'number') {
+        calculatedInitialItemTotalCost = shoppingList.totalTheoreticalCost;
+      } else {
+        console.warn("DeliveryRequestPage: shoppingList.totalTheoreticalCost is not a number or not present. InitialItemTotalCost might be inaccurate if relying on fallback item reduction without per-unit prices.");
+        // Fallback if totalTheoreticalCost isn't available - this might lead to 0 if items don't have 'price' or 'quantity' in the expected way for per-unit calculation
+        if (shoppingList.items) {
+          calculatedInitialItemTotalCost = shoppingList.items.reduce(
+            (total, item) => total + ((item.price || 0) * (item.quantity || 0)), // This old fallback might be irrelevant if items don't have 'price' and 'quantity' for per-unit.
+            0
+          );
+          // If the goal is to sum theoreticalItemCost from items as a fallback:
+          // calculatedInitialItemTotalCost = shoppingList.items.reduce((total, item) => total + (item.theoreticalItemCost || 0), 0);
+          // For now, stick to the user's expectation that totalTheoreticalCost is the source. If it's missing, the warning is key.
+        }
+      }
+
+      if (shoppingList.items) {
+        calculatedRequestedItems = shoppingList.items.map(item => ({
+          itemId: item.itemId, // Already correct based on typical structure
+          name: item.name,
+          quantity: item.netQuantity || 0, // Use netQuantity
+          unit: item.unit,
+          originalEstimatedPrice: item.theoreticalItemCost || 0, // Use theoreticalItemCost for the line
+        }));
+      }
     }
+
     setCurrentInitialItemTotalCost(calculatedInitialItemTotalCost);
     setCurrentRequestedItems(calculatedRequestedItems);
 
     const calculatedDeliveryFee = selectedVendor?.baseFee || 0;
     setCurrentDeliveryFee(calculatedDeliveryFee);
 
+    // Ensure this uses the potentially updated calculatedInitialItemTotalCost
     setCurrentInitialTotalEstimatedCost(calculatedInitialItemTotalCost + calculatedDeliveryFee);
-  }, [shoppingList, selectedVendor]); // Removed currentInitialItemTotalCost and currentDeliveryFee from deps to avoid potential loops if not careful, calculation is direct.
+  }, [shoppingList, selectedVendor]);
 
 
   const sortVendorsBySpecialtyMatch = (vendors, categories) => {

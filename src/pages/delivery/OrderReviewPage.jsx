@@ -296,8 +296,8 @@ const OrderReviewPage = () => {
                 <TableCell>Item Name</TableCell>
                 <TableCell align="right">Your Qty</TableCell>
                 <TableCell align="right">Vendor Qty</TableCell>
-                <TableCell align="right">Your Est. Price/Unit</TableCell>
-                <TableCell align="right">Vendor Price/Unit</TableCell>
+                <TableCell align="right">Votre Est. Ligne</TableCell>
+                <TableCell align="right">Prix Vendeur Ligne</TableCell>
                 <TableCell>Vendor Note</TableCell>
                 <TableCell>Status</TableCell>
               </TableRow>
