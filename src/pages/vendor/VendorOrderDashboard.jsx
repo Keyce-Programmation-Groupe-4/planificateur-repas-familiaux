@@ -7,6 +7,7 @@ import {
   Box,
   Typography,
   Paper,
+  FormControlLabel,
   Table,
   TableBody,
   TableCell,
@@ -499,6 +500,7 @@ function VendorOrderDashboard() {
           <MenuItem value="asc">Date: Plus ancien d'abord</MenuItem>
         </Select>
       </FormControl>
+      </Box>
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb:3 }}>
         <Tabs value={currentTab} onChange={handleTabChange} aria-label="Order tabs">
@@ -755,145 +757,6 @@ function VendorOrderDashboard() {
         onClose={handleCloseDetailsModal}
         order={selectedOrderDetails}
       />
-
-    </Container>
-  )
-}
-
-export default VendorOrderDashboard
-                      >
-                        Rejeter
-                      </Button>
-                    </TableCell>
-                    <TableCell sx={{ textAlign: "center" }}>
-                      <IconButton onClick={() => handleToggleExpand(request.id)}>
-                        {expandedRequest === request.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell colSpan={5} sx={{ p: 0, borderBottom: expandedRequest === request.id ? '1px solid ' + theme.palette.divider : 'none' }}>
-                      <Collapse in={expandedRequest === request.id} timeout="auto" unmountOnExit>
-                        <Box sx={{ p: 3, backgroundColor: alpha(theme.palette.grey[50], 0.5) }}>
-                          <Typography variant="h6" gutterBottom component="div" sx={{ display: 'flex', alignItems: 'center', mb:2 }}>
-                            <ReceiptIcon sx={{mr:1, color: theme.palette.secondary.main}}/> Détails de la Commande #{request.id.substring(0,8)}
-                          </Typography>
-
-                          <Grid container spacing={2}>
-                            <Grid item xs={12} md={6}>
-                                <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Informations Client:</Typography>
-                                <Typography variant="body2"><PersonPinCircleIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.deliveryAddress}</Typography>
-                                <Typography variant="body2"><CalendarTodayIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.requestedDate} à {request.requestedTime}</Typography>
-                                {request.deliveryInstructions && <Typography variant="body2" sx={{mt:1}}><em>Instructions: {request.deliveryInstructions}</em></Typography>}
-                            </Grid>
-                             <Grid item xs={12} md={6}>
-                                <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Frais de livraison:</Typography>
-                                <Typography variant="body2">{request.deliveryFee?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
-                            </Grid>
-                          </Grid>
-
-                          <Typography variant="subtitle1" gutterBottom sx={{ mt: 3, fontWeight: 'medium' }}>Articles Demandés:</Typography>
-                          {request.items && request.items.map((item, index) => {
-                            const itemId = item.id || item.name; // Use unique ID
-                            const currentItemState = itemChanges[request.id]?.[itemId] || { available: true, price: item.price, note: "" };
-                            return (
-                            <Paper key={index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
-                              <Grid container spacing={2} alignItems="center">
-                                <Grid item xs={12} sm={4}>
-                                  <Typography variant="body1" sx={{fontWeight:'medium'}}>{item.name}</Typography>
-                                  <Typography variant="caption" color="textSecondary">{item.quantity} {item.unit || 'unité(s)'} - Prix initial: {item.price?.toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
-                                </Grid>
-                                <Grid item xs={12} sm={2}>
-                                  <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                        checked={currentItemState.available}
-                                        onChange={(e) => handleItemChange(request.id, itemId, 'available', e.target.checked)}
-                                        size="small"
-                                      />
-                                    }
-                                    label="Dispo?"
-                                  />
-                                </Grid>
-                                <Grid item xs={12} sm={3}>
-                                  <TextField
-                                    label="Prix final/unité"
-                                    type="number"
-                                    size="small"
-                                    fullWidth
-                                    value={currentItemState.price}
-                                    onChange={(e) => handleItemChange(request.id, itemId, 'price', parseFloat(e.target.value))}
-                                    disabled={!currentItemState.available || (vendorType === 'storefront' && !item.allowPriceAdjustment)} // Example logic for storefront
-                                    InputProps={{
-                                      inputProps: { min: 0 }
-                                    }}
-                                  />
-                                </Grid>
-                                <Grid item xs={12} sm={3}>
-                                  <TextField
-                                    label="Note (optionnel)"
-                                    type="text"
-                                    size="small"
-                                    fullWidth
-                                    value={currentItemState.note}
-                                    onChange={(e) => handleItemChange(request.id, itemId, 'note', e.target.value)}
-                                    disabled={!currentItemState.available}
-                                  />
-                                </Grid>
-                              </Grid>
-                            </Paper>
-                          )})}
-
-                          <TextField
-                            fullWidth
-                            label="Note globale pour la commande (optionnel)"
-                            multiline
-                            rows={2}
-                            value={overallNotes[request.id] || ""}
-                            onChange={(e) => handleOverallNoteChange(request.id, e.target.value)}
-                            sx={{ mt: 2 }}
-                            variant="outlined"
-                          />
-                        </Box>
-                      </Collapse>
-                    </TableCell>
-                  </TableRow>
-                </>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-
-      {/* Rejection Dialog */}
-      <Dialog open={rejectDialogOpen} onClose={handleCloseRejectDialog}>
-        <DialogTitle>Rejeter la Commande</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Veuillez fournir une raison pour le rejet de cette commande (optionnel).
-            Cela sera communiqué à l'utilisateur.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            id="rejectionReason"
-            label="Raison du rejet"
-            type="text"
-            fullWidth
-            multiline
-            rows={3}
-            variant="standard"
-            value={rejectionReason}
-            onChange={(e) => setRejectionReason(e.target.value)}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseRejectDialog}>Annuler</Button>
-          <Button onClick={handleRejectOrder} color="error" disabled={isLoading}>
-            {isLoading ? <CircularProgress size={24} /> : "Rejeter la Commande"}
-          </Button>
-        </DialogActions>
-      </Dialog>
 
     </Container>
   )
