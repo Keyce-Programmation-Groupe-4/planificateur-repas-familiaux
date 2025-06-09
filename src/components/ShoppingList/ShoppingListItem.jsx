@@ -15,7 +15,7 @@ import {
   Avatar,
 } from "@mui/material"
 import { PriceCheck } from "@mui/icons-material"
-import { formatQuantityUnit } from "../../utils/unitConverter"
+import { formatQuantityUnit } from "../../utils/UnitConverter.js"
 import { useSwipeable } from "react-swipeable"
 
 // Helper to format currency

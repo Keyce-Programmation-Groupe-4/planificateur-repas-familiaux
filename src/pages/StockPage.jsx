@@ -90,7 +90,7 @@ import { useAuth } from '../contexts/AuthContext';
 // import NewIngredientDialog from '../components/Stock/NewIngredientDialog'; 
 
 // --- Utility Import --- 
-import { formatQuantityUnit } from '../utils/unitConverter'; // Assuming this exists and works
+import { formatQuantityUnit } from '../utils/UnitConverter.js'; // Assuming this exists and works
 
 const ingredientCategories = [
   "Fruits",

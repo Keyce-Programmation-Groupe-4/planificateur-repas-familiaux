@@ -43,7 +43,7 @@ import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } 
 import "jspdf-autotable"
 import PriceInputDialog from "../components/ShoppingList/PriceInputDialog"
 import ShoppingListCategory from "../components/ShoppingList/ShoppingListCategory"
-import { convertToStandardUnit, formatQuantityUnit, findStandardUnit } from "../utils/unitConverter" // Assuming findStandardUnit exists
+import { convertToStandardUnit, formatQuantityUnit, findStandardUnit } from "../utils/UnitConverter.js" // Assuming findStandardUnit exists
 
 // --- PDFMake Import ---
 import pdfMake from "pdfmake/build/pdfmake"
@@ -732,7 +732,7 @@ function ShoppingListPage() {
       })
 
       content.push({
-        layout: "lightHorizontalLines", // optional
+        // layout: "lightHorizontalLines", // optional - REMOVED to fix duplicate key
         table: {
           headerRows: 0,
           widths: ["auto", "*", "auto", "auto"], // Widths for checkbox, name, quantity, cost

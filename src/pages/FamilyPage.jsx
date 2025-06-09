@@ -726,7 +726,7 @@ export default function FamilyPage() {
                               </ListItemAvatar>
                               <ListItemText
                                 primary={member.displayName || "Utilisateur"}
-                                secondary={member.email}
+                                // secondary={member.email} // Removed duplicate
                                 primaryTypographyProps={{ fontWeight: 600 }}
                                 secondary={
                                   <>
