@@ -470,7 +470,7 @@ function VendorOrderDashboard() {
       if (statusKey === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) icon = <PendingIcon/>;
       else if (statusKey === DELIVERY_STATUSES.CONFIRMED.key) icon = <CheckCircleOutlineIcon/>;
       else if (statusKey === DELIVERY_STATUSES.SHOPPING.key) icon = <InProgressIcon/>;
-      else if (statusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) icon = <LocalShippingOutlined/>;
+      else if (statusKey === DELIVERY_STATUSES.OUT_FOR_DELIVERY.key) icon = <OutForDeliveryIcon/>;
       else if (statusKey === DELIVERY_STATUSES.DELIVERED.key) icon = <DeliveredIcon/>; 
       return <Chip icon={icon} label={statusObj.adminLabel || statusObj.label} color={statusObj.color || 'default'} size="small"/>;
     }
