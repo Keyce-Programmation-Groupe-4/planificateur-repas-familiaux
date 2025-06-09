@@ -71,9 +71,8 @@ function DeliveryTrackingPage() {
   const [comment, setComment] = useState("")
   const [isSubmittingRating, setIsSubmittingRating] = useState(false)
 
-  // States for user confirmation flow
-  const [userRejectionReason, setUserRejectionReason] = useState("")
-  const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false)
+  // const [userRejectionReason, setUserRejectionReason] = useState("") // Removed
+  // const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false) // Removed
   const [actionLoading, setActionLoading] = useState(false) // For disabling buttons during Firestore updates
 
   useEffect(() => {
@@ -590,44 +589,7 @@ function DeliveryTrackingPage() {
         </Paper>
       )}
 
-      {/* User Rejection Confirmation Dialog */}
-      <Dialog open={rejectConfirmDialogOpen} onClose={() => {if(!actionLoading) setRejectConfirmDialogOpen(false)}}>
-        <DialogTitle>Rejeter la Confirmation du Vendeur</DialogTitle>
-        <DialogContent>
-          <DialogContentText sx={{mb:2}}>
-            Si vous rejetez, la commande sera annulée. Veuillez indiquer la raison de votre rejet.
-            Cela aidera le vendeur à comprendre votre décision.
-          </DialogContentText>
-          <TextField
-            autoFocus
-            margin="dense"
-            id="userRejectionReason"
-            label="Raison du rejet (obligatoire)"
-            type="text"
-            fullWidth
-            multiline
-            rows={3}
-            variant="outlined"
-            value={userRejectionReason}
-            onChange={(e) => setUserRejectionReason(e.target.value)}
-            // Basic error display for empty reason
-            error={actionLoading && !userRejectionReason.trim()}
-            helperText={actionLoading && !userRejectionReason.trim() ? "La raison est requise pour rejeter." : ""}
-          />
-        </DialogContent>
-        <DialogActions sx={{p: {xs:2, sm:3}}}>
-          <Button onClick={() => setRejectConfirmDialogOpen(false)} color="secondary" disabled={actionLoading}>Annuler</Button>
-          <Button
-            onClick={handleRejectConfirmation}
-            color="error"
-            variant="contained"
-            disabled={actionLoading || !userRejectionReason.trim()} // Disable if no reason or loading
-            startIcon={<ThumbDownAlt/>}
-          >
-            {actionLoading ? <CircularProgress size={24} color="inherit"/> : "Rejeter et Annuler la Commande"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* User Rejection Confirmation Dialog Removed */}
 
 
       {/* Rating Dialog (existing) - converted to MUI Dialog for consistency */}
