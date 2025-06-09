@@ -5,64 +5,34 @@ import {
   Container,
   Box,
   Typography,
-  Paper, // Keep for other potential dashboard elements
+  Paper,
   Grid,
   Card,
   CardContent,
-  // Button, // Removed if not used by other elements
-  // Chip, // Removed if not used by other elements
   Alert,
   CircularProgress,
   useTheme,
   alpha,
   Stack,
   Avatar,
-  Fade, // Added Fade
-  // IconButton, // Removed as vendor actions are gone
-  // Menu, // Removed
-  // MenuItem, // Removed
-  // Dialog, // Removed
-  // DialogTitle, // Removed
-  // DialogContent, // Removed
-  // DialogActions, // Removed
-  // Drawer, // Removed: Handled by AdminLayout
-  // List, // Removed: Handled by AdminLayout
-  // ListItem, // Removed: Handled by AdminLayout
-  // ListItemButton, // Removed: Handled by AdminLayout
-  // ListItemIcon, // Removed: Handled by AdminLayout
-  // ListItemText, // Removed: Handled by AdminLayout
-  // Toolbar, // Removed: Handled by AdminLayout or not needed
+  Fade,
 } from "@mui/material"
 import {
   AdminPanelSettings as AdminIcon,
   People as PeopleIcon,
-  Store as StoreIcon, // Still used for Stats
+  Store as StoreIcon,
   LocalShipping as DeliveryIcon,
-  // MoreVert as MoreVertIcon, // Removed
-  // CheckCircle as ApproveIcon, // Removed
-  // Cancel as RejectIcon, // Removed
-  // Dashboard as DashboardIcon, // Removed: Handled by AdminLayout
-  // ListAlt as ListAltIcon, // Removed: Handled by AdminLayout
-  // Group as GroupIcon,
-  // Fastfood as FastfoodIcon,
 } from "@mui/icons-material"
-// import { Link as RouterLink } from "react-router-dom" // Removed: Handled by AdminLayout if Link was only for Drawer
 import { db } from "../../firebaseConfig"
-import { collection, getDocs } from "firebase/firestore" // Removed doc, updateDoc, deleteDoc
-import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout import
+import { collection, getDocs } from "firebase/firestore"
+import AdminLayout from "../../components/AdminLayout.jsx"
 
 function AdminDashboard() {
   const theme = useTheme()
-  // const drawerWidth = 240 // Removed: Handled by AdminLayout
-
-  const [vendors, setVendors] = useState([]) // Still needed for stats
-  const [deliveries, setDeliveries] = useState([]) // Assuming this is for a "Recent Deliveries" stat or similar
+  const [vendors, setVendors] = useState([])
+  const [deliveries, setDeliveries] = useState([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState("")
-  // Removed state related to vendor actions menu and dialog:
-  // const [anchorEl, setAnchorEl] = useState(null)
-  // const [selectedVendor, setSelectedVendor] = useState(null)
-  // const [confirmDialog, setConfirmDialog] = useState({ open: false, action: null, vendor: null })
 
   useEffect(() => {
     fetchData()
@@ -72,15 +42,13 @@ function AdminDashboard() {
     setIsLoading(true)
     setError("")
     try {
-      // Fetch vendors for statistics
       const vendorsSnapshot = await getDocs(collection(db, "vendors"))
       const vendorsData = vendorsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
       setVendors(vendorsData)
 
-      // Fetch recent deliveries (example, if dashboard shows this)
-      const deliveriesSnapshot = await getDocs(collection(db, "deliveryRequests")) // Or your actual deliveries collection
+      const deliveriesSnapshot = await getDocs(collection(db, "deliveryRequests"))
       const deliveriesData = deliveriesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }))
-      setDeliveries(deliveriesData.slice(0, 10)) // Example: last 10 deliveries for a summary
+      setDeliveries(deliveriesData.slice(0, 10))
     } catch (err) {
       console.error("Erreur lors du chargement des données du tableau de bord:", err)
       setError("Erreur lors du chargement des données du tableau de bord.")
@@ -89,39 +57,42 @@ function AdminDashboard() {
     }
   }
 
-  // Removed handleMenuClick, handleMenuClose, handleVendorAction, openConfirmDialog
-
   const stats = {
     totalVendors: vendors.length,
     activeVendors: vendors.filter((v) => v.isActive).length,
     pendingVendors: vendors.filter((v) => !v.isApproved).length,
-    // Assuming deliveries state is used for a stat like "Recent Deliveries Count"
     totalDeliveries: deliveries.length,
   }
 
   if (isLoading) {
     return (
-      <Container maxWidth="lg" sx={{ py: 4, textAlign: "center" }}>
+      <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 }, textAlign: "center" }}>
         <CircularProgress />
         <Typography sx={{ mt: 2 }}>Chargement du tableau de bord...</Typography>
       </Container>
     )
   }
 
-  // const drawerItems = [...] // Removed: Handled by AdminLayout
-
   return (
     <AdminLayout>
-      {/* Original Container content starts here, adjusted for new layout */}
-      {/* The main Box wrapper and Toolbar spacer are removed, AdminLayout handles structure */}
       <Fade in={true} timeout={600}>
-        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 3 } }}> {/* Adjusted padding */}
-          <Box sx={{ mb: 4 }}>
-            <Typography variant="h4" component="h1" sx={{ fontWeight: 600, mb: 1, display: "flex", alignItems: "center" }}>
-              <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main }} />
+        <Container maxWidth="lg" sx={{ py: { xs: 2, sm: 4 } }}>
+          <Box sx={{ mb: { xs: 2, sm: 4 } }}>
+            <Typography
+              variant="h4"
+              component="h1"
+              sx={{
+                fontWeight: 600,
+                mb: 1,
+                display: "flex",
+                alignItems: "center",
+                fontSize: { xs: "1.5rem", sm: "2.125rem" }, // Responsive font size
+              }}
+            >
+              <AdminIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: { xs: "2rem", sm: "2.5rem" } }} />
               Tableau de bord Admin
             </Typography>
-            <Typography variant="body1" color="text.secondary">
+            <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}>
               Vue d'ensemble et statistiques clés.
             </Typography>
           </Box>
@@ -132,21 +103,20 @@ function AdminDashboard() {
             </Alert>
           )}
 
-          {/* Statistiques */}
-          <Grid container spacing={3} sx={{ mb: 4 }}>
-            {/* Total Vendors Stat Card */}
+          {/* Statistiques avec grille responsive */}
+          <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: 4 }}>
             <Grid item xs={12} sm={6} md={3}>
-              <Card>
+              <Card sx={{ height: "100%" }}>
                 <CardContent>
-                  <Stack direction="row" alignItems="center" spacing={2}>
-                    <Avatar sx={{ bgcolor: theme.palette.primary.main }}>
-                      <StoreIcon />
+                  <Stack direction="row" alignItems="center" spacing={{ xs: 1, sm: 2 }}>
+                    <Avatar sx={{ bgcolor: theme.palette.primary.main, width: { xs: 40, sm: 56 }, height: { xs: 40, sm: 56 } }}>
+                      <StoreIcon fontSize="large" />
                     </Avatar>
                     <Box>
-                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
                         {stats.totalVendors}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                         Vendeurs Enregistrés
                       </Typography>
                     </Box>
@@ -155,19 +125,18 @@ function AdminDashboard() {
               </Card>
             </Grid>
 
-            {/* Active Vendors Stat Card */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card>
+              <Card sx={{ height: "100%" }}>
                 <CardContent>
-                  <Stack direction="row" alignItems="center" spacing={2}>
-                    <Avatar sx={{ bgcolor: theme.palette.success.main }}>
-                      <PeopleIcon /> {/* Changed to PeopleIcon for variety from StoreIcon */}
+                  <Stack direction="row" alignItems="center" spacing={{ xs: 1, sm: 2 }}>
+                    <Avatar sx={{ bgcolor: theme.palette.success.main, width: { xs: 40, sm: 56 }, height: { xs: 40, sm: 56 } }}>
+                      <PeopleIcon fontSize="large" />
                     </Avatar>
                     <Box>
-                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
                         {stats.activeVendors}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                         Vendeurs Actifs
                       </Typography>
                     </Box>
@@ -176,19 +145,18 @@ function AdminDashboard() {
               </Card>
             </Grid>
 
-            {/* Pending Vendors Stat Card */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card>
+              <Card sx={{ height: "100%" }}>
                 <CardContent>
-                  <Stack direction="row" alignItems="center" spacing={2}>
-                    <Avatar sx={{ bgcolor: theme.palette.warning.main }}>
-                      <StoreIcon />
+                  <Stack direction="row" alignItems="center" spacing={{ xs: 1, sm: 2 }}>
+                    <Avatar sx={{ bgcolor: theme.palette.warning.main, width: { xs: 40, sm: 56 }, height: { xs: 40, sm: 56 } }}>
+                      <StoreIcon fontSize="large" />
                     </Avatar>
                     <Box>
-                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
                         {stats.pendingVendors}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                         Vendeurs en Attente
                       </Typography>
                     </Box>
@@ -197,19 +165,18 @@ function AdminDashboard() {
               </Card>
             </Grid>
 
-            {/* Recent Deliveries Stat Card - Example */}
             <Grid item xs={12} sm={6} md={3}>
-              <Card>
+              <Card sx={{ height: "100%" }}>
                 <CardContent>
-                  <Stack direction="row" alignItems="center" spacing={2}>
-                    <Avatar sx={{ bgcolor: theme.palette.info.main }}>
-                      <DeliveryIcon />
+                  <Stack direction="row" alignItems="center" spacing={{ xs: 1, sm: 2 }}>
+                    <Avatar sx={{ bgcolor: theme.palette.info.main, width: { xs: 40, sm: 56 }, height: { xs: 40, sm: 56 } }}>
+                      <DeliveryIcon fontSize="large" />
                     </Avatar>
                     <Box>
-                      <Typography variant="h4" sx={{ fontWeight: 600 }}>
+                      <Typography variant="h4" sx={{ fontWeight: 600, fontSize: { xs: "1.5rem", sm: "2rem" } }}>
                         {stats.totalDeliveries}
                       </Typography>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.875rem" } }}>
                         Livraisons Récentes
                       </Typography>
                     </Box>
@@ -219,18 +186,14 @@ function AdminDashboard() {
             </Grid>
           </Grid>
 
-          {/* Placeholder for other dashboard elements like recent activities, charts, etc. */}
-          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, mb: 2, fontSize: { xs: "1rem", sm: "1.25rem" } }}>
             Autres Informations
           </Typography>
-          <Paper sx={{ p:3, borderRadius: theme.shape.borderRadius * 2}}>
-            <Typography color="text.secondary">
+          <Paper sx={{ p: 3, borderRadius: theme.shape.borderRadius * 2 }}>
+            <Typography color="text.secondary" sx={{ fontSize: { xs: "0.875rem", sm: "1rem" } }}>
               D'autres modules et visualisations de données seront ajoutés ici.
             </Typography>
           </Paper>
-
-          {/* Vendor list and related menu/dialogs are REMOVED from here */}
-
         </Container>
       </Fade>
     </AdminLayout>

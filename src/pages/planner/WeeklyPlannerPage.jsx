@@ -31,7 +31,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  useMediaQuery, // Importation pour gérer la responsivité
+  useMediaQuery,
 } from "@mui/material";
 import {
   ShoppingCart as ShoppingCartIcon,
@@ -44,6 +44,7 @@ import {
   Share,
   PictureAsPdf,
   NotificationsActive as NotifyIcon,
+  Warning as WarningIcon,
 } from "@mui/icons-material";
 import { DragDropContext } from "@hello-pangea/dnd";
 import { useSwipeable } from "react-swipeable";
@@ -74,6 +75,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import WeekNavigator from "../../components/planner/WeekNavigator";
 import DayColumn from "../../components/planner/DayColumn";
 import RecipeSelectionModal from "../../components/planner/RecipeSelectionModal";
+import AllergyAlertModal from "../../components/planner/AllergyAlertModal";
+
+// --- Utils ---
+import { checkAllergies } from "../../utils/allergyUtils";
 
 // --- pdfMake Configuration ---
 pdfMake.vfs = pdfFonts.vfs;
@@ -117,7 +122,7 @@ function WeeklyPlannerPage() {
   const { currentUser, userData, loading: authLoading } = useAuth();
   const familyId = userData?.familyId;
   const isFamilyAdmin = userData?.familyRole === "Admin";
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm")); // Vérifie si l'écran est mobile
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
   const [weeklyPlanData, setWeeklyPlanData] = useState(null);
@@ -133,6 +138,11 @@ function WeeklyPlannerPage() {
   const [anchorEl, setAnchorEl] = useState(null);
   const [randomPlanningDialogOpen, setRandomPlanningDialogOpen] = useState(false);
   const [clearPlanningDialogOpen, setClearPlanningDialogOpen] = useState(false);
+  const [allergyAlerts, setAllergyAlerts] = useState([]);
+  const [allergyModalOpen, setAllergyModalOpen] = useState(false);
+  const [allergyCheckResult, setAllergyCheckResult] = useState(null);
+  const [isCheckingAllergies, setIsCheckingAllergies] = useState(false);
+
   const menuOpen = Boolean(anchorEl);
 
   const swipeHandlers = useSwipeable({
@@ -153,7 +163,47 @@ function WeeklyPlannerPage() {
 
   const weekId = getWeekId(currentWeekStart);
 
-  // --- Data Fetching ---
+  const performAllergyCheck = useCallback(async () => {
+    if (!familyId || !weeklyPlanData || !availableRecipesForPlanning.length) {
+      return;
+    }
+
+    try {
+      const result = await checkAllergies(familyId, weeklyPlanData, availableRecipesForPlanning);
+      setAllergyCheckResult(result);
+      setAllergyAlerts(result.alerts || []);
+      if (result.hasAllergies && result.alerts.length > 0) {
+        setAllergyModalOpen(true);
+      }
+    } catch (error) {
+      console.error("Erreur lors de la vérification des allergies:", error);
+    }
+  }, [familyId, weeklyPlanData, availableRecipesForPlanning]);
+
+  const handleCheckAllergies = async () => {
+    handleMenuClose();
+    if (!familyId || !weeklyPlanData || isCheckingAllergies) {
+      return;
+    }
+
+    setIsCheckingAllergies(true);
+    try {
+      const result = await checkAllergies(familyId, weeklyPlanData, availableRecipesForPlanning);
+      setAllergyCheckResult(result);
+      setAllergyAlerts(result.alerts || []);
+      setAllergyModalOpen(true);
+    } catch (error) {
+      console.error("Erreur lors de la vérification des allergies:", error);
+      setNotificationResult({
+        open: true,
+        message: "Erreur lors de la vérification des allergies.",
+        severity: "error"
+      });
+    } finally {
+      setIsCheckingAllergies(false);
+    }
+  };
+
   useEffect(() => {
     const fetchData = async () => {
       if (!familyId) {
@@ -233,7 +283,16 @@ function WeeklyPlannerPage() {
     }
   }, [weekId, familyId, authLoading]);
 
-  // --- Function to create default plan structure ---
+  useEffect(() => {
+    if (weeklyPlanData && availableRecipesForPlanning.length > 0 && familyId) {
+      const timeoutId = setTimeout(() => {
+        performAllergyCheck();
+      }, 1000);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [performAllergyCheck]);
+
   const createDefaultPlan = (currentFamilyId, weekStartDate, useServerTimestamps = true) => {
     const startDate = getStartOfWeek(weekStartDate);
     const endDate = new Date(startDate);
@@ -264,7 +323,6 @@ function WeeklyPlannerPage() {
     return plan;
   };
 
-  // --- Plan Saving Logic ---
   const savePlan = useCallback(
     async (planDataToSave, isCreating = false) => {
       if (!familyId || !planDataToSave) return;
@@ -328,9 +386,7 @@ function WeeklyPlannerPage() {
           );
           console.log("Ensured endDate is Timestamp instance");
         }
-      } catch (dateError 
-   
-) {
+      } catch (dateError) {
         console.error("Error processing dates before saving:", dateError);
         setError(`Erreur interne lors de la préparation des dates : ${dateError.message}`);
         setIsSaving(false);
@@ -352,6 +408,9 @@ function WeeklyPlannerPage() {
 
         setShowSuccess(true);
         setTimeout(() => setShowSuccess(false), 2000);
+        setTimeout(() => {
+          performAllergyCheck();
+        }, 500);
       } catch (err) {
         console.error("Error saving plan to Firestore: ", err);
         setError("La sauvegarde a échoué. Veuillez réessayer.");
@@ -359,10 +418,9 @@ function WeeklyPlannerPage() {
         setIsSaving(false);
       }
     },
-    [familyId, weekId, currentWeekStart],
+    [familyId, weekId, currentWeekStart, performAllergyCheck],
   );
 
-  // --- Menu Handlers ---
   const handleMenuClick = (event) => setAnchorEl(event.currentTarget);
   const handleMenuClose = () => setAnchorEl(null);
 
@@ -492,7 +550,6 @@ function WeeklyPlannerPage() {
     alert("Partager - Non implémenté");
   };
 
-  // --- Event Handlers ---
   const handleGoToToday = () => {
     if (isLoading || isSaving || isNotifying) return;
     setCurrentWeekStart(getStartOfWeek(new Date()));
@@ -569,7 +626,6 @@ function WeeklyPlannerPage() {
     [weeklyPlanData, savePlan, isSaving, isNotifying],
   );
 
-  // --- Drag and Drop Handler ---
   const onDragEnd = useCallback(
     (result) => {
       const { source, destination, draggableId } = result;
@@ -597,12 +653,10 @@ function WeeklyPlannerPage() {
     [weeklyPlanData, savePlan, isSaving, isNotifying],
   );
 
-  // --- Navigate to Shopping List ---
   const handleGoToShoppingList = () => {
     navigate(`/shopping-list?week=${weekId}`);
   };
 
-  // --- Random Planning Functionality ---
   const handleRandomPlanning = (type) => {
     setRandomPlanningDialogOpen(false);
     if (!weeklyPlanData || isSaving || isNotifying) return;
@@ -628,7 +682,6 @@ function WeeklyPlannerPage() {
     savePlan(updatedPlan, false);
   };
 
-  // --- Clear Planning Functionality ---
   const handleClearPlanning = () => {
     setClearPlanningDialogOpen(false);
     if (!weeklyPlanData || isSaving || isNotifying) return;
@@ -644,7 +697,6 @@ function WeeklyPlannerPage() {
     savePlan(updatedPlan, false);
   };
 
-  // --- Enhanced Skeleton Rendering ---
   const renderSkeletons = () => (
     <Grid container spacing={{ xs: 1, sm: 2, md: 3 }} justifyContent="center">
       {orderedDays.map((day, index) => (
@@ -762,6 +814,26 @@ function WeeklyPlannerPage() {
           }}
         />
         <Container maxWidth="xl" sx={{ position: "relative", zIndex: 1 }}>
+          {allergyCheckResult && allergyCheckResult.hasAllergies && (
+            <Alert 
+              severity="warning" 
+              sx={{ mb: 3 }}
+              action={
+                <Button 
+                  color="inherit" 
+                  size="small" 
+                  onClick={() => setAllergyModalOpen(true)}
+                  startIcon={<WarningIcon />}
+                >
+                  Voir les détails
+                </Button>
+              }
+            >
+              <Typography variant="body2">
+                {allergyCheckResult.message}
+              </Typography>
+            </Alert>
+          )}
           <Fade in timeout={600}>
             <Box sx={{ textAlign: "center", mb: { xs: 2, sm: 3, md: 4 } }}>
               <Typography
@@ -848,6 +920,24 @@ function WeeklyPlannerPage() {
                   spacing={{ xs: 1, sm: 2 }}
                   sx={{ width: { xs: "100%", sm: "auto" } }}
                 >
+                  <Tooltip title="Vérifier les allergies">
+                    <IconButton
+                      onClick={handleCheckAllergies}
+                      disabled={isCheckingAllergies || combinedLoading || isSaving || isNotifying}
+                      sx={{
+                        backgroundColor: allergyCheckResult?.hasAllergies ? "#FFF3E0" : alpha(theme.palette.primary.main, 0.1),
+                        color: allergyCheckResult?.hasAllergies ? "#E65100" : "inherit",
+                        "&:hover": {
+                          backgroundColor: allergyCheckResult?.hasAllergies ? "#FFE0B2" : alpha(theme.palette.primary.main, 0.2),
+                          transform: "scale(1.05)",
+                        },
+                        transition: "all 0.2s ease",
+                        p: { xs: 0.5, sm: 1 },
+                      }}
+                    >
+                      {isCheckingAllergies ? <ButtonCircularProgress size={24} /> : <WarningIcon fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
                   <Tooltip title="Aller à aujourd'hui">
                     <IconButton
                       onClick={handleGoToToday}
@@ -1030,6 +1120,13 @@ function WeeklyPlannerPage() {
               },
             }}
           >
+            <MenuItem onClick={handleCheckAllergies} disabled={isCheckingAllergies || combinedLoading || isSaving || isNotifying}>
+              <ListItemIcon>
+                <WarningIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText>Vérifier les allergies</ListItemText>
+            </MenuItem>
+            <Divider />
             <MenuItem onClick={handleExportPdf} disabled={combinedLoading || !weeklyPlanData || isNotifying}>
               <ListItemIcon>
                 <PictureAsPdf fontSize="small" />
@@ -1077,7 +1174,13 @@ function WeeklyPlannerPage() {
             onRecipeSelect={handleRecipeSelected}
             availableRecipes={availableRecipesForPlanning}
             targetSlotInfo={targetSlotInfo}
-            currentUserData={userData} // Added this line
+            currentUserData={userData}
+          />
+          <AllergyAlertModal
+            open={allergyModalOpen}
+            onClose={() => setAllergyModalOpen(false)}
+            alerts={allergyAlerts}
+            message={allergyCheckResult?.message || ""}
           />
           <Snackbar
             open={notificationResult.open}
@@ -1096,7 +1199,6 @@ function WeeklyPlannerPage() {
               {notificationResult.message}
             </Alert>
           </Snackbar>
-          {/* Random Planning Dialog */}
           <Dialog open={randomPlanningDialogOpen} onClose={() => setRandomPlanningDialogOpen(false)} fullScreen={isMobile}>
             <DialogTitle>Choisir le type de recettes</DialogTitle>
             <DialogContent>
@@ -1110,7 +1212,6 @@ function WeeklyPlannerPage() {
               </Stack>
             </DialogActions>
           </Dialog>
-          {/* Clear Planning Dialog */}
           <Dialog open={clearPlanningDialogOpen} onClose={() => setClearPlanningDialogOpen(false)} fullScreen={isMobile}>
             <DialogTitle>Confirmer la suppression</DialogTitle>
             <DialogContent>
