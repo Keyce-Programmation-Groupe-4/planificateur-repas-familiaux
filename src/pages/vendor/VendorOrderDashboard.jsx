@@ -58,6 +58,7 @@ import {
   Autorenew as InProgressIcon,
   Visibility as VisibilityIcon, // Added for Details button
   Search as SearchIcon, // Added for search bar
+  ListAlt as ListAltIcon, // Added for analytics
 } from "@mui/icons-material"
 import { db } from "../../firebaseConfig"
 import { DELIVERY_STATUSES, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
@@ -140,7 +141,8 @@ function VendorOrderDashboard() {
           DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
           DELIVERY_STATUSES.CONFIRMED.key,
           DELIVERY_STATUSES.SHOPPING.key,
-          DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
+          DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+          DELIVERY_STATUSES.DELIVERED.key // Added this
         ])
       )
       const querySnapshot = await getDocs(q)
@@ -414,6 +416,38 @@ function VendorOrderDashboard() {
       });
   }, [activeOrders, sortOrder, searchQuery]);
 
+  const analyticsData = useMemo(() => {
+    if (!requests || requests.length === 0) {
+      return {
+        pendingActionsCount: 0,
+        activeOrdersCount: 0,
+        totalDeliveredCount: 0,
+      };
+    }
+
+    const pendingActionsCount = requests.filter(
+      (r) => r.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key
+    ).length;
+
+    const activeOrdersCount = requests.filter((r) =>
+      [
+        DELIVERY_STATUSES.CONFIRMED.key,
+        DELIVERY_STATUSES.SHOPPING.key,
+        DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+      ].includes(r.status)
+    ).length;
+
+    const totalDeliveredCount = requests.filter(
+      (r) => r.status === DELIVERY_STATUSES.DELIVERED.key
+    ).length;
+
+    return {
+      pendingActionsCount,
+      activeOrdersCount,
+      totalDeliveredCount,
+    };
+  }, [requests]);
+
 
   if (isLoading) { // Simplified initial loading
     return (
@@ -469,6 +503,54 @@ function VendorOrderDashboard() {
         <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
           Gestion des Commandes
         </Typography>
+      </Box>
+
+      {/* Analytics Section */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'medium' }}>
+          Aperçu Rapide
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <ListAltIcon sx={{ fontSize: 40, color: theme.palette.warning.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.pendingActionsCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Action(s) Requise(s)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <InProgressIcon sx={{ fontSize: 40, color: theme.palette.info.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.activeOrdersCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Commande(s) Active(s)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <DeliveredIcon sx={{ fontSize: 40, color: theme.palette.success.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.totalDeliveredCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Commande(s) Terminée(s) (Total)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
       </Box>
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
