@@ -35,12 +35,14 @@ import {
   Lock as LockIcon,
   Login as LoginIcon,
 } from "@mui/icons-material"
+import CinematiqueLottie from "../components/CinematiqueLottie";
 
 export default function LoginPage() {
   const theme = useTheme()
   const navigate = useNavigate()
   const location = useLocation()
   const from = location.state?.from?.pathname || "/"
+  const [showAnimation, setShowAnimation] = useState(true)
 
   // Form state
   const [email, setEmail] = useState("")
@@ -51,6 +53,10 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
+
+  const handleAnimationEnd = () => {
+    setShowAnimation(false)
+  }
 
   const createUserDocumentIfNeeded = async (user) => {
     const userDocRef = doc(db, "users", user.uid)
@@ -86,29 +92,27 @@ export default function LoginPage() {
     setLoading(true)
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password)
-      const user = userCredential.user;
-      await createUserDocumentIfNeeded(user) // Ensure this is called with user object
+      const user = userCredential.user
+      await createUserDocumentIfNeeded(user)
 
       // Vendor redirection logic
-      const vendorDocRef = doc(db, "vendors", user.uid);
-      const vendorDocSnap = await getDoc(vendorDocRef);
+      const vendorDocRef = doc(db, "vendors", user.uid)
+      const vendorDocSnap = await getDoc(vendorDocRef)
 
       if (vendorDocSnap.exists()) {
-        const vendorData = vendorDocSnap.data();
+        const vendorData = vendorDocSnap.data()
         if (vendorData.isApproved === true && vendorData.isActive === true) {
-          navigate("/vendor/dashboard", { replace: true });
-          setLoading(false); // Ensure loading is set to false
-          return;
+          navigate("/vendor/dashboard", { replace: true })
+          setLoading(false)
+          return
         } else {
-          navigate("/vendor/pending-approval", { replace: true });
-          setLoading(false); // Ensure loading is set to false
-          return;
+          navigate("/vendor/pending-approval", { replace: true })
+          setLoading(false)
+          return
         }
       }
 
-      // Default navigation if not a vendor or other cases
       navigate(from, { replace: true })
-      // setLoading(false); // Already handled by the main logic if no early return
     } catch (err) {
       console.error("Login Error:", err)
       if (err.code === "auth/user-not-found") {
@@ -133,29 +137,27 @@ export default function LoginPage() {
 
     try {
       const result = await signInWithPopup(auth, provider)
-      const user = result.user;
-      await createUserDocumentIfNeeded(user) // Ensure this is called with user object
+      const user = result.user
+      await createUserDocumentIfNeeded(user)
 
       // Vendor redirection logic
-      const vendorDocRef = doc(db, "vendors", user.uid);
-      const vendorDocSnap = await getDoc(vendorDocRef);
+      const vendorDocRef = doc(db, "vendors", user.uid)
+      const vendorDocSnap = await getDoc(vendorDocRef)
 
       if (vendorDocSnap.exists()) {
-        const vendorData = vendorDocSnap.data();
+        const vendorData = vendorDocSnap.data()
         if (vendorData.isApproved === true && vendorData.isActive === true) {
-          navigate("/vendor/dashboard", { replace: true });
-          setGoogleLoading(false); // Ensure loading is set to false
-          return;
+          navigate("/vendor/dashboard", { replace: true })
+          setGoogleLoading(false)
+          return
         } else {
-          navigate("/vendor/pending-approval", { replace: true });
-          setGoogleLoading(false); // Ensure loading is set to false
-          return;
+          navigate("/vendor/pending-approval", { replace: true })
+          setGoogleLoading(false)
+          return
         }
       }
 
-      // Default navigation if not a vendor or other cases
       navigate(from, { replace: true })
-      // setGoogleLoading(false); // Already handled by the main logic if no early return
     } catch (err) {
       console.error("Google Login Error:", err)
       if (err.code === "auth/popup-closed-by-user") {
@@ -174,280 +176,275 @@ export default function LoginPage() {
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
-        display: "flex",
-        alignItems: "center",
-        py: 4,
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      {/* Decorative Elements */}
+    <>
+      {showAnimation && <CinematiqueLottie onEnd={handleAnimationEnd} duration={3500} />}
       <Box
         sx={{
-          position: "absolute",
-          top: -100,
-          left: -100,
-          width: 400,
-          height: 400,
-          background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.1)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
+          minHeight: "100vh",
+          background: `linear-gradient(135deg, ${theme.palette.background.default} 0%, ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+          display: "flex",
+          alignItems: "center",
+          py: 4,
+          position: "relative",
+          overflow: "hidden",
         }}
-      />
-      <Box
-        sx={{
-          position: "absolute",
-          bottom: -150,
-          right: -150,
-          width: 500,
-          height: 500,
-          background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.08)} 0%, transparent 70%)`,
-          borderRadius: "50%",
-          zIndex: 0,
-        }}
-      />
+      >
+        <Box
+          sx={{
+            position: "absolute",
+            top: -100,
+            left: -100,
+            width: 400,
+            height: 400,
+            background: `radial-gradient(circle, ${alpha(theme.palette.secondary.main, 0.1)} 0%, transparent 70%)`,
+            borderRadius: "50%",
+            zIndex: 0,
+          }}
+        />
+        <Box
+          sx={{
+            position: "absolute",
+            bottom: -150,
+            right: -150,
+            width: 500,
+            height: 500,
+            background: `radial-gradient(circle, ${alpha(theme.palette.primary.main, 0.08)} 0%, transparent 70%)`,
+            borderRadius: "50%",
+            zIndex: 0,
+          }}
+        />
 
-      <Container component="main" maxWidth="sm" sx={{ position: "relative", zIndex: 1 }}>
-        <Fade in timeout={800}>
-          <Paper
-            elevation={0}
-            sx={{
-              borderRadius: 6,
-              background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
-              border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
-              backdropFilter: "blur(20px)",
-              boxShadow: `0 20px 60px ${alpha(theme.palette.primary.main, 0.15)}`,
-              overflow: "hidden",
-            }}
-          >
-            {/* Header */}
-            <Box
+        <Container component="main" maxWidth="sm" sx={{ position: "relative", zIndex: 1 }}>
+          <Fade in timeout={800}>
+            <Paper
+              elevation={0}
               sx={{
-                p: 4,
-                pb: 2,
-                textAlign: "center",
-                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+                borderRadius: 6,
+                background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+                border: `1px solid ${alpha(theme.palette.primary.main, 0.1)}`,
+                backdropFilter: "blur(20px)",
+                boxShadow: `0 20px 60px ${alpha(theme.palette.primary.main, 0.15)}`,
+                overflow: "hidden",
               }}
             >
-              <Zoom in timeout={1000}>
-                <Avatar
+              <Box
+                sx={{
+                  p: 4,
+                  pb: 2,
+                  textAlign: "center",
+                  background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.03)} 100%)`,
+                }}
+              >
+                <Zoom in timeout={1000}>
+                  <Avatar
+                    sx={{
+                      width: 80,
+                      height: 80,
+                      mx: "auto",
+                      mb: 2,
+                      background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.primary.main} 100%)`,
+                      fontSize: "2rem",
+                    }}
+                  >
+                    <LockOutlinedIcon sx={{ fontSize: "2rem" }} />
+                  </Avatar>
+                </Zoom>
+                <Typography
+                  variant="h4"
+                  component="h1"
                   sx={{
-                    width: 80,
-                    height: 80,
-                    mx: "auto",
-                    mb: 2,
-                    background: `linear-gradient(135deg, ${theme.palette.secondary.main} 0%, ${theme.palette.primary.main} 100%)`,
-                    fontSize: "2rem",
+                    fontWeight: 700,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    backgroundClip: "text",
+                    WebkitBackgroundClip: "text",
+                    WebkitTextFillColor: "transparent",
+                    mb: 1,
                   }}
                 >
-                  <LockOutlinedIcon sx={{ fontSize: "2rem" }} />
-                </Avatar>
-              </Zoom>
-              <Typography
-                variant="h4"
-                component="h1"
-                sx={{
-                  fontWeight: 700,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  backgroundClip: "text",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                  mb: 1,
-                }}
-              >
-                Bon retour !
-              </Typography>
-              <Typography variant="h6" color="text.secondary">
-                Connectez-vous à votre compte
-              </Typography>
-            </Box>
-
-            <Box sx={{ p: 4 }}>
-              {/* Error Alert */}
-              {error && (
-                <Fade in>
-                  <Alert
-                    severity="error"
-                    sx={{
-                      mb: 3,
-                      borderRadius: 3,
-                      background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
-                      border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
-                    }}
-                  >
-                    {error}
-                  </Alert>
-                </Fade>
-              )}
-
-              {/* Google Login Button */}
-              <Button
-                fullWidth
-                variant="outlined"
-                size="large"
-                startIcon={<GoogleIcon />}
-                onClick={handleGoogleLogin}
-                disabled={loading || googleLoading}
-                sx={{
-                  mb: 3,
-                  py: 1.5,
-                  borderRadius: 4,
-                  borderColor: alpha(theme.palette.primary.main, 0.3),
-                  color: theme.palette.text.primary,
-                  "&:hover": {
-                    borderColor: theme.palette.primary.main,
-                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
-                    transform: "translateY(-2px)",
-                    boxShadow: `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
-                  },
-                  transition: "all 0.3s ease",
-                }}
-              >
-                {googleLoading ? <CircularProgress size={24} /> : "Continuer avec Google"}
-              </Button>
-
-              {/* Divider */}
-              <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-                <Divider sx={{ flexGrow: 1 }} />
-                <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
-                  ou
+                  Bon retour !
                 </Typography>
-                <Divider sx={{ flexGrow: 1 }} />
+                <Typography variant="h6" color="text.secondary">
+                  Connectez-vous à votre compte
+                </Typography>
               </Box>
 
-              {/* Email Login Form */}
-              <Box component="form" onSubmit={handleEmailLogin} noValidate>
-                <Stack spacing={3}>
-                  <TextField
-                    required
-                    fullWidth
-                    id="email"
-                    label="Adresse Email"
-                    name="email"
-                    autoComplete="email"
-                    autoFocus
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={loading || googleLoading}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <EmailIcon color="action" />
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
+              <Box sx={{ p: 4 }}>
+                {error && (
+                  <Fade in>
+                    <Alert
+                      severity="error"
+                      sx={{
+                        mb: 3,
                         borderRadius: 3,
-                        "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                          borderColor: theme.palette.primary.main,
-                          borderWidth: "2px",
-                        },
-                      },
-                    }}
-                  />
+                        background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
+                        border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
+                      }}
+                    >
+                      {error}
+                    </Alert>
+                  </Fade>
+                )}
 
-                  <TextField
-                    required
-                    fullWidth
-                    name="password"
-                    label="Mot de passe"
-                    type={showPassword ? "text" : "password"}
-                    id="password"
-                    autoComplete="current-password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    disabled={loading || googleLoading}
-                    InputProps={{
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <LockIcon color="action" />
-                        </InputAdornment>
-                      ),
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton
-                            aria-label="toggle password visibility"
-                            onClick={togglePasswordVisibility}
-                            edge="end"
-                          >
-                            {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                          </IconButton>
-                        </InputAdornment>
-                      ),
-                    }}
-                    sx={{
-                      "& .MuiOutlinedInput-root": {
-                        borderRadius: 3,
-                        "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
-                          borderColor: theme.palette.primary.main,
-                          borderWidth: "2px",
-                        },
-                      },
-                    }}
-                  />
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  size="large"
+                  startIcon={<GoogleIcon />}
+                  onClick={handleGoogleLogin}
+                  disabled={loading || googleLoading}
+                  sx={{
+                    mb: 3,
+                    py: 1.5,
+                    borderRadius: 4,
+                    borderColor: alpha(theme.palette.primary.main, 0.3),
+                    color: theme.palette.text.primary,
+                    "&:hover": {
+                      borderColor: theme.palette.primary.main,
+                      backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                      transform: "translateY(-2px)",
+                      boxShadow: `0 8px 25px ${alpha(theme.palette.primary.main, 0.15)}`,
+                    },
+                    transition: "all 0.3s ease",
+                  }}
+                >
+                  {googleLoading ? <CircularProgress size={24} /> : "Continuer avec Google"}
+                </Button>
 
-                  <Button
-                    type="submit"
-                    fullWidth
-                    variant="contained"
-                    size="large"
-                    disabled={loading || googleLoading}
-                    startIcon={loading ? null : <LoginIcon />}
-                    sx={{
-                      py: 1.5,
-                      borderRadius: 4,
-                      background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
-                      boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.4)}`,
-                      "&:hover": {
-                        transform: "translateY(-3px)",
-                        boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.5)}`,
-                      },
-                      "&:disabled": {
-                        background: alpha(theme.palette.action.disabled, 0.12),
-                      },
-                      transition: "all 0.3s ease",
-                    }}
-                  >
-                    {loading ? <CircularProgress size={24} color="inherit" /> : "Se connecter"}
-                  </Button>
-                </Stack>
-              </Box>
-
-              {/* Links */}
-              <Grid container sx={{ mt: 4 }}>
-                <Grid item xs>
-                  {/* Future: Forgot Password Link */}
-                  <Typography variant="body2" color="text.secondary">
-                    Mot de passe oublié ?
+                <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
+                  <Divider sx={{ flexGrow: 1 }} />
+                  <Typography variant="body2" color="text.secondary" sx={{ px: 2 }}>
+                    ou
                   </Typography>
+                  <Divider sx={{ flexGrow: 1 }} />
+                </Box>
+
+                <Box component="form" onSubmit={handleEmailLogin} noValidate>
+                  <Stack spacing={3}>
+                    <TextField
+                      required
+                      fullWidth
+                      id="email"
+                      label="Adresse Email"
+                      name="email"
+                      autoComplete="email"
+                      autoFocus
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      disabled={loading || googleLoading}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <EmailIcon color="action" />
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 3,
+                          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                            borderColor: theme.palette.primary.main,
+                            borderWidth: "2px",
+                          },
+                        },
+                      }}
+                    />
+
+                    <TextField
+                      required
+                      fullWidth
+                      name="password"
+                      label="Mot de passe"
+                      type={showPassword ? "text" : "password"}
+                      id="password"
+                      autoComplete="current-password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading || googleLoading}
+                      InputProps={{
+                        startAdornment: (
+                          <InputAdornment position="start">
+                            <LockIcon color="action" />
+                          </InputAdornment>
+                        ),
+                        endAdornment: (
+                          <InputAdornment position="end">
+                            <IconButton
+                              aria-label="toggle password visibility"
+                              onClick={togglePasswordVisibility}
+                              edge="end"
+                            >
+                              {showPassword ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                            </IconButton>
+                          </InputAdornment>
+                        ),
+                      }}
+                      sx={{
+                        "& .MuiOutlinedInput-root": {
+                          borderRadius: 3,
+                          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+                            borderColor: theme.palette.primary.main,
+                            borderWidth: "2px",
+                          },
+                        },
+                      }}
+                    />
+
+                    <Button
+                      type="submit"
+                      fullWidth
+                      variant="contained"
+                      size="large"
+                      disabled={loading || googleLoading}
+                      startIcon={loading ? null : <LoginIcon />}
+                      sx={{
+                        py: 1.5,
+                        borderRadius: 4,
+                        background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                        boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.4)}`,
+                        "&:hover": {
+                          transform: "translateY(-3px)",
+                          boxShadow: `0 12px 40px ${alpha(theme.palette.primary.main, 0.5)}`,
+                        },
+                        "&:disabled": {
+                          background: alpha(theme.palette.action.disabled, 0.12),
+                        },
+                        transition: "all 0.3s ease",
+                      }}
+                    >
+                      {loading ? <CircularProgress size={24} color="inherit" /> : "Se connecter"}
+                    </Button>
+                  </Stack>
+                </Box>
+
+                <Grid container sx={{ mt: 4 }}>
+                  <Grid item xs>
+                    <Typography variant="body2" color="text.secondary">
+                      Mot de passe oublié ?
+                    </Typography>
+                  </Grid>
+                  <Grid item>
+                    <Link
+                      component={RouterLink}
+                      to="/signup"
+                      sx={{
+                        color: theme.palette.primary.main,
+                        textDecoration: "none",
+                        fontWeight: 600,
+                        "&:hover": {
+                          textDecoration: "underline",
+                        },
+                      }}
+                    >
+                      Pas encore de compte ? Inscrivez-vous
+                    </Link>
+                  </Grid>
                 </Grid>
-                <Grid item>
-                  <Link
-                    component={RouterLink}
-                    to="/signup"
-                    sx={{
-                      color: theme.palette.primary.main,
-                      textDecoration: "none",
-                      fontWeight: 600,
-                      "&:hover": {
-                        textDecoration: "underline",
-                      },
-                    }}
-                  >
-                    Pas encore de compte ? Inscrivez-vous
-                  </Link>
-                </Grid>
-              </Grid>
-            </Box>
-          </Paper>
-        </Fade>
-      </Container>
-    </Box>
+              </Box>
+            </Paper>
+          </Fade>
+        </Container>
+      </Box>
+    </>
   )
 }

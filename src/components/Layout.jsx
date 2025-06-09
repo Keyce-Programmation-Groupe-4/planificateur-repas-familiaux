@@ -58,6 +58,7 @@ import {
 import { useAuth } from "../contexts/AuthContext"
 import { auth } from "../firebaseConfig"
 import { signOut } from "firebase/auth"
+import CinematiqueLottie from "./CinematiqueLottie"
 
 const navigationCategories = [
   {
@@ -103,6 +104,9 @@ export default function ClientLayout({ children }) {
   const [profileMenuAnchor, setProfileMenuAnchor] = useState(null)
   const [moreOptionsAnchor, setMoreOptionsAnchor] = useState(null)
   const [expandedCategories, setExpandedCategories] = useState({})
+  const [showAnimation, setShowAnimation] = useState(() => {
+    return !sessionStorage.getItem("hasSeenAnimation")
+  })
 
   useEffect(() => {
     const initialExpanded = {}
@@ -112,6 +116,11 @@ export default function ClientLayout({ children }) {
     })
     setExpandedCategories(initialExpanded)
   }, [location.pathname])
+
+  const handleAnimationEnd = () => {
+    setShowAnimation(false)
+    sessionStorage.setItem("hasSeenAnimation", "true")
+  }
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
@@ -463,6 +472,7 @@ export default function ClientLayout({ children }) {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {showAnimation && <CinematiqueLottie onEnd={handleAnimationEnd} duration={3500} />}
       <AppBar
         position="sticky"
         elevation={0}
