@@ -164,7 +164,7 @@ const OrderReviewPage = () => {
       const newStatus = 'confirmed'; // Updated status
       const newStatusHistoryEntry = {
         status: newStatus,
-        timestamp: serverTimestamp(),
+        timestamp: new Date(),
         changedBy: 'user',
         userId: currentUser.uid,
       };
@@ -208,7 +208,7 @@ const OrderReviewPage = () => {
       const newStatus = 'cancelled_by_user'; // Updated status
       const newStatusHistoryEntry = {
         status: newStatus,
-        timestamp: serverTimestamp(),
+        timestamp: new Date(),
         changedBy: 'user',
         userId: currentUser.uid,
         reason: "User rejected vendor's proposed changes.",
