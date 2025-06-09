@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { useNavigate } from "react-router-dom"
+import { useNavigate, useSearchParams } from "react-router-dom"
 import {
   Container,
   Typography,
@@ -68,6 +68,20 @@ const getWeekId = (date) => {
   return `${year}-W${String(weekNumber).padStart(2, "0")}`
 }
 
+const weekIdToDate = (weekId) => {
+  if (!weekId || !/^\d{4}-W\d{2}$/.test(weekId)) {
+    return getStartOfWeek(new Date()) // Retour par défaut si format invalide
+  }
+  const [year, weekStr] = weekId.split('-W')
+  const weekNum = parseInt(weekStr, 10)
+  const firstDayOfYear = new Date(year, 0, 1)
+  const firstThursday = new Date(firstDayOfYear)
+  firstThursday.setDate(firstDayOfYear.getDate() + ((4 - firstDayOfYear.getDay() + 7) % 7))
+  const targetWeekStart = new Date(firstThursday)
+  targetWeekStart.setDate(firstThursday.getDate() + (weekNum - 1) * 7)
+  return getStartOfWeek(targetWeekStart)
+}
+
 const formatCurrency = (value) => {
   if (typeof value !== "number") {
     return "N/A" // Return N/A if cost cannot be calculated
@@ -82,7 +96,14 @@ function ShoppingListPage() {
   const { currentUser, userData, loading: authLoading } = useAuth()
   const familyId = userData?.familyId
 
-  const [targetWeekStart, setTargetWeekStart] = useState(getStartOfWeek(new Date()))
+  // Extraire le paramètre 'week' de l'URL
+  const [searchParams] = useSearchParams()
+  const weekParam = searchParams.get('week')
+
+// Initialiser targetWeekStart en fonction du paramètre week
+  const [targetWeekStart, setTargetWeekStart] = useState(() => {
+    return weekParam ? weekIdToDate(weekParam) : getStartOfWeek(new Date())
+  })
   const targetWeekId = getWeekId(targetWeekStart)
 
   const [shoppingListDoc, setShoppingListDoc] = useState(null)
