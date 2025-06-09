@@ -43,6 +43,10 @@ export default mergeConfig(
         },
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
+        },
+        
+        devOptions: {
+          enabled: true,  // ← active la génération manifest + SW en mode dev
         }
       })
     ],
