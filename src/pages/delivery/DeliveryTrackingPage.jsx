@@ -30,7 +30,7 @@ import {
   Divider,
   Grid, // For layout within acceptance section
   Stack, // For button layout
-  // IconButton, // If using icon buttons for rating for example
+  IconButton, // If using icon buttons for rating for example
 } from "@mui/material"
 import {
   LocalShipping,
