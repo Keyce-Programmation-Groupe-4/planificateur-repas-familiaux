@@ -40,6 +40,10 @@ import {
   Select,      
   MenuItem,    
   InputAdornment, 
+  useMediaQuery,
+  Card,
+  CardContent,
+  CardActions,
 } from "@mui/material";
 import {
   ExpandMore as ExpandMoreIcon,
@@ -79,6 +83,8 @@ function VendorOrderDashboard() {
   const theme = useTheme();
   const navigate = useNavigate();
   const { currentUser, userData } = useAuth();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
 
   const [requests, setRequests] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -137,10 +143,9 @@ function VendorOrderDashboard() {
         let itemsToDisplay = [];
 
         if (requestData.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key) {
-          // Use requestedItems directly as it should be self-contained
           itemsToDisplay = requestData.requestedItems || [];
         } else if ([
-            DELIVERY_STATUSES.CONFIRMED.key, // This state might be PENDING_USER_ACCEPTANCE now
+            DELIVERY_STATUSES.CONFIRMED.key,
             DELIVERY_STATUSES.SHOPPING.key,
             DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
           ].includes(requestData.status)) {
@@ -161,7 +166,6 @@ function VendorOrderDashboard() {
     if (vendorId) { 
         fetchRequests();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [vendorId]);
 
   const handleTabChange = (event, newValue) => {
@@ -178,11 +182,10 @@ function VendorOrderDashboard() {
       const request = requests.find(r => r.id === requestId);
       if (request && !itemChanges[requestId]) {
         const initialChanges = {};
-        // Use requestedItems for initial setup, keying by itemId
         (request.requestedItems || []).forEach(item => {
-          initialChanges[item.itemId || item.name] = { // Use itemId as key
+          initialChanges[item.itemId || item.name] = {
             available: true,
-            pricePerUnit: '', // Initialize for vendor's per-unit price input
+            pricePerUnit: '',
             note: ""
           };
         });
@@ -224,15 +227,14 @@ function VendorOrderDashboard() {
     setActionLoading(prevState => ({ ...prevState, [request.id]: true }));
     setError("");
     const currentItemChanges = itemChanges[request.id] || {};
-    // Use requestedItems as the source for processing
     const itemsToProcess = Array.isArray(request.requestedItems) ? request.requestedItems : [];
     
     const confirmedItems = itemsToProcess.map(item => {
-        const itemKey = item.itemId || item.name; // Key by itemId
+        const itemKey = item.itemId || item.name;
         const changes = currentItemChanges[itemKey];
 
         const vendorPricePerUnit = Number(changes?.pricePerUnit || 0);
-        const vendorConfirmedQuantity = Number(item.quantity || 0); // From requestedItems (which is netQuantity)
+        const vendorConfirmedQuantity = Number(item.quantity || 0);
         const calculatedVendorLinePrice = vendorPricePerUnit * vendorConfirmedQuantity;
 
         return {
@@ -240,41 +242,32 @@ function VendorOrderDashboard() {
           name: item.name,
           quantity: vendorConfirmedQuantity,
           unit: item.unit || '',
-          originalEstimatedPrice: Number(item.originalEstimatedPrice || 0), // Family's theoretical cost for the line
-          vendorPrice: calculatedVendorLinePrice, // Vendor's total price for this line
-          // vendorPricePerUnit: vendorPricePerUnit, // Optionally store this for transparency
+          originalEstimatedPrice: Number(item.originalEstimatedPrice || 0),
+          vendorPrice: calculatedVendorLinePrice,
           availabilityStatus: changes?.available ? 'available' : 'unavailable',
           vendorItemNote: changes?.note || "",
         };
       });
 
-    // Calculate vendorItemTotalCost (sum of available items * vendorPrice)
     const vendorItemTotalCost = confirmedItems.reduce((sum, currentItem) => {
       if (currentItem.availabilityStatus === 'available' || currentItem.availabilityStatus === 'substituted_by_vendor') {
-        return sum + Number(currentItem.vendorPrice || 0); // currentItem.vendorPrice is now the line total
+        return sum + Number(currentItem.vendorPrice || 0);
       }
       return sum;
     }, 0);
 
-    // Calculate vendorProposedTotalCost (vendorItemTotalCost + deliveryFee)
     const deliveryFee = Number(request.deliveryFee) || 0;
     const vendorProposedTotalCost = vendorItemTotalCost + deliveryFee;
 
-
     if (confirmedItems.filter(item => item.availabilityStatus === 'available' || item.availabilityStatus === 'substituted_by_vendor').length === 0 && itemsToProcess.length > 0) {
-      // If all items were marked unavailable, but there were items initially, prompt vendor.
-      // This logic might need adjustment based on desired UX. For now, allow confirming with all items unavailable.
-      // setError("Vous ne pouvez pas confirmer une commande avec tous les articles marqués comme non disponibles. Veuillez en rejeter la commande si aucun article n'est disponible.");
-      // setActionLoading(prevState => ({ ...prevState, [request.id]: false }));
-      // return;
-       console.warn(`Vendor is confirming an order (${request.id}) where all items are marked as unavailable. This will result in a zero item cost order.`);
+      console.warn(`Vendor is confirming an order (${request.id}) where all items are marked as unavailable. This will result in a zero item cost order.`);
     }
 
     const updateData = {
       status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
-      vendorConfirmedItems: confirmedItems, // Updated structure
-      vendorItemTotalCost: vendorItemTotalCost, // New field
-      vendorProposedTotalCost: vendorProposedTotalCost, // New field
+      vendorConfirmedItems: confirmedItems,
+      vendorItemTotalCost: vendorItemTotalCost,
+      vendorProposedTotalCost: vendorProposedTotalCost,
       vendorOverallNote: overallNotes[request.id] || "",
       statusHistory: [
         ...(request.statusHistory || []),
@@ -282,13 +275,11 @@ function VendorOrderDashboard() {
           status: DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
           timestamp: new Date(),
           changedBy: "vendor",
-          userId: currentUser?.uid // Add current user's UID
+          userId: currentUser?.uid
         }
       ],
       updatedAt: serverTimestamp(),
     };
-    // Remove old finalOrderCost if it exists in request object data, though not strictly needed here as we are setting specific fields.
-    // delete updateData.finalOrderCost; // Not needed as we are defining the object fresh
 
     console.log("Data for updateDoc (handleConfirmOrder):", JSON.parse(JSON.stringify(updateData)));
 
@@ -324,7 +315,7 @@ function VendorOrderDashboard() {
             status: DELIVERY_STATUSES.CANCELLED_BY_VENDOR.key,
             timestamp: new Date(),
             changedBy: "vendor",
-            userId: currentUser?.uid // Add current user's UID
+            userId: currentUser?.uid
           }
         ],
         updatedAt: serverTimestamp(),
@@ -356,7 +347,7 @@ function VendorOrderDashboard() {
             status: newStatusKey,
             timestamp: new Date(),
             changedBy: "vendor",
-            userId: currentUser?.uid // Add current user's UID
+            userId: currentUser?.uid
           }
         ],
         updatedAt: serverTimestamp(),
@@ -491,26 +482,277 @@ function VendorOrderDashboard() {
     return null;
   };
 
+  const renderPendingConfirmationRequests = () => {
+    if (isMobile) {
+      return sortedAndFilteredPendingConfirmationRequests.map((request) => (
+        <Card key={request.id} sx={{ mb: 2 }}>
+          <CardContent>
+            <Typography variant="h6">{request.id.substring(0,8) + "..."}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {request.createdAt?.toDate().toLocaleDateString('fr-FR')} {request.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {request.deliveryAddress}
+            </Typography>
+          </CardContent>
+          <CardActions>
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              startIcon={<CheckCircleOutlineIcon />}
+              onClick={() => handleConfirmOrder(request)}
+              disabled={actionLoading[request.id]}
+            >
+              {actionLoading[request.id] ? <CircularProgress size={20}/> : "Confirmer/Ajuster"}
+            </Button>
+            <Button
+              variant="outlined"
+              color="error"
+              size="small"
+              startIcon={<CancelOutlinedIcon />}
+              onClick={() => handleOpenRejectDialog(request)}
+              disabled={actionLoading[request.id]}
+            >
+              Rejeter
+            </Button>
+            <IconButton onClick={() => handleToggleExpand(request.id)} size="small">
+              {expandedRequest === request.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            </IconButton>
+          </CardActions>
+          <Collapse in={expandedRequest === request.id} timeout="auto" unmountOnExit>
+            <Box sx={{ p: 2 }}>
+              <Typography variant="h6">Ajuster les articles</Typography>
+            </Box>
+          </Collapse>
+        </Card>
+      ));
+    } else {
+      return (
+        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
+          <Table>
+            <TableHead sx={{backgroundColor: alpha(theme.palette.warning.light, 0.1)}}>
+              <TableRow>
+                <TableCell sx={{fontWeight: 'bold'}}>ID Demande</TableCell>
+                <TableCell sx={{fontWeight: 'bold'}}>Date Création</TableCell>
+                <TableCell sx={{fontWeight: 'bold'}}>Adresse</TableCell>
+                <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Actions Initiales</TableCell>
+                <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Détails Articles</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedAndFilteredPendingConfirmationRequests.map((request) => (
+                <React.Fragment key={request.id}>
+                  <TableRow hover selected={expandedRequest === request.id}>
+                    <TableCell>
+                      <Chip label={request.id.substring(0,8) + "..."} size="small" variant="outlined" />
+                    </TableCell>
+                    <TableCell>{request.createdAt?.toDate().toLocaleDateString('fr-FR')} {request.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
+                    <TableCell>{request.deliveryAddress}</TableCell>
+                    <TableCell sx={{ textAlign: "center" }}>
+                      <Button
+                        variant="contained"
+                        color="success"
+                        size="small"
+                        startIcon={<CheckCircleOutlineIcon />}
+                        onClick={() => handleConfirmOrder(request)}
+                        disabled={actionLoading[request.id]}
+                        sx={{mr: 1}}
+                      >
+                        {actionLoading[request.id] ? <CircularProgress size={20}/> : "Confirmer/Ajuster"}
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        startIcon={<CancelOutlinedIcon />}
+                        onClick={() => handleOpenRejectDialog(request)}
+                        disabled={actionLoading[request.id]}
+                      >
+                        Rejeter
+                      </Button>
+                    </TableCell>
+                    <TableCell sx={{ textAlign: "center" }}>
+                      <IconButton onClick={() => handleToggleExpand(request.id)} size="small">
+                        {expandedRequest === request.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                      </IconButton>
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell colSpan={5} sx={{ p: 0, borderBottom: expandedRequest === request.id ? '1px solid ' + theme.palette.divider : 'none' }}>
+                      <Collapse in={expandedRequest === request.id} timeout="auto" unmountOnExit>
+                        <Box sx={{ p: 3, backgroundColor: alpha(theme.palette.grey[50], 0.5) }}>
+                          <Typography variant="h6" gutterBottom component="div" sx={{ display: 'flex', alignItems: 'center', mb:2 }}>
+                            <ReceiptIcon sx={{mr:1, color: theme.palette.secondary.main}}/> Ajuster les articles pour Commande #{request.id.substring(0,8)}
+                          </Typography>
+                          <Grid container spacing={2}>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Informations Client:</Typography>
+                                <Typography variant="body2"><PersonPinCircleIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.deliveryAddress}</Typography>
+                                <Typography variant="body2"><CalendarTodayIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.requestedDate} à {request.requestedTime}</Typography>
+                                {request.deliveryInstructions && <Typography variant="body2" sx={{mt:1}}><em>Instructions: {request.deliveryInstructions}</em></Typography>}
+                            </Grid>
+                             <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Frais de livraison (initiaux):</Typography>
+                                <Typography variant="body2">{(Number(request.deliveryFee) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
+                            </Grid>
+                          </Grid>
+                          <Typography variant="subtitle1" gutterBottom sx={{ mt: 3, fontWeight: 'medium' }}>Articles Demandés:</Typography>
+                          {Array.isArray(request.requestedItems) && request.requestedItems.map((item, index) => {
+                            const itemKey = item.itemId || item.name;
+                            const currentItemState = itemChanges[request.id]?.[itemKey] || { available: true, pricePerUnit: '', note: "" };
+                            return (
+                            <Paper key={item.itemId || index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
+                              <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={12} sm={4}>
+                                  <Typography variant="body1" sx={{fontWeight:'medium'}}>{item.name}</Typography>
+                                  <Typography variant="caption" color="textSecondary">
+                                    {item.quantity} {item.unit || 'unité(s)'} - Prix estimé famille (total ligne): {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
+                                  </Typography>
+                                </Grid>
+                                <Grid item xs={12} sm={2}>
+                                  <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                        checked={!!currentItemState.available}
+                                        onChange={(e) => handleItemChange(request.id, itemKey, 'available', e.target.checked)}
+                                        size="small"
+                                      />
+                                    }
+                                    label="Dispo?"
+                                  />
+                                </Grid>
+                                <Grid item xs={12} sm={3}>
+                                  <TextField
+                                    label="Votre Prix/Unité"
+                                    type="number"
+                                    size="small"
+                                    fullWidth
+                                    value={currentItemState.pricePerUnit === undefined ? '' : currentItemState.pricePerUnit}
+                                    onChange={(e) => handleItemChange(request.id, itemKey, 'pricePerUnit', e.target.value === '' ? '' : parseFloat(e.target.value))}
+                                    disabled={!currentItemState.available || (vendorType === 'storefront')}
+                                    InputProps={{
+                                      inputProps: { min: 0, step: "any" },
+                                      startAdornment: <InputAdornment position="start">XAF</InputAdornment>,
+                                    }}
+                                  />
+                                </Grid>
+                                <Grid item xs={12} sm={3}>
+                                  <TextField
+                                    label="Note article"
+                                    type="text"
+                                    size="small"
+                                    fullWidth
+                                    value={currentItemState.note || ""}
+                                    onChange={(e) => handleItemChange(request.id, itemKey, 'note', e.target.value)}
+                                    disabled={!currentItemState.available}
+                                  />
+                                </Grid>
+                              </Grid>
+                            </Paper>
+                          )})}
+                          <TextField
+                            fullWidth
+                            label="Note globale pour la commande (optionnel)"
+                            multiline
+                            rows={2}
+                            value={overallNotes[request.id] || ""}
+                            onChange={(e) => handleOverallNoteChange(request.id, e.target.value)}
+                            sx={{ mt: 2 }}
+                            variant="outlined"
+                          />
+                        </Box>
+                      </Collapse>
+                    </TableCell>
+                  </TableRow>
+                </React.Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      );
+    }
+  };
+
+  const renderActiveOrders = () => {
+    if (isMobile) {
+      return sortedAndFilteredActiveOrders.map((order) => (
+        <Card key={order.id} sx={{ mb: 2 }}>
+          <CardContent>
+            <Typography variant="h6">{order.id.substring(0,8) + "..."}</Typography>
+            <Typography variant="body2" color="text.secondary">
+              {order.createdAt?.toDate().toLocaleDateString('fr-FR')} {order.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {order.deliveryAddress}
+            </Typography>
+            {getStatusChip(order.status)}
+          </CardContent>
+          <CardActions>
+            {renderActionButtonsForActiveOrder(order)}
+            <IconButton onClick={() => handleOpenDetailsModal(order)} size="small" color="info">
+              <VisibilityIcon />
+            </IconButton>
+          </CardActions>
+        </Card>
+      ));
+    } else {
+      return (
+        <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
+          <Table>
+            <TableHead sx={{backgroundColor: alpha(theme.palette.success.light, 0.1)}}>
+              <TableRow>
+                <TableCell sx={{fontWeight: 'bold'}}>ID Commande</TableCell>
+                <TableCell sx={{fontWeight: 'bold'}}>Date Création</TableCell>
+                <TableCell sx={{fontWeight: 'bold'}}>Client (Adresse)</TableCell>
+                <TableCell sx={{fontWeight: 'bold'}}>Statut Actuel</TableCell>
+                <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Prochaine Action</TableCell>
+                <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Détails</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {sortedAndFilteredActiveOrders.map((order) => (
+                <TableRow key={order.id} hover>
+                  <TableCell><Chip label={order.id.substring(0,8) + "..."} size="small" variant="outlined" color="primary"/></TableCell>
+                  <TableCell>{order.createdAt?.toDate().toLocaleDateString('fr-FR')} {order.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
+                  <TableCell>{order.deliveryAddress}</TableCell>
+                  <TableCell>{getStatusChip(order.status)}</TableCell>
+                  <TableCell sx={{ textAlign: "center" }}>
+                    {renderActionButtonsForActiveOrder(order)}
+                  </TableCell>
+                  <TableCell sx={{ textAlign: "center" }}>
+                    <IconButton onClick={() => handleOpenDetailsModal(order)} size="small" color="info">
+                      <VisibilityIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      );
+    }
+  };
+
   return (
     <Container maxWidth="lg" sx={{ py: 4 }}>
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-        <ShoppingBasketIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: "2.5rem" }} />
-        <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
+        <ShoppingBasketIcon sx={{ mr: 2, color: theme.palette.primary.main, fontSize: isMobile ? "2rem" : "2.5rem" }} />
+        <Typography variant={isMobile ? "h5" : "h4"} component="h1" sx={{ fontWeight: 600 }}>
           Gestion des Commandes
         </Typography>
       </Box>
 
-      {/* Analytics Section */}
       <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'medium' }}>
+        <Typography variant={isMobile ? "h6" : "h5"} component="h2" gutterBottom sx={{ fontWeight: 'medium' }}>
           Aperçu Rapide
         </Typography>
         <Grid container spacing={2}>
           <Grid item xs={12} sm={6} md={4}>
             <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
-              <ListAltIcon sx={{ fontSize: 40, color: theme.palette.warning.main, mr: 2 }} />
+              <ListAltIcon sx={{ fontSize: isMobile ? 30 : 40, color: theme.palette.warning.main, mr: 2 }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 'bold' }}>
                   {analyticsData.pendingActionsCount}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -521,9 +763,9 @@ function VendorOrderDashboard() {
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
             <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
-              <InProgressIcon sx={{ fontSize: 40, color: theme.palette.info.main, mr: 2 }} />
+              <InProgressIcon sx={{ fontSize: isMobile ? 30 : 40, color: theme.palette.info.main, mr: 2 }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 'bold' }}>
                   {analyticsData.activeOrdersCount}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -534,9 +776,9 @@ function VendorOrderDashboard() {
           </Grid>
           <Grid item xs={12} sm={6} md={4}>
             <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
-              <DeliveredIcon sx={{ fontSize: 40, color: theme.palette.success.main, mr: 2 }} />
+              <DeliveredIcon sx={{ fontSize: isMobile ? 30 : 40, color: theme.palette.success.main, mr: 2 }} />
               <Box>
-                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                <Typography variant={isMobile ? "h6" : "h5"} sx={{ fontWeight: 'bold' }}>
                   {analyticsData.totalDeliveredCount}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
@@ -586,211 +828,11 @@ function VendorOrderDashboard() {
         </Tabs>
       </Box>
 
-      {currentTab === 0 && (
-        <>
-          {isLoading && sortedAndFilteredPendingConfirmationRequests.length === 0 && requests.length === 0 && <CircularProgress sx={{display:'block', margin:'auto', mt:2}}/>}
-          {!isLoading && sortedAndFilteredPendingConfirmationRequests.length === 0 && (
-            <Paper elevation={0} sx={{ p: 3, textAlign: "center", border: `1px dashed ${theme.palette.divider}` }}>
-              <Typography variant="h6" color="text.secondary">
-                {searchQuery ? "Aucune commande correspondante à votre recherche." : "Aucune commande en attente de votre confirmation initiale."}
-              </Typography>
-            </Paper>
-          )}
-          {sortedAndFilteredPendingConfirmationRequests.length > 0 && (
-            <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
-              <Table>
-                <TableHead sx={{backgroundColor: alpha(theme.palette.warning.light, 0.1)}}>
-                  <TableRow>
-                    <TableCell sx={{fontWeight: 'bold'}}>ID Demande</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Date Création</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Adresse</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Actions Initiales</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Détails Articles</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {sortedAndFilteredPendingConfirmationRequests.map((request) => (
-                    <React.Fragment key={request.id}>
-                      <TableRow hover selected={expandedRequest === request.id}>
-                        <TableCell>
-                          <Chip label={request.id.substring(0,8) + "..."} size="small" variant="outlined" />
-                        </TableCell>
-                        <TableCell>{request.createdAt?.toDate().toLocaleDateString('fr-FR')} {request.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
-                        <TableCell>{request.deliveryAddress}</TableCell>
-                        <TableCell sx={{ textAlign: "center" }}>
-                          <Button
-                            variant="contained"
-                            color="success"
-                            size="small"
-                            startIcon={<CheckCircleOutlineIcon />}
-                            onClick={() => handleConfirmOrder(request)}
-                            disabled={actionLoading[request.id]}
-                            sx={{mr: 1}}
-                          >
-                            {actionLoading[request.id] ? <CircularProgress size={20}/> : "Confirmer/Ajuster"}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            size="small"
-                            startIcon={<CancelOutlinedIcon />}
-                            onClick={() => handleOpenRejectDialog(request)}
-                            disabled={actionLoading[request.id]}
-                          >
-                            Rejeter
-                          </Button>
-                        </TableCell>
-                        <TableCell sx={{ textAlign: "center" }}>
-                          <IconButton onClick={() => handleToggleExpand(request.id)} size="small">
-                            {expandedRequest === request.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell colSpan={5} sx={{ p: 0, borderBottom: expandedRequest === request.id ? '1px solid ' + theme.palette.divider : 'none' }}>
-                          <Collapse in={expandedRequest === request.id} timeout="auto" unmountOnExit>
-                            <Box sx={{ p: 3, backgroundColor: alpha(theme.palette.grey[50], 0.5) }}>
-                              <Typography variant="h6" gutterBottom component="div" sx={{ display: 'flex', alignItems: 'center', mb:2 }}>
-                                <ReceiptIcon sx={{mr:1, color: theme.palette.secondary.main}}/> Ajuster les articles pour Commande #{request.id.substring(0,8)}
-                              </Typography>
-                              <Grid container spacing={2}>
-                                <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Informations Client:</Typography>
-                                    <Typography variant="body2"><PersonPinCircleIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.deliveryAddress}</Typography>
-                                    <Typography variant="body2"><CalendarTodayIcon fontSize="small" sx={{verticalAlign: 'middle', mr:0.5}}/> {request.requestedDate} à {request.requestedTime}</Typography>
-                                    {request.deliveryInstructions && <Typography variant="body2" sx={{mt:1}}><em>Instructions: {request.deliveryInstructions}</em></Typography>}
-                                </Grid>
-                                 <Grid item xs={12} md={6}>
-                                    <Typography variant="subtitle1" gutterBottom sx={{fontWeight: 'medium'}}>Frais de livraison (initiaux):</Typography>
-                                    <Typography variant="body2">{(Number(request.deliveryFee) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}</Typography>
-                                </Grid>
-                              </Grid>
-                              <Typography variant="subtitle1" gutterBottom sx={{ mt: 3, fontWeight: 'medium' }}>Articles Demandés:</Typography>
-                              {/* Iterate over request.requestedItems */}
-                              {Array.isArray(request.requestedItems) && request.requestedItems.map((item, index) => {
-                                const itemKey = item.itemId || item.name; // Use itemId as the primary key
-                                const currentItemState = itemChanges[request.id]?.[itemKey] || { available: true, pricePerUnit: '', note: "" };
-                                return (
-                                <Paper key={item.itemId || index} variant="outlined" sx={{ p: 2, mb: 1.5, borderRadius: 2 }}>
-                                  <Grid container spacing={2} alignItems="center">
-                                    <Grid item xs={12} sm={4}>
-                                      <Typography variant="body1" sx={{fontWeight:'medium'}}>{item.name}</Typography>
-                                      <Typography variant="caption" color="textSecondary">
-                                        {item.quantity} {item.unit || 'unité(s)'} - Prix estimé famille (total ligne): {(Number(item.originalEstimatedPrice) || 0).toLocaleString("fr-FR", { style: "currency", currency: "XAF" })}
-                                      </Typography>
-                                    </Grid>
-                                    <Grid item xs={12} sm={2}>
-                                      <FormControlLabel
-                                        control={
-                                          <Checkbox
-                                            checked={!!currentItemState.available} // Ensure boolean
-                                            onChange={(e) => handleItemChange(request.id, itemKey, 'available', e.target.checked)}
-                                            size="small"
-                                          />
-                                        }
-                                        label="Dispo?"
-                                      />
-                                    </Grid>
-                                    <Grid item xs={12} sm={3}>
-                                      <TextField
-                                        label="Votre Prix/Unité"
-                                        type="number"
-                                        size="small"
-                                        fullWidth
-                                        value={currentItemState.pricePerUnit === undefined ? '' : currentItemState.pricePerUnit}
-                                        onChange={(e) => handleItemChange(request.id, itemKey, 'pricePerUnit', e.target.value === '' ? '' : parseFloat(e.target.value))}
-                                        disabled={!currentItemState.available || (vendorType === 'storefront' /* && !item.allowPriceAdjustment - add this if such field exists */)}
-                                        InputProps={{
-                                          inputProps: { min: 0, step: "any" }, // allow decimals
-                                          startAdornment: <InputAdornment position="start">XAF</InputAdornment>,
-                                        }}
-                                      />
-                                    </Grid>
-                                    <Grid item xs={12} sm={3}>
-                                      <TextField
-                                        label="Note article"
-                                        type="text"
-                                        size="small"
-                                        fullWidth
-                                        value={currentItemState.note || ""} // Ensure controlled component
-                                        onChange={(e) => handleItemChange(request.id, itemKey, 'note', e.target.value)}
-                                        disabled={!currentItemState.available}
-                                      />
-                                    </Grid>
-                                  </Grid>
-                                </Paper>
-                              )})}
-                              <TextField
-                                fullWidth
-                                label="Note globale pour la commande (optionnel)"
-                                multiline
-                                rows={2}
-                                value={overallNotes[request.id] || ""}
-                                onChange={(e) => handleOverallNoteChange(request.id, e.target.value)}
-                                sx={{ mt: 2 }}
-                                variant="outlined"
-                              />
-                            </Box>
-                          </Collapse>
-                        </TableCell>
-                      </TableRow>
-                    </React.Fragment>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </>
-      )}
+      {currentTab === 0 && renderPendingConfirmationRequests()}
 
-      {currentTab === 1 && (
-        <>
-          {isLoading && sortedAndFilteredActiveOrders.length === 0 && requests.length === 0 && <CircularProgress sx={{display:'block', margin:'auto', mt:2}}/>}
-          {!isLoading && sortedAndFilteredActiveOrders.length === 0 && (
-            <Paper elevation={0} sx={{ p: 3, textAlign: "center", border: `1px dashed ${theme.palette.divider}` }}>
-               <Typography variant="h6" color="text.secondary">
-                {searchQuery ? "Aucune commande active correspondante à votre recherche." : "Aucune commande active pour le moment."}
-              </Typography>
-            </Paper>
-          )}
-          {sortedAndFilteredActiveOrders.length > 0 && (
-            <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
-              <Table>
-                <TableHead sx={{backgroundColor: alpha(theme.palette.success.light, 0.1)}}>
-                  <TableRow>
-                    <TableCell sx={{fontWeight: 'bold'}}>ID Commande</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Date Création</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Client (Adresse)</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Statut Actuel</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Prochaine Action</TableCell>
-                    <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Détails</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {sortedAndFilteredActiveOrders.map((order) => (
-                    <TableRow key={order.id} hover>
-                      <TableCell><Chip label={order.id.substring(0,8) + "..."} size="small" variant="outlined" color="primary"/></TableCell>
-                      <TableCell>{order.createdAt?.toDate().toLocaleDateString('fr-FR')} {order.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
-                      <TableCell>{order.deliveryAddress}</TableCell>
-                      <TableCell>{getStatusChip(order.status)}</TableCell>
-                      <TableCell sx={{ textAlign: "center" }}>
-                        {renderActionButtonsForActiveOrder(order)}
-                      </TableCell>
-                      <TableCell sx={{ textAlign: "center" }}>
-                        <IconButton onClick={() => handleOpenDetailsModal(order)} size="small" color="info">
-                          <VisibilityIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </>
-      )}
+      {currentTab === 1 && renderActiveOrders()}
 
-      <Dialog open={rejectDialogOpen} onClose={handleCloseRejectDialog}>
+      <Dialog open={rejectDialogOpen} onClose={handleCloseRejectDialog} fullWidth maxWidth="sm">
         <DialogTitle>Rejeter la Commande Initiale</DialogTitle>
         <DialogContent>
           <DialogContentText>
