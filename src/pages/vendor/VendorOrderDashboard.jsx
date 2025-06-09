@@ -34,6 +34,11 @@ import {
   Tab,      // For separating order types
   Snackbar, // For feedback
   Alert as MuiAlert, // Renaming Alert to avoid conflict with Snackbar's Alert
+  FormControl, // Added for sort
+  InputLabel,  // Added for sort
+  Select,      // Added for sort
+  MenuItem,    // Added for sort
+  InputAdornment, // Added for search
 } from "@mui/material"
 import {
   ExpandMore as ExpandMoreIcon,
@@ -50,9 +55,13 @@ import {
   TaskAltOutlined as DeliveredIcon,      // For "Mark as Delivered"
   HourglassTopOutlined as PendingIcon,
   Autorenew as InProgressIcon,
+  Visibility as VisibilityIcon, // Added for Details button
+  Search as SearchIcon, // Added for search bar
+  ListAlt as ListAltIcon, // Added for analytics
 } from "@mui/icons-material"
 import { db } from "../../firebaseConfig"
 import { DELIVERY_STATUSES, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
+import OrderDetailsModal from '../../components/vendor/OrderDetailsModal'; // Added for Order Details
 import {
   collection,
   query,
@@ -64,6 +73,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore"
 import { useAuth } from "../../contexts/AuthContext" // Assuming AuthContext provides vendor info
+import { useMemo } from "react"; // Added for useMemo
 
 // Placeholder for vendor data - replace with actual context/data fetching
 // const currentVendor = {
@@ -82,6 +92,8 @@ function VendorOrderDashboard() {
   const [error, setError] = useState("")
   const [expandedRequest, setExpandedRequest] = useState(null) // For pending confirmation items
   const [actionLoading, setActionLoading] = useState({}) // Tracks loading state for individual order actions { [requestId]: boolean }
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
   // States for item-level changes (for pending_vendor_confirmation)
   const [itemChanges, setItemChanges] = useState({})
@@ -92,9 +104,21 @@ function VendorOrderDashboard() {
 
   // Tab state for different order categories
   const [currentTab, setCurrentTab] = useState(0) // 0 for Pending Confirmation, 1 for Active Orders
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' or 'desc'
+  const [searchQuery, setSearchQuery] = useState(''); // Added for search
 
   // Snackbar state
   const [snackbar, setSnackbar] = useState({ open: false, message: "", severity: "success" })
+
+  const handleOpenDetailsModal = (order) => {
+    setSelectedOrderDetails(order);
+    setIsDetailsModalOpen(true);
+  };
+
+  const handleCloseDetailsModal = () => {
+    setSelectedOrderDetails(null);
+    setIsDetailsModalOpen(false);
+  };
 
   const vendorId = userData?.uid
   const vendorType = userData?.vendorProfile?.vendorType
@@ -116,7 +140,8 @@ function VendorOrderDashboard() {
           DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
           DELIVERY_STATUSES.CONFIRMED.key,
           DELIVERY_STATUSES.SHOPPING.key,
-          DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
+          DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+          DELIVERY_STATUSES.DELIVERED.key // Added this
         ])
       )
       const querySnapshot = await getDocs(q)
@@ -159,7 +184,8 @@ function VendorOrderDashboard() {
         // Add the processed items array as 'items' to the request object
         fetchedRequests.push({ id: dRequestDoc.id, ...requestData, items: itemsToDisplay })
       }
-      setRequests(fetchedRequests.sort((a,b) => (a.createdAt?.toDate() > b.createdAt?.toDate() ? -1 : 1)))
+      // Remove initial sort, will be handled by useMemo
+      setRequests(fetchedRequests)
     } catch (err) {
       console.error("Erreur détaillée lors du chargement des demandes pour le dashboard vendeur:", err);
       setError("Impossible de charger les commandes pour le moment. Veuillez vérifier votre connexion et réessayer. Si le problème persiste, contactez le support.");
@@ -357,6 +383,70 @@ function VendorOrderDashboard() {
       DELIVERY_STATUSES.OUT_FOR_DELIVERY.key
     ].includes(r.status));
 
+  const sortedPendingConfirmationRequests = useMemo(() => {
+      const filtered = pendingConfirmationRequests.filter(request => {
+          if (!searchQuery.trim()) return true;
+          const lowerSearchQuery = searchQuery.toLowerCase();
+          return (
+              request.id.toLowerCase().includes(lowerSearchQuery) ||
+              (request.deliveryAddress && request.deliveryAddress.toLowerCase().includes(lowerSearchQuery))
+          );
+      });
+      return [...filtered].sort((a, b) => {
+          const dateA = a.createdAt?.toDate() || new Date(0);
+          const dateB = b.createdAt?.toDate() || new Date(0);
+          return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+  }, [pendingConfirmationRequests, sortOrder, searchQuery]);
+
+  const sortedActiveOrders = useMemo(() => {
+      const filtered = activeOrders.filter(request => {
+          if (!searchQuery.trim()) return true;
+          const lowerSearchQuery = searchQuery.toLowerCase();
+          return (
+              request.id.toLowerCase().includes(lowerSearchQuery) ||
+              (request.deliveryAddress && request.deliveryAddress.toLowerCase().includes(lowerSearchQuery))
+          );
+      });
+      return [...filtered].sort((a, b) => {
+          const dateA = a.createdAt?.toDate() || new Date(0);
+          const dateB = b.createdAt?.toDate() || new Date(0);
+          return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      });
+  }, [activeOrders, sortOrder, searchQuery]);
+
+  const analyticsData = useMemo(() => {
+    if (!requests || requests.length === 0) {
+      return {
+        pendingActionsCount: 0,
+        activeOrdersCount: 0,
+        totalDeliveredCount: 0,
+      };
+    }
+
+    const pendingActionsCount = requests.filter(
+      (r) => r.status === DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key
+    ).length;
+
+    const activeOrdersCount = requests.filter((r) =>
+      [
+        DELIVERY_STATUSES.CONFIRMED.key,
+        DELIVERY_STATUSES.SHOPPING.key,
+        DELIVERY_STATUSES.OUT_FOR_DELIVERY.key,
+      ].includes(r.status)
+    ).length;
+
+    const totalDeliveredCount = requests.filter(
+      (r) => r.status === DELIVERY_STATUSES.DELIVERED.key
+    ).length;
+
+    return {
+      pendingActionsCount,
+      activeOrdersCount,
+      totalDeliveredCount,
+    };
+  }, [requests]);
+
 
   if (isLoading) { // Simplified initial loading
     return (
@@ -414,23 +504,101 @@ function VendorOrderDashboard() {
         </Typography>
       </Box>
 
+      {/* Analytics Section */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" component="h2" gutterBottom sx={{ fontWeight: 'medium' }}>
+          Aperçu Rapide
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <ListAltIcon sx={{ fontSize: 40, color: theme.palette.warning.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.pendingActionsCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Action(s) Requise(s)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <InProgressIcon sx={{ fontSize: 40, color: theme.palette.info.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.activeOrdersCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Commande(s) Active(s)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+          <Grid item xs={12} sm={6} md={4}>
+            <Paper elevation={2} sx={{ p: 2, display: 'flex', alignItems: 'center', borderRadius: 2 }}>
+              <DeliveredIcon sx={{ fontSize: 40, color: theme.palette.success.main, mr: 2 }} />
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                  {analyticsData.totalDeliveredCount}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  Commande(s) Terminée(s) (Total)
+                </Typography>
+              </Box>
+            </Paper>
+          </Grid>
+        </Grid>
+      </Box>
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 2 }}>
+        <TextField
+          label="Rechercher (ID Commande, Adresse)"
+          variant="outlined"
+          size="small"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          sx={{ flexGrow: 1, minWidth: '300px', maxWidth: '500px' }}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon />
+              </InputAdornment>
+            ),
+          }}
+        />
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel id="sort-order-label">Trier par date</InputLabel>
+          <Select
+          labelId="sort-order-label"
+          id="sort-order-select"
+          value={sortOrder}
+          label="Trier par date"
+          onChange={(e) => setSortOrder(e.target.value)}
+        >
+          <MenuItem value="desc">Date: Plus récent d'abord</MenuItem>
+          <MenuItem value="asc">Date: Plus ancien d'abord</MenuItem>
+        </Select>
+      </FormControl>
+
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb:3 }}>
         <Tabs value={currentTab} onChange={handleTabChange} aria-label="Order tabs">
-          <Tab label={`Action Requise (${pendingConfirmationRequests.length})`} />
-          <Tab label={`Commandes Actives (${activeOrders.length})`} />
+          <Tab label={`Action Requise (${sortedPendingConfirmationRequests.length})`} />
+          <Tab label={`Commandes Actives (${sortedActiveOrders.length})`} />
         </Tabs>
       </Box>
 
       {/* Tab for Pending Vendor Confirmation */}
       {currentTab === 0 && (
         <>
-          {isLoading && pendingConfirmationRequests.length === 0 && <CircularProgress sx={{display:'block', margin:'auto'}}/>}
-          {!isLoading && pendingConfirmationRequests.length === 0 && (
+          {isLoading && sortedPendingConfirmationRequests.length === 0 && <CircularProgress sx={{display:'block', margin:'auto'}}/>}
+          {!isLoading && sortedPendingConfirmationRequests.length === 0 && (
             <Paper elevation={0} sx={{ p: 3, textAlign: "center", border: `1px dashed ${theme.palette.divider}` }}>
               <Typography variant="h6" color="text.secondary">Aucune commande en attente de votre confirmation initiale.</Typography>
             </Paper>
           )}
-          {pendingConfirmationRequests.length > 0 && (
+          {sortedPendingConfirmationRequests.length > 0 && (
             <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
               <Table>
                 <TableHead sx={{backgroundColor: alpha(theme.palette.warning.light, 0.1)}}>
@@ -443,13 +611,13 @@ function VendorOrderDashboard() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {pendingConfirmationRequests.map((request) => (
+                  {sortedPendingConfirmationRequests.map((request) => (
                     <>
                       <TableRow key={request.id} hover selected={expandedRequest === request.id}>
                         <TableCell>
                           <Chip label={request.id.substring(0,8) + "..."} size="small" variant="outlined" />
                         </TableCell>
-                        <TableCell>{request.requestedDate} à {request.requestedTime}</TableCell>
+                        <TableCell>{request.createdAt?.toDate().toLocaleDateString('fr-FR')} {request.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
                         <TableCell>{request.deliveryAddress}</TableCell>
                         <TableCell sx={{ textAlign: "center" }}>
                           <Button
@@ -579,33 +747,39 @@ function VendorOrderDashboard() {
       {/* Tab for Active Orders */}
       {currentTab === 1 && (
         <>
-          {isLoading && activeOrders.length === 0 && <CircularProgress sx={{display:'block', margin:'auto'}}/>}
-          {!isLoading && activeOrders.length === 0 && (
+          {isLoading && sortedActiveOrders.length === 0 && <CircularProgress sx={{display:'block', margin:'auto'}}/>}
+          {!isLoading && sortedActiveOrders.length === 0 && (
             <Paper elevation={0} sx={{ p: 3, textAlign: "center", border: `1px dashed ${theme.palette.divider}` }}>
               <Typography variant="h6" color="text.secondary">Aucune commande active pour le moment.</Typography>
             </Paper>
           )}
-          {activeOrders.length > 0 && (
+          {sortedActiveOrders.length > 0 && (
             <TableContainer component={Paper} elevation={0} sx={{ border: `1px solid ${theme.palette.divider}`}}>
               <Table>
                 <TableHead sx={{backgroundColor: alpha(theme.palette.success.light, 0.1)}}>
                   <TableRow>
                     <TableCell sx={{fontWeight: 'bold'}}>ID Commande</TableCell>
-                    <TableCell sx={{fontWeight: 'bold'}}>Date</TableCell>
+                    <TableCell sx={{fontWeight: 'bold'}}>Date Création</TableCell>
                     <TableCell sx={{fontWeight: 'bold'}}>Client (Adresse)</TableCell>
                     <TableCell sx={{fontWeight: 'bold'}}>Statut Actuel</TableCell>
                     <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Prochaine Action</TableCell>
+                    <TableCell sx={{fontWeight: 'bold', textAlign: 'center'}}>Détails</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {activeOrders.map((order) => (
+                  {sortedActiveOrders.map((order) => (
                     <TableRow key={order.id} hover>
                       <TableCell><Chip label={order.id.substring(0,8) + "..."} size="small" variant="outlined" color="primary"/></TableCell>
-                      <TableCell>{order.requestedDate} à {order.requestedTime}</TableCell>
+                      <TableCell>{order.createdAt?.toDate().toLocaleDateString('fr-FR')} {order.createdAt?.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}</TableCell>
                       <TableCell>{order.deliveryAddress}</TableCell> {/* Consider fetching client name if available */}
                       <TableCell>{getStatusChip(order.status)}</TableCell>
                       <TableCell sx={{ textAlign: "center" }}>
                         {renderActionButtonsForActiveOrder(order)}
+                      </TableCell>
+                      <TableCell sx={{ textAlign: "center" }}>
+                        <IconButton onClick={() => handleOpenDetailsModal(order)} size="small" color="info">
+                          <VisibilityIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -657,6 +831,12 @@ function VendorOrderDashboard() {
           {snackbar.message}
         </MuiAlert>
       </Snackbar>
+
+      <OrderDetailsModal
+        open={isDetailsModalOpen}
+        onClose={handleCloseDetailsModal}
+        order={selectedOrderDetails}
+      />
 
     </Container>
   )

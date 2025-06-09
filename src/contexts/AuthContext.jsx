@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useState, useEffect, useContext } from "react"
-import { onAuthStateChanged } from "firebase/auth"
+import { onAuthStateChanged, signOut } from "firebase/auth"
 import { auth, db } from "../firebaseConfig"
 import { doc, onSnapshot } from "firebase/firestore" // Import onSnapshot
 
@@ -50,6 +50,8 @@ export default function AuthProvider({ children }) {
               ...vendorData,             // Data from Firestore vendors collection
               isVendor: true,
               vendorId: currentUser.uid, // Explicitly set for clarity
+              isApproved: vendorData.isApproved === true,
+              isActive: vendorData.isActive === true,
             });
             setLoading(false);
           } else {
@@ -149,6 +151,7 @@ export default function AuthProvider({ children }) {
     currentUser,
     userData,
     loading,
+    logout: () => signOut(auth),
   }
 
   // Render children only when initial loading is complete
