@@ -11,7 +11,6 @@ import {
   Container,
   Box,
   IconButton,
-  Drawer,
   List,
   ListItem,
   ListItemButton,
@@ -31,6 +30,11 @@ import {
   Tooltip,
   Collapse,
   Paper,
+  Slide,
+  Zoom,
+  SwipeableDrawer,
+  BottomNavigation,
+  BottomNavigationAction,
 } from "@mui/material"
 import {
   Menu as MenuIcon,
@@ -63,29 +67,29 @@ const navigationCategories = [
   {
     title: "Principal",
     items: [
-      { path: "/", label: "Accueil", icon: HomeIcon },
-      { path: "/planner", label: "Planificateur", icon: CalendarIcon },
+      { path: "/", label: "Accueil", icon: HomeIcon, color: "primary" },
+      { path: "/planner", label: "Planificateur", icon: CalendarIcon, color: "secondary" },
     ],
   },
   {
     title: "Cuisine",
     items: [
-      { path: "/recipes", label: "Mes Recettes", icon: RestaurantIcon },
-      { path: "/ingredients", label: "Ingrédients", icon: LocalGroceryStoreIcon },
-      { path: "/stock", label: "Garde Manger", icon: KitchenIcon },
+      { path: "/recipes", label: "Mes Recettes", icon: RestaurantIcon, color: "warning" },
+      { path: "/ingredients", label: "Ingrédients", icon: LocalGroceryStoreIcon, color: "success" },
+      { path: "/stock", label: "Garde Manger", icon: KitchenIcon, color: "info" },
     ],
   },
   {
     title: "Shopping",
     items: [
-      { path: "/shopping-list", label: "Liste de Courses", icon: ShoppingCartIcon },
-      { path: "/deliveries", label: "Mes Livraisons", icon: LocalShippingIcon },
-      { path: "/vendors", label: "Vendeurs", icon: StoreIcon },
+      { path: "/shopping-list", label: "Liste de Courses", icon: ShoppingCartIcon, color: "error" },
+      { path: "/deliveries", label: "Mes Livraisons", icon: LocalShippingIcon, color: "secondary" },
+      { path: "/vendors", label: "Vendeurs", icon: StoreIcon, color: "primary" },
     ],
   },
   {
     title: "Social",
-    items: [{ path: "/family", label: "Ma Famille", icon: PeopleIcon }],
+    items: [{ path: "/family", label: "Ma Famille", icon: PeopleIcon, color: "warning" }],
   },
 ]
 
@@ -96,13 +100,35 @@ export default function ClientLayout({ children }) {
   const navigate = useNavigate()
   const location = useLocation()
   const theme = useTheme()
-  const isMobile = useMediaQuery(theme.breakpoints.down("lg"))
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"))
   const isTablet = useMediaQuery(theme.breakpoints.between("md", "lg"))
+  const isDesktop = useMediaQuery(theme.breakpoints.up("lg"))
 
   const [mobileOpen, setMobileOpen] = useState(false)
   const [profileMenuAnchor, setProfileMenuAnchor] = useState(null)
   const [moreOptionsAnchor, setMoreOptionsAnchor] = useState(null)
   const [expandedCategories, setExpandedCategories] = useState({})
+  const [bottomNavValue, setBottomNavValue] = useState(0)
+  const [isScrolled, setIsScrolled] = useState(false)
+
+  // Handle scroll effect for header
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10)
+    }
+    window.addEventListener("scroll", handleScroll)
+    return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
+  // Update bottom navigation based on current route
+  useEffect(() => {
+    const currentPath = location.pathname
+    const mainPaths = ["/", "/planner", "/recipes", "/shopping-list", "/family"]
+    const currentIndex = mainPaths.findIndex((path) => currentPath === path || currentPath.startsWith(path))
+    if (currentIndex !== -1) {
+      setBottomNavValue(currentIndex)
+    }
+  }, [location.pathname])
 
   useEffect(() => {
     const initialExpanded = {}
@@ -151,192 +177,310 @@ export default function ClientLayout({ children }) {
   }
 
   const isActivePath = (path) => {
-    return location.pathname === path
+    return location.pathname === path || (path !== "/" && location.pathname.startsWith(path))
   }
 
   const isActiveCategory = (category) => {
     return category.items.some((item) => isActivePath(item.path))
   }
 
+  const handleBottomNavChange = (event, newValue) => {
+    setBottomNavValue(newValue)
+    const paths = ["/", "/planner", "/recipes", "/shopping-list", "/family"]
+    if (paths[newValue]) {
+      navigate(paths[newValue])
+    }
+  }
+
   const drawer = (
     <Paper
       elevation={0}
       sx={{
-        width: 280,
+        width: 300,
         height: "100%",
         background: `linear-gradient(145deg, 
           ${alpha(theme.palette.background.paper, 0.98)} 0%, 
-          ${alpha(theme.palette.primary.main, 0.05)} 100%)`,
+          ${alpha(theme.palette.primary.main, 0.03)} 50%,
+          ${alpha(theme.palette.secondary.main, 0.02)} 100%)`,
         backdropFilter: "blur(20px)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        transition: "all 0.3s ease",
+        borderRight: `1px solid ${alpha(theme.palette.divider, 0.08)}`,
       }}
     >
+      {/* Enhanced Header */}
       <Box
         sx={{
           p: 3,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
-          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, transparent 100%)`,
+          background: `linear-gradient(135deg, 
+            ${alpha(theme.palette.primary.main, 0.08)} 0%, 
+            ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+          borderBottom: `1px solid ${alpha(theme.palette.divider, 0.08)}`,
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        <Typography
-          variant="h6"
+        <Box
           sx={{
-            fontWeight: 800,
-            background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-            backgroundClip: "text",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-            display: "flex",
-            alignItems: "center",
-            gap: 1.5,
-            fontSize: "1.1rem",
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: `radial-gradient(circle at 20% 50%, ${alpha(theme.palette.primary.main, 0.1)} 0%, transparent 50%)`,
           }}
-        >
-          <img src={Logo1 || "/placeholder.svg"} alt="Logo" style={{ width: "32px", height: "auto" }} />
-          EasyMeal 2025
-        </Typography>
+        />
+        <Box sx={{ position: "relative", zIndex: 1, display: "flex", alignItems: "center", gap: 2 }}>
+          <Box
+            sx={{
+              width: 40,
+              height: 40,
+              borderRadius: 2,
+              background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
+            }}
+          >
+            <img src={Logo1 || "/placeholder.svg"} alt="Logo" style={{ width: "24px", height: "auto" }} />
+          </Box>
+          <Box>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 800,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                backgroundClip: "text",
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                fontSize: "1.1rem",
+                lineHeight: 1.2,
+              }}
+            >
+              EasyMeal 2025
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+              Planification culinaire
+            </Typography>
+          </Box>
+        </Box>
         <IconButton
           onClick={handleDrawerToggle}
           sx={{
+            position: "relative",
+            zIndex: 1,
             color: theme.palette.text.secondary,
+            backgroundColor: alpha(theme.palette.background.paper, 0.8),
             "&:hover": {
               backgroundColor: alpha(theme.palette.primary.main, 0.1),
               transform: "rotate(90deg)",
             },
-            transition: "all 0.3s ease",
+            transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
           }}
         >
           <CloseIcon />
         </IconButton>
       </Box>
 
+      {/* Enhanced User Profile Section */}
       {currentUser && (
-        <Box sx={{ p: 3, borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+        <Box
+          sx={{
+            p: 3,
+            borderBottom: `1px solid ${alpha(theme.palette.divider, 0.08)}`,
+            background: `linear-gradient(135deg, 
+              ${alpha(theme.palette.background.paper, 0.8)} 0%, 
+              ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+          }}
+        >
           <Stack direction="row" spacing={2} alignItems="center">
-            <Avatar
-              sx={{
-                width: 48,
-                height: 48,
-                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                fontSize: "1.2rem",
-                fontWeight: 700,
-                boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.25)}`,
-              }}
-            >
-              {userData?.displayName?.charAt(0) || currentUser.email?.charAt(0).toUpperCase()}
-            </Avatar>
+            <Box sx={{ position: "relative" }}>
+              <Avatar
+                sx={{
+                  width: 56,
+                  height: 56,
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                  fontSize: "1.5rem",
+                  fontWeight: 700,
+                  boxShadow: `0 6px 20px ${alpha(theme.palette.primary.main, 0.3)}`,
+                  border: `3px solid ${alpha(theme.palette.background.paper, 0.8)}`,
+                }}
+              >
+                {userData?.displayName?.charAt(0) || currentUser.email?.charAt(0).toUpperCase()}
+              </Avatar>
+              <Box
+                sx={{
+                  position: "absolute",
+                  bottom: -2,
+                  right: -2,
+                  width: 16,
+                  height: 16,
+                  borderRadius: "50%",
+                  backgroundColor: theme.palette.success.main,
+                  border: `2px solid ${theme.palette.background.paper}`,
+                }}
+              />
+            </Box>
             <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: "0.95rem" }} noWrap>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, fontSize: "1rem" }} noWrap>
                 {userData?.displayName || "Utilisateur"}
               </Typography>
-              <Typography variant="caption" color="text.secondary" noWrap>
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ fontSize: "0.8rem" }}>
                 {currentUser.email}
               </Typography>
-              {userData?.isAdmin && (
+              <Stack direction="row" spacing={1} sx={{ mt: 0.5 }}>
+                {userData?.isAdmin && (
+                  <Chip
+                    label="Admin"
+                    size="small"
+                    sx={{
+                      height: 20,
+                      fontSize: "0.7rem",
+                      backgroundColor: alpha(theme.palette.warning.main, 0.15),
+                      color: theme.palette.warning.main,
+                      fontWeight: 600,
+                      border: `1px solid ${alpha(theme.palette.warning.main, 0.3)}`,
+                    }}
+                  />
+                )}
                 <Chip
-                  label="Admin"
+                  label="En ligne"
                   size="small"
                   sx={{
-                    mt: 0.5,
                     height: 20,
                     fontSize: "0.7rem",
-                    backgroundColor: alpha(theme.palette.warning.main, 0.15),
-                    color: theme.palette.warning.main,
+                    backgroundColor: alpha(theme.palette.success.main, 0.15),
+                    color: theme.palette.success.main,
                     fontWeight: 600,
                   }}
                 />
-              )}
+              </Stack>
             </Box>
           </Stack>
         </Box>
       )}
 
-      <Box sx={{ flex: 1, overflow: "auto", py: 1 }}>
+      {/* Enhanced Navigation */}
+      <Box sx={{ flex: 1, overflow: "auto", py: 2 }}>
         <List sx={{ px: 2 }}>
           {currentUser ? (
             <>
-              {navigationCategories.map((category) => (
+              {navigationCategories.map((category, categoryIndex) => (
                 <Box key={category.title}>
-                  <ListItemButton
-                    onClick={() => toggleCategory(category.title)}
-                    sx={{
-                      borderRadius: 2,
-                      mb: 0.5,
-                      py: 1,
-                      backgroundColor: isActiveCategory(category)
-                        ? alpha(theme.palette.primary.main, 0.1)
-                        : "transparent",
-                      "&:hover": {
-                        backgroundColor: alpha(theme.palette.primary.main, 0.08),
-                      },
-                      transition: "background-color 0.2s ease",
-                    }}
-                  >
-                    <ListItemText
-                      primary={category.title}
-                      primaryTypographyProps={{
-                        fontSize: "0.85rem",
-                        fontWeight: 600,
-                        color: theme.palette.text.secondary,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
+                  <Zoom in timeout={300 + categoryIndex * 100}>
+                    <ListItemButton
+                      onClick={() => toggleCategory(category.title)}
+                      sx={{
+                        borderRadius: 3,
+                        mb: 1,
+                        py: 1.5,
+                        px: 2,
+                        backgroundColor: isActiveCategory(category)
+                          ? alpha(theme.palette.primary.main, 0.12)
+                          : "transparent",
+                        "&:hover": {
+                          backgroundColor: alpha(theme.palette.primary.main, 0.08),
+                          transform: "translateX(4px)",
+                        },
+                        transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                        border: `1px solid ${
+                          isActiveCategory(category) ? alpha(theme.palette.primary.main, 0.2) : "transparent"
+                        }`,
                       }}
-                    />
-                    {expandedCategories[category.title] ? <ExpandLess /> : <ExpandMore />}
-                  </ListItemButton>
+                    >
+                      <ListItemText
+                        primary={category.title}
+                        primaryTypographyProps={{
+                          fontSize: "0.9rem",
+                          fontWeight: 700,
+                          color: isActiveCategory(category) ? theme.palette.primary.main : theme.palette.text.secondary,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                        }}
+                      />
+                      {expandedCategories[category.title] ? (
+                        <ExpandLess sx={{ color: theme.palette.primary.main }} />
+                      ) : (
+                        <ExpandMore sx={{ color: theme.palette.text.secondary }} />
+                      )}
+                    </ListItemButton>
+                  </Zoom>
 
                   <Collapse in={expandedCategories[category.title]} timeout="auto" unmountOnExit>
-                    <List component="div" disablePadding sx={{ pl: 2 }}>
-                      {category.items.map((item) => {
+                    <List component="div" disablePadding sx={{ pl: 1 }}>
+                      {category.items.map((item, itemIndex) => {
                         const Icon = item.icon
                         const isActive = isActivePath(item.path)
                         return (
-                          <ListItem key={item.path} disablePadding sx={{ mb: 0.5 }}>
-                            <ListItemButton
-                              component={RouterLink}
-                              to={item.path}
-                              onClick={handleDrawerToggle}
-                              sx={{
-                                borderRadius: 2,
-                                py: 1.2,
-                                px: 2,
-                                backgroundColor: isActive
-                                  ? alpha(theme.palette.primary.main, 0.15)
-                                  : "transparent",
-                                color: isActive ? theme.palette.primary.main : theme.palette.text.primary,
-                                border: isActive
-                                  ? `1px solid ${alpha(theme.palette.primary.main, 0.3)}`
-                                  : "1px solid transparent",
-                                "&:hover": {
-                                  backgroundColor: alpha(theme.palette.primary.main, 0.1),
-                                  transform: "translateX(4px)",
-                                },
-                                transition: "all 0.3s ease",
-                              }}
-                            >
-                              <ListItemIcon
+                          <Slide
+                            key={item.path}
+                            direction="right"
+                            in={expandedCategories[category.title]}
+                            timeout={200 + itemIndex * 50}
+                          >
+                            <ListItem disablePadding sx={{ mb: 0.5 }}>
+                              <ListItemButton
+                                component={RouterLink}
+                                to={item.path}
+                                onClick={handleDrawerToggle}
                                 sx={{
-                                  color: isActive ? theme.palette.primary.main : theme.palette.text.secondary,
-                                  minWidth: 36,
+                                  borderRadius: 3,
+                                  py: 1.5,
+                                  px: 2,
+                                  ml: 2,
+                                  backgroundColor: isActive
+                                    ? `linear-gradient(135deg, ${alpha(theme.palette[item.color].main, 0.15)} 0%, ${alpha(theme.palette[item.color].main, 0.08)} 100%)`
+                                    : "transparent",
+                                  color: isActive ? theme.palette[item.color].main : theme.palette.text.primary,
+                                  border: isActive
+                                    ? `1px solid ${alpha(theme.palette[item.color].main, 0.3)}`
+                                    : "1px solid transparent",
+                                  "&:hover": {
+                                    backgroundColor: alpha(theme.palette[item.color].main, 0.1),
+                                    transform: "translateX(8px)",
+                                    boxShadow: `0 4px 12px ${alpha(theme.palette[item.color].main, 0.2)}`,
+                                  },
+                                  transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                                  position: "relative",
+                                  overflow: "hidden",
+                                  "&::before": isActive
+                                    ? {
+                                        content: '""',
+                                        position: "absolute",
+                                        left: 0,
+                                        top: 0,
+                                        bottom: 0,
+                                        width: 4,
+                                        backgroundColor: theme.palette[item.color].main,
+                                        borderRadius: "0 2px 2px 0",
+                                      }
+                                    : {},
                                 }}
                               >
-                                <Icon sx={{ fontSize: "1.3rem" }} />
-                              </ListItemIcon>
-                              <ListItemText
-                                primary={item.label}
-                                primaryTypographyProps={{
-                                  fontWeight: isActive ? 600 : 400,
-                                  fontSize: "0.9rem",
-                                }}
-                              />
-                            </ListItemButton>
-                          </ListItem>
+                                <ListItemIcon
+                                  sx={{
+                                    color: isActive ? theme.palette[item.color].main : theme.palette.text.secondary,
+                                    minWidth: 40,
+                                    transition: "all 0.3s ease",
+                                  }}
+                                >
+                                  <Icon sx={{ fontSize: "1.4rem" }} />
+                                </ListItemIcon>
+                                <ListItemText
+                                  primary={item.label}
+                                  primaryTypographyProps={{
+                                    fontWeight: isActive ? 600 : 400,
+                                    fontSize: "0.95rem",
+                                  }}
+                                />
+                              </ListItemButton>
+                            </ListItem>
+                          </Slide>
                         )
                       })}
                     </List>
@@ -344,69 +488,82 @@ export default function ClientLayout({ children }) {
                 </Box>
               ))}
 
+              {/* Enhanced Admin Section */}
               {userData?.isAdmin && (
-                <Box sx={{ mt: 2, pt: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.15)}` }}>
-                  <ListItem disablePadding sx={{ mb: 0.5 }}>
-                    <ListItemButton
-                      component={RouterLink}
-                      to="/admin"
-                      onClick={handleDrawerToggle}
-                      sx={{
-                        borderRadius: 2,
-                        py: 1.2,
-                        px: 2,
-                        backgroundColor: isActivePath("/admin")
-                          ? alpha(theme.palette.warning.main, 0.15)
-                          : "transparent",
-                        color: isActivePath("/admin") ? theme.palette.warning.main : theme.palette.text.primary,
-                        "&:hover": {
-                          backgroundColor: alpha(theme.palette.warning.main, 0.1),
-                        },
-                        transition: "all 0.3s ease",
-                      }}
-                    >
-                      <ListItemIcon
+                <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.15)}` }}>
+                  <Zoom in timeout={800}>
+                    <ListItem disablePadding sx={{ mb: 0.5 }}>
+                      <ListItemButton
+                        component={RouterLink}
+                        to="/admin"
+                        onClick={handleDrawerToggle}
                         sx={{
-                          color: isActivePath("/admin") ? theme.palette.warning.main : theme.palette.text.secondary,
-                          minWidth: 36,
+                          borderRadius: 3,
+                          py: 1.5,
+                          px: 2,
+                          backgroundColor: isActivePath("/admin")
+                            ? `linear-gradient(135deg, ${alpha(theme.palette.warning.main, 0.15)} 0%, ${alpha(theme.palette.warning.main, 0.08)} 100%)`
+                            : "transparent",
+                          color: isActivePath("/admin") ? theme.palette.warning.main : theme.palette.text.primary,
+                          border: `1px solid ${
+                            isActivePath("/admin") ? alpha(theme.palette.warning.main, 0.3) : "transparent"
+                          }`,
+                          "&:hover": {
+                            backgroundColor: alpha(theme.palette.warning.main, 0.1),
+                            transform: "translateX(4px)",
+                            boxShadow: `0 4px 12px ${alpha(theme.palette.warning.main, 0.2)}`,
+                          },
+                          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                         }}
                       >
-                        <AdminIcon sx={{ fontSize: "1.3rem" }} />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary="Administration"
-                        primaryTypographyProps={{
-                          fontWeight: isActivePath("/admin") ? 600 : 400,
-                          fontSize: "0.9rem",
-                        }}
-                      />
-                    </ListItemButton>
-                  </ListItem>
+                        <ListItemIcon
+                          sx={{
+                            color: isActivePath("/admin") ? theme.palette.warning.main : theme.palette.text.secondary,
+                            minWidth: 40,
+                          }}
+                        >
+                          <AdminIcon sx={{ fontSize: "1.4rem" }} />
+                        </ListItemIcon>
+                        <ListItemText
+                          primary="Administration"
+                          primaryTypographyProps={{
+                            fontWeight: isActivePath("/admin") ? 600 : 400,
+                            fontSize: "0.95rem",
+                          }}
+                        />
+                      </ListItemButton>
+                    </ListItem>
+                  </Zoom>
                 </Box>
               )}
 
-              <Divider sx={{ my: 2, mx: 2, borderColor: alpha(theme.palette.divider, 0.15) }} />
-              <ListItem disablePadding>
-                <ListItemButton
-                  onClick={handleLogout}
-                  sx={{
-                    borderRadius: 2,
-                    py: 1.2,
-                    px: 2,
-                    mx: 2,
-                    color: theme.palette.error.main,
-                    "&:hover": {
-                      backgroundColor: alpha(theme.palette.error.main, 0.1),
-                    },
-                    transition: "all 0.3s ease",
-                  }}
-                >
-                  <ListItemIcon sx={{ color: theme.palette.error.main, minWidth: 36 }}>
-                    <LogoutIcon sx={{ fontSize: "1.3rem" }} />
-                  </ListItemIcon>
-                  <ListItemText primary="Déconnexion" primaryTypographyProps={{ fontSize: "0.9rem" }} />
-                </ListItemButton>
-              </ListItem>
+              {/* Enhanced Logout Section */}
+              <Box sx={{ mt: 3, pt: 2, borderTop: `1px solid ${alpha(theme.palette.divider, 0.15)}` }}>
+                <ListItem disablePadding>
+                  <ListItemButton
+                    onClick={handleLogout}
+                    sx={{
+                      borderRadius: 3,
+                      py: 1.5,
+                      px: 2,
+                      color: theme.palette.error.main,
+                      "&:hover": {
+                        backgroundColor: alpha(theme.palette.error.main, 0.1),
+                        transform: "translateX(4px)",
+                      },
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                    }}
+                  >
+                    <ListItemIcon sx={{ color: theme.palette.error.main, minWidth: 40 }}>
+                      <LogoutIcon sx={{ fontSize: "1.4rem" }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary="Déconnexion"
+                      primaryTypographyProps={{ fontSize: "0.95rem", fontWeight: 500 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              </Box>
             </>
           ) : (
             <>
@@ -416,14 +573,14 @@ export default function ClientLayout({ children }) {
                   to="/login"
                   onClick={handleDrawerToggle}
                   sx={{
-                    borderRadius: 2,
-                    py: 1.5,
+                    borderRadius: 3,
+                    py: 2,
                     px: 2,
                     "&:hover": {
                       backgroundColor: alpha(theme.palette.primary.main, 0.1),
                       transform: "translateX(4px)",
                     },
-                    transition: "all 0.3s ease",
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   }}
                 >
                   <ListItemIcon sx={{ minWidth: 40 }}>
@@ -438,14 +595,14 @@ export default function ClientLayout({ children }) {
                   to="/signup"
                   onClick={handleDrawerToggle}
                   sx={{
-                    borderRadius: 2,
-                    py: 1.5,
+                    borderRadius: 3,
+                    py: 2,
                     px: 2,
                     "&:hover": {
                       backgroundColor: alpha(theme.palette.primary.main, 0.1),
                       transform: "translateX(4px)",
                     },
-                    transition: "all 0.3s ease",
+                    transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                   }}
                 >
                   <ListItemIcon sx={{ minWidth: 40 }}>
@@ -463,20 +620,27 @@ export default function ClientLayout({ children }) {
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+      {/* Enhanced AppBar */}
       <AppBar
         position="sticky"
         elevation={0}
         sx={{
-          background: `linear-gradient(135deg, 
-            ${alpha(theme.palette.background.paper, 0.95)} 0%, 
-            ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
+          background: isScrolled
+            ? `linear-gradient(135deg, 
+                ${alpha(theme.palette.background.paper, 0.98)} 0%, 
+                ${alpha(theme.palette.primary.main, 0.02)} 100%)`
+            : `linear-gradient(135deg, 
+                ${alpha(theme.palette.background.paper, 0.95)} 0%, 
+                ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
           backdropFilter: "blur(20px)",
           borderBottom: `1px solid ${alpha(theme.palette.divider, 0.08)}`,
           color: theme.palette.text.primary,
           zIndex: theme.zIndex.drawer + 1,
+          transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+          boxShadow: isScrolled ? `0 4px 20px ${alpha(theme.palette.primary.main, 0.1)}` : "none",
         }}
       >
-        <Toolbar sx={{ px: { xs: 2, sm: 3 }, minHeight: { xs: "56px", sm: "64px" } }}>
+        <Toolbar sx={{ px: { xs: 2, sm: 3 }, minHeight: { xs: "64px", sm: "72px" } }}>
           {(isMobile || isTablet) && (
             <IconButton
               color="inherit"
@@ -490,13 +654,14 @@ export default function ClientLayout({ children }) {
                   backgroundColor: alpha(theme.palette.primary.main, 0.15),
                   transform: "scale(1.05)",
                 },
-                transition: "all 0.2s ease",
+                transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
               }}
             >
               <MenuIcon />
             </IconButton>
           )}
 
+          {/* Enhanced Logo */}
           <Typography
             variant="h5"
             component={RouterLink}
@@ -509,7 +674,7 @@ export default function ClientLayout({ children }) {
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               textDecoration: "none",
-              fontSize: { xs: "1.2rem", sm: "1.4rem", md: "1.5rem" },
+              fontSize: { xs: "1.3rem", sm: "1.5rem", md: "1.7rem" },
               letterSpacing: "-0.5px",
               display: "flex",
               alignItems: "center",
@@ -517,25 +682,39 @@ export default function ClientLayout({ children }) {
               "&:hover": {
                 transform: "scale(1.02)",
               },
-              transition: "transform 0.2s ease",
+              transition: "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
             }}
           >
-            <img
-              src={Logo1 || "/placeholder.svg"}
-              alt="Logo"
-              style={{
-                width: isMobile ? "32px" : "40px",
-                height: "auto",
+            <Box
+              sx={{
+                width: { xs: 36, sm: 44 },
+                height: { xs: 36, sm: 44 },
+                borderRadius: 2,
+                background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
               }}
-            />
+            >
+              <img
+                src={Logo1 || "/placeholder.svg"}
+                alt="Logo"
+                style={{
+                  width: isMobile ? "20px" : "24px",
+                  height: "auto",
+                }}
+              />
+            </Box>
             EasyMeal 2025
           </Typography>
 
-          {!isMobile && !isTablet && (
-            <Stack direction="row" spacing={0.5} alignItems="center">
+          {/* Desktop Navigation */}
+          {isDesktop && (
+            <Stack direction="row" spacing={1} alignItems="center">
               {currentUser ? (
                 <>
-                  {allNavigationItems.slice(0, 5).map((item) => {
+                  {allNavigationItems.slice(0, 4).map((item) => {
                     const isActive = isActivePath(item.path)
                     return (
                       <Button
@@ -544,20 +723,22 @@ export default function ClientLayout({ children }) {
                         to={item.path}
                         startIcon={<item.icon />}
                         sx={{
-                          color: isActive ? theme.palette.primary.main : theme.palette.text.primary,
-                          backgroundColor: isActive ? alpha(theme.palette.primary.main, 0.08) : "transparent",
-                          borderRadius: 2,
-                          px: 1.5,
-                          py: 0.8,
+                          color: isActive ? theme.palette[item.color].main : theme.palette.text.primary,
+                          backgroundColor: isActive ? alpha(theme.palette[item.color].main, 0.1) : "transparent",
+                          borderRadius: 3,
+                          px: 2,
+                          py: 1,
                           fontWeight: isActive ? 600 : 400,
                           textTransform: "none",
-                          fontSize: "0.875rem",
+                          fontSize: "0.9rem",
                           minWidth: "auto",
+                          border: `1px solid ${isActive ? alpha(theme.palette[item.color].main, 0.3) : "transparent"}`,
                           "&:hover": {
-                            backgroundColor: alpha(theme.palette.primary.main, 0.06),
+                            backgroundColor: alpha(theme.palette[item.color].main, 0.08),
                             transform: "translateY(-1px)",
+                            boxShadow: `0 4px 12px ${alpha(theme.palette[item.color].main, 0.2)}`,
                           },
-                          transition: "all 0.2s ease",
+                          transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                         }}
                       >
                         {item.label}
@@ -565,7 +746,7 @@ export default function ClientLayout({ children }) {
                     )
                   })}
 
-                  {allNavigationItems.length > 5 && (
+                  {allNavigationItems.length > 4 && (
                     <Tooltip title="Plus d'options">
                       <IconButton
                         size="small"
@@ -588,7 +769,7 @@ export default function ClientLayout({ children }) {
                     onClose={handleMoreOptionsClose}
                     PaperProps={{
                       sx: {
-                        borderRadius: 2,
+                        borderRadius: 3,
                         mt: 1,
                         background: `linear-gradient(135deg, ${theme.palette.background.paper} 0%, ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
                         border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
@@ -596,20 +777,20 @@ export default function ClientLayout({ children }) {
                       },
                     }}
                   >
-                    {allNavigationItems.slice(5).map((item) => (
+                    {allNavigationItems.slice(4).map((item) => (
                       <MenuItem
                         key={item.path}
                         component={RouterLink}
                         to={item.path}
                         onClick={handleMoreOptionsClose}
                         sx={{
-                          py: 1,
+                          py: 1.5,
                           "&:hover": {
-                            backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                            backgroundColor: alpha(theme.palette[item.color].main, 0.05),
                           },
                         }}
                       >
-                        <item.icon sx={{ mr: 2, fontSize: "1.2rem" }} />
+                        <item.icon sx={{ mr: 2, fontSize: "1.2rem", color: theme.palette[item.color].main }} />
                         {item.label}
                       </MenuItem>
                     ))}
@@ -623,20 +804,23 @@ export default function ClientLayout({ children }) {
                       sx={{
                         color: isActivePath("/admin") ? theme.palette.warning.main : theme.palette.text.primary,
                         backgroundColor: isActivePath("/admin")
-                          ? alpha(theme.palette.warning.main, 0.08)
+                          ? alpha(theme.palette.warning.main, 0.1)
                           : "transparent",
-                        borderRadius: 2,
-                        px: 1.5,
-                        py: 0.8,
+                        borderRadius: 3,
+                        px: 2,
+                        py: 1,
                         fontWeight: isActivePath("/admin") ? 600 : 400,
                         textTransform: "none",
-                        fontSize: "0.875rem",
+                        fontSize: "0.9rem",
                         ml: 1,
+                        border: `1px solid ${
+                          isActivePath("/admin") ? alpha(theme.palette.warning.main, 0.3) : "transparent"
+                        }`,
                         "&:hover": {
-                          backgroundColor: alpha(theme.palette.warning.main, 0.06),
+                          backgroundColor: alpha(theme.palette.warning.main, 0.08),
                           transform: "translateY(-1px)",
                         },
-                        transition: "all 0.2s ease",
+                        transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                       }}
                     >
                       Admin
@@ -646,7 +830,7 @@ export default function ClientLayout({ children }) {
                   <Tooltip title="Notifications">
                     <IconButton
                       sx={{
-                        ml: 1,
+                        ml: 2,
                         "&:hover": {
                           backgroundColor: alpha(theme.palette.primary.main, 0.08),
                         },
@@ -666,15 +850,15 @@ export default function ClientLayout({ children }) {
                       "&:hover": {
                         transform: "scale(1.05)",
                       },
-                      transition: "transform 0.2s ease",
+                      transition: "transform 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                   >
                     <Avatar
                       sx={{
-                        width: 36,
-                        height: 36,
+                        width: 40,
+                        height: 40,
                         background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                        fontSize: "0.9rem",
+                        fontSize: "1rem",
                         fontWeight: 600,
                         boxShadow: `0 2px 8px ${alpha(theme.palette.primary.main, 0.25)}`,
                       }}
@@ -695,11 +879,11 @@ export default function ClientLayout({ children }) {
                         backdropFilter: "blur(20px)",
                         border: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
                         boxShadow: `0 8px 32px ${alpha(theme.palette.primary.main, 0.15)}`,
-                        minWidth: 200,
+                        minWidth: 220,
                       },
                     }}
                   >
-                    <Box sx={{ px: 2, py: 1.5, borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
+                    <Box sx={{ px: 3, py: 2, borderBottom: `1px solid ${alpha(theme.palette.divider, 0.1)}` }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
                         {userData?.displayName || "Utilisateur"}
                       </Typography>
@@ -756,16 +940,16 @@ export default function ClientLayout({ children }) {
                     variant="outlined"
                     startIcon={<LoginIcon />}
                     sx={{
-                      borderRadius: 2,
+                      borderRadius: 3,
                       textTransform: "none",
                       borderColor: alpha(theme.palette.primary.main, 0.3),
-                      fontSize: "0.875rem",
+                      fontSize: "0.9rem",
                       "&:hover": {
                         borderColor: theme.palette.primary.main,
                         backgroundColor: alpha(theme.palette.primary.main, 0.05),
                         transform: "translateY(-1px)",
                       },
-                      transition: "all 0.2s ease",
+                      transition: "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                   >
                     Connexion
@@ -776,16 +960,16 @@ export default function ClientLayout({ children }) {
                     variant="contained"
                     startIcon={<PersonAddIcon />}
                     sx={{
-                      borderRadius: 2,
+                      borderRadius: 3,
                       textTransform: "none",
-                      fontSize: "0.875rem",
+                      fontSize: "0.9rem",
                       background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
                       boxShadow: `0 4px 15px ${alpha(theme.palette.primary.main, 0.3)}`,
                       "&:hover": {
                         transform: "translateY(-2px)",
                         boxShadow: `0 6px 20px ${alpha(theme.palette.primary.main, 0.4)}`,
                       },
-                      transition: "all 0.3s ease",
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                     }}
                   >
                     Inscription
@@ -797,10 +981,12 @@ export default function ClientLayout({ children }) {
         </Toolbar>
       </AppBar>
 
-      <Drawer
+      {/* Enhanced Drawer */}
+      <SwipeableDrawer
         variant="temporary"
         open={mobileOpen}
         onClose={handleDrawerToggle}
+        onOpen={handleDrawerToggle}
         ModalProps={{
           keepMounted: true,
         }}
@@ -818,8 +1004,9 @@ export default function ClientLayout({ children }) {
         }}
       >
         {drawer}
-      </Drawer>
+      </SwipeableDrawer>
 
+      {/* Main Content */}
       <Container
         component="main"
         maxWidth="xl"
@@ -829,6 +1016,7 @@ export default function ClientLayout({ children }) {
           px: { xs: 2, sm: 3 },
           width: "100%",
           maxWidth: "100%",
+          mb: isMobile ? 8 : 0, // Add margin bottom for mobile bottom navigation
         }}
       >
         <Fade in timeout={600}>
@@ -836,15 +1024,58 @@ export default function ClientLayout({ children }) {
         </Fade>
       </Container>
 
+      {/* Mobile Bottom Navigation */}
+      {isMobile && currentUser && (
+        <Paper
+          sx={{
+            position: "fixed",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: theme.zIndex.appBar,
+            background: `linear-gradient(135deg, 
+              ${alpha(theme.palette.background.paper, 0.98)} 0%, 
+              ${alpha(theme.palette.primary.main, 0.02)} 100%)`,
+            backdropFilter: "blur(20px)",
+            borderTop: `1px solid ${alpha(theme.palette.divider, 0.1)}`,
+          }}
+          elevation={8}
+        >
+          <BottomNavigation
+            value={bottomNavValue}
+            onChange={handleBottomNavChange}
+            sx={{
+              backgroundColor: "transparent",
+              "& .MuiBottomNavigationAction-root": {
+                color: theme.palette.text.secondary,
+                "&.Mui-selected": {
+                  color: theme.palette.primary.main,
+                },
+                minWidth: "auto",
+                padding: "6px 12px 8px",
+              },
+            }}
+          >
+            <BottomNavigationAction label="Accueil" icon={<HomeIcon />} />
+            <BottomNavigationAction label="Planning" icon={<CalendarIcon />} />
+            <BottomNavigationAction label="Recettes" icon={<RestaurantIcon />} />
+            <BottomNavigationAction label="Courses" icon={<ShoppingCartIcon />} />
+            <BottomNavigationAction label="Famille" icon={<PeopleIcon />} />
+          </BottomNavigation>
+        </Paper>
+      )}
+
+      {/* Enhanced Footer */}
       <Box
         component="footer"
         sx={{
-          py: { xs: 3, sm: 4 },
+          py: { xs: 4, sm: 6 },
           px: 3,
           mt: "auto",
           background: `linear-gradient(135deg, 
             ${alpha(theme.palette.background.paper, 0.95)} 0%, 
-            ${alpha(theme.palette.primary.main, 0.03)} 100%)`,
+            ${alpha(theme.palette.primary.main, 0.03)} 50%,
+            ${alpha(theme.palette.secondary.main, 0.02)} 100%)`,
           backdropFilter: "blur(20px)",
           borderTop: `1px solid ${alpha(theme.palette.divider, 0.08)}`,
           position: "relative",
@@ -857,14 +1088,18 @@ export default function ClientLayout({ children }) {
             top: 0,
             left: 0,
             right: 0,
-            height: "2px",
-            background: `linear-gradient(90deg, transparent 0%, ${theme.palette.primary.main} 50%, transparent 100%)`,
+            height: "3px",
+            background: `linear-gradient(90deg, 
+              transparent 0%, 
+              ${theme.palette.primary.main} 25%, 
+              ${theme.palette.secondary.main} 75%, 
+              transparent 100%)`,
           }}
         />
         <Container maxWidth="xl">
           <Stack
             direction={{ xs: "column", sm: "row" }}
-            spacing={{ xs: 2, sm: 3 }}
+            spacing={{ xs: 3, sm: 4 }}
             alignItems="center"
             justifyContent="space-between"
           >
@@ -877,18 +1112,31 @@ export default function ClientLayout({ children }) {
                   backgroundClip: "text",
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
-                  mb: 0.5,
+                  mb: 1,
                   display: "flex",
                   alignItems: "center",
                   justifyContent: { xs: "center", sm: "flex-start" },
-                  gap: 1,
-                  fontSize: { xs: "1rem", sm: "1.1rem" },
+                  gap: 1.5,
+                  fontSize: { xs: "1.1rem", sm: "1.3rem" },
                 }}
               >
-                <RestaurantIcon sx={{ color: theme.palette.primary.main }} />
+                <Box
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 2,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: `0 4px 12px ${alpha(theme.palette.primary.main, 0.3)}`,
+                  }}
+                >
+                  <RestaurantIcon sx={{ color: "white", fontSize: "1.2rem" }} />
+                </Box>
                 EasyMeal 2025
               </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.8rem", sm: "0.875rem" } }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: "0.85rem", sm: "0.9rem" } }}>
                 Savourez chaque moment culinaire en famille
               </Typography>
             </Box>
@@ -900,11 +1148,12 @@ export default function ClientLayout({ children }) {
                   backgroundColor: alpha(theme.palette.primary.main, 0.1),
                   color: theme.palette.primary.main,
                   fontWeight: 600,
-                  borderRadius: 2,
+                  borderRadius: 3,
+                  border: `1px solid ${alpha(theme.palette.primary.main, 0.2)}`,
                 }}
               />
               <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: "0.75rem", sm: "0.8rem" } }}>
-                © {new Date().getFullYear()} - Conçu pour l'avenir
+                © {new Date().getFullYear()} - Conçu pour l'avenir culinaire
               </Typography>
             </Stack>
           </Stack>
