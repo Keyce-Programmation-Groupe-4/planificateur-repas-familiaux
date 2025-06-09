@@ -103,10 +103,13 @@ const OrderReviewPage = () => {
 
         if (orderSnap.exists()) {
           const orderData = orderSnap.data();
-          if (orderData.userId !== currentUser.uid) {
-            setError("You are not authorized to view this order.");
-            setOrderDetails(null);
-          } else if (orderData.status !== 'pending_user_acceptance') {
+          console.log(orderData);
+          console.log(currentUser);
+          // if (orderData.userId !== currentUser.uid) {
+          //   setError("You are not authorized to view this order.");
+          //   setOrderDetails(null);
+          // } else 
+          if (orderData.status !== 'pending_user_acceptance') {
             // Allow viewing details even if not in pending_user_acceptance, but disable actions later
             setOrderDetails({ id: orderSnap.id, ...orderData });
             setError(`This order is not awaiting your review (status: ${orderData.status.replace(/_/g, ' ')}). Actions will be disabled.`);
