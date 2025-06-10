@@ -55,8 +55,8 @@ import pdfFonts from "pdfmake/build/vfs_fonts";
 // --- Firebase Imports ---
 import { db, functions } from "../../firebaseConfig";
 import { httpsCallable } from "firebase/functions";
-import { triggerSendNotification } from "../../../utils/notificationUtils";
-import { getCurrentUserFCMToken } from "../../../utils/authUtils";
+import { triggerSendNotification } from "../../utils/notificationUtils";
+import { getCurrentUserFCMToken } from "../../utils/authUtils";
 import {
   doc,
   getDoc,

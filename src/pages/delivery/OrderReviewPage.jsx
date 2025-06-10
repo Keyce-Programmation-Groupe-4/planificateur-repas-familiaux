@@ -21,8 +21,8 @@ import {
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { useAuth } from '../../contexts/AuthContext';
-import { triggerSendNotification } from '../../../utils/notificationUtils';
-import { getCurrentUserFCMToken } from '../../../utils/authUtils';
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 const OrderReviewPage = () => {
   const { orderId } = useParams();

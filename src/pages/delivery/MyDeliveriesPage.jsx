@@ -21,8 +21,8 @@ import { db } from "../../firebaseConfig"
 import { collection, query, where, orderBy, onSnapshot, doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore" // Added updateDoc, serverTimestamp
 import DeliveryStatusCard from "../../components/delivery/DeliveryStatusCard"
 import { DELIVERY_STATUSES } from "../../config/deliveryStatuses" // Added import
-import { triggerSendNotification } from '../../../utils/notificationUtils';
-import { getCurrentUserFCMToken } from '../../../utils/authUtils';
+import { triggerSendNotification } from "../../utils/notificationUtils";
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 function MyDeliveriesPage() {
   const theme = useTheme()
