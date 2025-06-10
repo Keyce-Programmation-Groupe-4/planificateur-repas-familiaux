@@ -20,7 +20,7 @@ import {
   orderBy,
   runTransaction
 } from "firebase/firestore";
-import { db } from "../firebaseConfig.js";
+import { db } from "./firebaseConfig.js";
 
 // Import pdfMake
 import pdfMake from "pdfmake/build/pdfmake";
@@ -33,10 +33,10 @@ import {
   convertToStandardUnit,
   getUnitConversionRate,
   UNITS
-} from "../utils/UnitConverter.js";
+} from "./utils/UnitConverter.js";
 
 // Import allergy checker
-import { checkAllergies } from '../utils/allergyUtils.js';
+import { checkAllergies } from './utils/allergyUtils.js';
 
 
 /**
