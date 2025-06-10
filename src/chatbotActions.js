@@ -18,7 +18,7 @@ import {
   where,
   Timestamp,
   orderBy,
-  runTransaction // Added for potential use in shopping list generation if needed
+  runTransaction
 } from "firebase/firestore";
 import { db } from "./firebaseConfig.js";
 
@@ -29,15 +29,14 @@ pdfMake.vfs = pdfFonts.vfs;
 
 // Attempt to import unit conversion utilities
 // Assuming these are the key functions needed based on ShoppingListPage
-// If these paths or function names are incorrect, this part will fail.
 import {
   formatQuantityUnit,
   findStandardUnit,
   convertToStandardUnit,
-  getUnitConversionRate, // Assuming this might be useful too
-  CATEGORIES, // Assuming categories are defined here
+  getUnitConversionRate,
   UNITS // Assuming base units are defined here
-} from "./utils/UnitConverter.js";
+} from "../utils/UnitConverter.js";
+
 
 
 /**
@@ -461,7 +460,6 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
             ingredientDetailsMap.set(ingredientId, { id: ingDocSnap.id, ...ingDocSnap.data() });
         } else {
             console.warn(`Ingredient with ID ${ingredientId} not found.`);
-            // Add a placeholder to avoid crashes, but data will be incomplete
             ingredientDetailsMap.set(ingredientId, { id: ingredientId, name: "Ingrédient inconnu", category: "Divers", unit: "unité" });
         }
     }
@@ -482,14 +480,14 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
 
     rawIngredientsList.forEach(rawIng => {
         const detail = ingredientDetailsMap.get(rawIng.ingredientId);
-        if (!detail) return; // Skip if detail is missing
+        if (!detail) return;
 
-        const standardUnit = findStandardUnit(rawIng.unit, detail.unit || rawIng.unit); // Use detail.unit as preferred, fallback to rawIng.unit
+        const standardUnit = findStandardUnit(rawIng.unit, detail.unit || rawIng.unit);
         const grossQuantityInStandardUnit = convertToStandardUnit(rawIng.quantity, rawIng.unit, standardUnit, detail.conversionFactors || {});
 
         if (isNaN(grossQuantityInStandardUnit)) {
             console.error(`Could not convert ${rawIng.quantity} ${rawIng.unit} to ${standardUnit} for ${detail.name}`);
-            return; // Skip if conversion fails
+            return;
         }
 
         if (!aggregatedIngredients[detail.id]) {
@@ -500,9 +498,9 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
                 grossQuantity: 0,
                 stockQuantity: 0,
                 netQuantity: 0,
-                unit: standardUnit, // Store the standard unit used for aggregation
-                pricePerUnit: detail.standardPrice || detail.price || 0, // Prefer standardPrice
-                priceUnit: detail.standardUnit || detail.unit || standardUnit, // Unit for the price
+                unit: standardUnit,
+                pricePerUnit: detail.standardPrice || detail.price || 0,
+                priceUnit: detail.standardUnit || detail.unit || standardUnit,
                 needsPriceInput: !(detail.standardPrice || detail.price),
                 priceSource: detail.standardPrice ? 'standard' : (detail.price ? 'custom' : 'none'),
                 isChecked: false,
@@ -518,11 +516,10 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
         let stockQuantityInStandardUnit = 0;
 
         if (stockItem && stockItem.quantity > 0) {
-            // Convert stock quantity to the same standard unit as the aggregated item
             stockQuantityInStandardUnit = convertToStandardUnit(stockItem.quantity, stockItem.unit, aggItem.unit, ingredientDetailsMap.get(ingId).conversionFactors || {});
              if (isNaN(stockQuantityInStandardUnit)) {
                 console.error(`Could not convert stock ${stockItem.quantity} ${stockItem.unit} to ${aggItem.unit} for ${aggItem.name}`);
-                stockQuantityInStandardUnit = 0; // Default to 0 if conversion fails
+                stockQuantityInStandardUnit = 0;
             }
         }
         aggItem.stockQuantity = stockQuantityInStandardUnit;
@@ -532,18 +529,17 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
         let itemActualCost = 0;
 
         if (aggItem.pricePerUnit > 0 && aggItem.priceUnit) {
-             // Convert pricePerUnit's unit to aggItem.unit if different
             const priceConversionFactor = getUnitConversionRate(aggItem.priceUnit, aggItem.unit, ingredientDetailsMap.get(ingId).conversionFactors || {});
             if (priceConversionFactor !== null && priceConversionFactor !== 0) {
                 const priceInAggUnit = aggItem.pricePerUnit / priceConversionFactor;
                 itemTheoreticalCost = aggItem.grossQuantity * priceInAggUnit;
                 itemActualCost = aggItem.netQuantity * priceInAggUnit;
-            } else if (aggItem.priceUnit === aggItem.unit) { // Units are the same
+            } else if (aggItem.priceUnit === aggItem.unit) {
                  itemTheoreticalCost = aggItem.grossQuantity * aggItem.pricePerUnit;
                  itemActualCost = aggItem.netQuantity * aggItem.pricePerUnit;
             } else {
                 console.warn(`Cannot convert price unit ${aggItem.priceUnit} to ${aggItem.unit} for ${aggItem.name}. Cost will be 0.`);
-                aggItem.needsPriceInput = true; // Mark as needing price input if conversion fails
+                aggItem.needsPriceInput = true;
             }
         } else {
             aggItem.needsPriceInput = true;
@@ -555,9 +551,9 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
         totalTheoreticalCost += aggItem.theoreticalItemCost;
         totalActualCost += aggItem.actualItemCost;
 
-        if (aggItem.netQuantity > 0) { // Only add to list if needed
+        if (aggItem.netQuantity > 0) {
              shoppingListItems.push({
-                itemId: ingId, // Using ingredientId as itemId for simplicity here
+                itemId: ingId,
                 ingredientId: aggItem.ingredientId,
                 name: aggItem.name,
                 category: aggItem.category,
@@ -577,14 +573,17 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
     const shoppingListDocData = {
       weekId: weekId,
       familyId: familyId,
-      createdAt: Timestamp.now(), // Or serverTimestamp() if writing directly
-      lastGeneratedAt: Timestamp.now(), // Or serverTimestamp()
+      createdAt: Timestamp.now(),
+      lastGeneratedAt: Timestamp.now(),
       totalTheoreticalCost: parseFloat(totalTheoreticalCost.toFixed(2)),
       totalActualCost: parseFloat(totalActualCost.toFixed(2)),
-      items: shoppingListItems.sort((a, b) => (a.category + a.name).localeCompare(b.category + b.name)), // Sort for consistency
+      items: shoppingListItems.sort((a, b) => { // Sort by category then name
+        const categoryCompare = a.category.localeCompare(b.category);
+        if (categoryCompare !== 0) return categoryCompare;
+        return a.name.localeCompare(b.name);
+      }),
     };
 
-    // Save this generated list to Firestore
     const shoppingListDocRef = doc(db, "families", familyId, "shoppingLists", weekId);
     await setDoc(shoppingListDocRef, shoppingListDocData, { merge: true });
 
@@ -624,7 +623,7 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
 
     const itemsByCategory = {};
     shoppingListDocument.items.forEach(item => {
-      if (item.netQuantity <= 0) return; // Skip items not needed
+      if (item.netQuantity <= 0) return;
       const category = item.category || "Divers";
       if (!itemsByCategory[category]) {
         itemsByCategory[category] = [];
@@ -632,10 +631,8 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
       itemsByCategory[category].push(item);
     });
 
-    // Sort categories based on CATEGORIES array order if available, otherwise alphabetically
-    const sortedCategories = CATEGORIES ?
-        Object.keys(itemsByCategory).sort((a,b) => (CATEGORIES.indexOf(a) || 999) - (CATEGORIES.indexOf(b) || 999))
-        : Object.keys(itemsByCategory).sort();
+    // Sort categories alphabetically
+    const sortedCategories = Object.keys(itemsByCategory).sort();
 
 
     sortedCategories.forEach(category => {
@@ -644,7 +641,7 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
         const quantityStr = formatQuantityUnit(item.netQuantity, item.unit);
         const costStr = item.actualItemCost > 0 ? `${item.actualItemCost.toFixed(2)}€` : (item.needsPriceInput ? "(prix?)" : "");
         return [
-          { text: item.isChecked ? "☒" : "☐", style: "checkbox" }, // Simple checkbox representation
+          { text: item.isChecked ? "☒" : "☐", style: "checkbox" },
           { text: item.name, style: "itemName" },
           { text: quantityStr, style: "itemQuantity" },
           { text: costStr, style: "itemCost", alignment: "right" },
@@ -655,8 +652,8 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
           widths: ["auto", "*", "auto", "auto"],
           body: categoryItems,
         },
-        layout: "noBorders", // Or 'lightHorizontalLines' for more structure
-        margin: [10, 0, 0, 5], // Indent items under category
+        layout: "noBorders",
+        margin: [10, 0, 0, 5],
       });
     });
 
@@ -700,7 +697,6 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
 
   } catch (error) {
     console.error("Error exporting shopping list to PDF:", error);
-    // Check if it's an error from the logic function
     if (error.error) return { success: false, error: error.error };
     return {
       success: false,
