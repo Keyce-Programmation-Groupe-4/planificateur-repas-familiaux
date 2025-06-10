@@ -20,7 +20,7 @@ import {
   orderBy,
   runTransaction // Added for potential use in shopping list generation if needed
 } from "firebase/firestore";
-import { db } from "../firebaseConfig.js";
+import { db } from "./firebaseConfig.js";
 
 // Import pdfMake
 import pdfMake from "pdfmake/build/pdfmake";
@@ -37,7 +37,7 @@ import {
   getUnitConversionRate, // Assuming this might be useful too
   CATEGORIES, // Assuming categories are defined here
   UNITS // Assuming base units are defined here
-} from "../utils/UnitConverter.js";
+} from "./utils/UnitConverter.js";
 
 
 /**
