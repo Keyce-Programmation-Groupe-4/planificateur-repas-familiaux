@@ -79,6 +79,14 @@ function App() {
             }
           />
           <Route
+            path="/recipes/aggregate"
+            element={
+              <ProtectedRoute>
+                <AggregateRecipesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/recipes/new"
             element={
               <ProtectedRoute>
