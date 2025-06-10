@@ -91,7 +91,7 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
               hasAllergies = true;
               const severity = (member.allergySeveritiesMap && member.allergySeveritiesMap[allergy.toLowerCase()]) || "modérée";
               alerts.push({
-                day: day.charAt(0).toUpperCase() + day.slice(1), // Capitalize day
+                day: day, // Keep original key for now, format later if needed by UI
                 meal: mealType,
                 recipeName: recipe.name,
                 memberName: member.name,
@@ -110,7 +110,9 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
         const x = acc.find(item =>
             item.recipeName === current.recipeName &&
             item.memberName === current.memberName &&
-            item.allergy === current.allergy
+            item.allergy === current.allergy &&
+            item.day === current.day && // Ensure day is part of uniqueness
+            item.meal === current.meal  // Ensure meal is part of uniqueness
         );
         if (!x) {
             return acc.concat([current]);
@@ -120,8 +122,6 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
       }, []);
 
       message = `Attention ! ${uniqueAlerts.length} conflit(s) d'allergie(s) détecté(s) dans le planning.`;
-      // For more detailed message:
-      // message = `Attention ! Des conflits d'allergies ont été détectés: ${uniqueAlerts.map(a => `${a.memberName} (allergique à ${a.allergy} - ${a.severity}) avec ${a.recipeName} (${a.day} ${a.meal})`).join(', ')}.`;
       return { hasAllergies: true, alerts: uniqueAlerts, message };
     } else {
       message = "Aucun conflit d'allergie détecté dans le planning.";
@@ -131,5 +131,45 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
   } catch (error) {
     console.error("Erreur lors de la vérification des allergies :", error);
     return { hasAllergies: false, alerts: [], message: `Erreur lors de la vérification des allergies: ${error.message}` };
+  }
+};
+
+
+// Helper functions (potentially for UI display of alerts)
+export const formatDayName = (dayKey) => {
+  const dayNames = {
+    monday: "Lundi",
+    tuesday: "Mardi",
+    wednesday: "Mercredi",
+    thursday: "Jeudi",
+    friday: "Vendredi",
+    saturday: "Samedi",
+    sunday: "Dimanche",
+  };
+  return dayNames[dayKey.toLowerCase()] || dayKey;
+};
+
+export const formatMealType = (mealKey) => {
+  const mealNames = {
+    breakfast: "Petit-déjeuner",
+    lunch: "Déjeuner",
+    dinner: "Dîner",
+  };
+  return mealNames[mealKey.toLowerCase()] || mealKey;
+};
+
+export const getSeverityColor = (severity) => {
+  switch (severity?.toLowerCase()) {
+    case "sévère":
+    case "severe":
+      return "red";
+    case "modérée":
+    case "moderate":
+      return "orange";
+    case "faible":
+    case "low":
+      return "green";
+    default:
+      return "grey";
   }
 };
