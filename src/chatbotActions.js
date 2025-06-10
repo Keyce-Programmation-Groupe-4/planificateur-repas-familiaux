@@ -20,23 +20,23 @@ import {
   orderBy,
   runTransaction
 } from "firebase/firestore";
-import { db } from "./firebaseConfig.js";
+import { db } from "../firebaseConfig.js";
 
 // Import pdfMake
 import pdfMake from "pdfmake/build/pdfmake";
 import pdfFonts from "pdfmake/build/vfs_fonts";
 pdfMake.vfs = pdfFonts.vfs;
 
-// Attempt to import unit conversion utilities
-// Assuming these are the key functions needed based on ShoppingListPage
 import {
   formatQuantityUnit,
   findStandardUnit,
   convertToStandardUnit,
   getUnitConversionRate,
-  UNITS // Assuming base units are defined here
-} from "./utils/UnitConverter.js";
+  UNITS
+} from "../utils/UnitConverter.js";
 
+// Import allergy checker
+import { checkAllergies } from '../utils/allergyUtils.js';
 
 
 /**
@@ -140,29 +140,27 @@ const getStartOfWeekFromString = (weekIdString) => {
   const [year, weekNumberStr] = weekIdString.split("-W");
   const weekNumber = parseInt(weekNumberStr, 10);
   const janFirst = new Date(parseInt(year, 10), 0, 1);
-  const daysToMonday = (8 - janFirst.getDay() + 7) % 7; // Days to get to the first Monday
+  const daysToMonday = (8 - janFirst.getDay() + 7) % 7;
   const firstMondayOfYear = new Date(janFirst);
   firstMondayOfYear.setDate(janFirst.getDate() + daysToMonday);
 
   const targetMonday = new Date(firstMondayOfYear);
   targetMonday.setDate(firstMondayOfYear.getDate() + (weekNumber - 1) * 7);
-  targetMonday.setHours(0, 0, 0, 0); // Set to midnight
+  targetMonday.setHours(0, 0, 0, 0);
   return targetMonday;
 };
 
 /**
  * Generates a weekly meal plan for a given family and week.
- * (Implementation from previous steps - keeping it for completeness)
  */
 export const generateWeeklyMealPlan = async (
   userFamilyId,
   weekIdString,
   planType
 ) => {
-  // ... (previous implementation)
   try {
     // 1. Fetch Recipes
-    let availableRecipes = [];
+    let availableRecipes = []; // This will store full recipe objects
     const recipesRef = collection(db, "recipes");
 
     if (planType === "family" || planType === "all") {
@@ -177,7 +175,6 @@ export const generateWeeklyMealPlan = async (
       const publicQuery = query(recipesRef, where("visibility", "==", "public"));
       const publicSnapshot = await getDocs(publicQuery);
       publicSnapshot.forEach((doc) => {
-        // Avoid duplicates if 'all' and recipe is already added from family
         if (!availableRecipes.find(r => r.id === doc.id)) {
           availableRecipes.push({ id: doc.id, ...doc.data() });
         }
@@ -194,19 +191,19 @@ export const generateWeeklyMealPlan = async (
     // 2. Fetch or Create Plan Document
     const planDocRef = doc(db, "families", userFamilyId, "weeklyPlans", weekIdString);
     const planDocSnap = await getDoc(planDocRef);
-    let planData;
+    let planData; // This will hold the plan structure to be saved
 
     const startDate = getStartOfWeekFromString(weekIdString);
     const endDate = new Date(startDate);
     endDate.setDate(startDate.getDate() + 6);
-    endDate.setHours(23, 59, 59, 999); // End of Sunday
+    endDate.setHours(23, 59, 59, 999);
 
     if (planDocSnap.exists()) {
       planData = planDocSnap.data();
     } else {
       planData = {
         familyId: userFamilyId,
-        weekId: weekIdString, // Store weekId for easier querying if needed
+        weekId: weekIdString,
         startDate: Timestamp.fromDate(startDate),
         endDate: Timestamp.fromDate(endDate),
         days: {
@@ -221,6 +218,19 @@ export const generateWeeklyMealPlan = async (
         createdAt: serverTimestamp(),
       };
     }
+    // Ensure 'days' exists, even if planData was loaded
+    if (!planData.days) {
+        planData.days = {
+            monday: { breakfast: null, lunch: null, dinner: null },
+            tuesday: { breakfast: null, lunch: null, dinner: null },
+            wednesday: { breakfast: null, lunch: null, dinner: null },
+            thursday: { breakfast: null, lunch: null, dinner: null },
+            friday: { breakfast: null, lunch: null, dinner: null },
+            saturday: { breakfast: null, lunch: null, dinner: null },
+            sunday: { breakfast: null, lunch: null, dinner: null },
+        };
+    }
+
 
     // 3. Populate Plan
     const daysOfWeek = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
@@ -230,7 +240,7 @@ export const generateWeeklyMealPlan = async (
       mealSlots.forEach((slot) => {
         if (availableRecipes.length > 0) {
           const randomRecipe = availableRecipes[Math.floor(Math.random() * availableRecipes.length)];
-          planData.days[day][slot] = randomRecipe.id; // Store recipe ID
+          planData.days[day][slot] = randomRecipe.id;
         } else {
           planData.days[day][slot] = null;
         }
@@ -242,11 +252,36 @@ export const generateWeeklyMealPlan = async (
     // 4. Save Plan
     await setDoc(planDocRef, planData, { merge: true });
 
-    // 5. Return Success
+    // 5. Call checkAllergies
+    let allergyResult = null;
+    try {
+      // planData here is the data that was just set/merged.
+      // availableRecipes is the array of full recipe objects fetched earlier.
+      allergyResult = await checkAllergies(userFamilyId, planData, availableRecipes);
+    } catch (allergyError) {
+      console.error("Error during allergy check:", allergyError);
+      // Decide if this should make the whole operation fail or just return with a warning
+      // For now, we'll let the success message indicate the plan generation was successful,
+      // but the allergy check might have failed or produced warnings.
+      // The main return below will handle allergyResult being null or containing error info if designed so.
+    }
+
+    // 6. Return Success with allergy information
+    let successMessage = "Planning hebdomadaire généré avec succès !";
+    if (allergyResult && allergyResult.hasAllergies && allergyResult.alerts && allergyResult.alerts.length > 0) {
+        successMessage += ` ATTENTION : ${allergyResult.message || "Des conflits d'allergies ont été détectés."}`;
+    } else if (allergyResult && !allergyResult.hasAllergies) {
+        successMessage += " Aucune alerte d'allergie détectée pour ce planning.";
+    } else if (!allergyResult) {
+        successMessage += " Vérification des allergies non effectuée ou échouée.";
+    }
+
     return {
       success: true,
-      message: "Planning hebdomadaire généré avec succès !",
+      message: successMessage,
+      allergyInfo: allergyResult // Return the detailed allergyResult
     };
+
   } catch (error) {
     console.error("Error generating weekly meal plan:", error);
     return {
@@ -577,7 +612,7 @@ const generateOrRefreshShoppingListLogic = async (familyId, weekId) => {
       lastGeneratedAt: Timestamp.now(),
       totalTheoreticalCost: parseFloat(totalTheoreticalCost.toFixed(2)),
       totalActualCost: parseFloat(totalActualCost.toFixed(2)),
-      items: shoppingListItems.sort((a, b) => { // Sort by category then name
+      items: shoppingListItems.sort((a, b) => {
         const categoryCompare = a.category.localeCompare(b.category);
         if (categoryCompare !== 0) return categoryCompare;
         return a.name.localeCompare(b.name);
@@ -631,7 +666,6 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
       itemsByCategory[category].push(item);
     });
 
-    // Sort categories alphabetically
     const sortedCategories = Object.keys(itemsByCategory).sort();
 
 
@@ -687,7 +721,6 @@ export const exportShoppingListToPdf = async (userFamilyId, weekIdString) => {
       defaultStyle: { font: "Roboto" }
     };
 
-    // 3. Trigger PDF Download
     pdfMake.createPdf(docDefinition).download(`liste_courses_${weekIdString}.pdf`);
 
     return {
