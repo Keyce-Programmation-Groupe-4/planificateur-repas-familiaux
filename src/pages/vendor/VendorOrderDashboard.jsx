@@ -78,6 +78,8 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { useAuth } from "../../contexts/AuthContext";
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 function VendorOrderDashboard() {
   const theme = useTheme();
@@ -288,12 +290,28 @@ function VendorOrderDashboard() {
       await updateDoc(requestRef, updateData);
       fetchRequests();
       showSnackbar("Commande confirmée et envoyée à l'utilisateur.", "success");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Commande Confirmée",
+          `La commande #${request.id.substring(0,8)} a été confirmée et envoyée à l'utilisateur.`
+        );
+      }
       console.log(`NOTIFICATION_POINT: Vendor confirmed/adjusted order. Notify user ${request.familyId}. Order ID: ${request.id}`);
     } catch (err) {
       console.error("Detailed error during order confirmation:", err, "Payload:", JSON.parse(JSON.stringify(updateData)));
       const userMessage = `Erreur lors de la confirmation de la commande ${request.id.substring(0,4)}. Veuillez réessayer.`;
       setError(userMessage);
       showSnackbar(userMessage, "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Confirmation Commande",
+          `Erreur lors de la confirmation de la commande #${request.id.substring(0,8)}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(prevState => ({ ...prevState, [request.id]: false }));
     }
@@ -323,12 +341,28 @@ function VendorOrderDashboard() {
       fetchRequests();
       handleCloseRejectDialog();
       showSnackbar("Commande rejetée.", "info");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Commande Rejetée",
+          `La commande #${currentRequestToReject.id.substring(0,8)} a été rejetée.`
+        );
+      }
       console.log(`NOTIFICATION_POINT: Vendor rejected order. Notify user ${currentRequestToReject.familyId}. Order ID: ${currentRequestToReject.id}`);
     } catch (err) {
       console.error("Erreur détaillée lors du rejet de la commande par le vendeur:", err);
       const userMessage = `Erreur lors du rejet de la commande ${currentRequestToReject.id.substring(0,4)}. Veuillez réessayer.`;
       setError(userMessage);
       showSnackbar(userMessage, "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Rejet Commande",
+          `Erreur lors du rejet de la commande #${currentRequestToReject.id.substring(0,8)}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(prevState => ({ ...prevState, [currentRequestToReject.id]: false }));
     }
@@ -355,6 +389,14 @@ function VendorOrderDashboard() {
       fetchRequests();
       const statusLabel = getDeliveryStatusByKey(newStatusKey)?.label || newStatusKey.replace("_", " ").toUpperCase();
       showSnackbar(`Statut de la commande mis à jour à: ${statusLabel}`, "success");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Statut Commande Mis à Jour",
+          `Le statut de la commande #${requestId.substring(0,8)} est maintenant: ${statusLabel}.`
+        );
+      }
       const updatedRequest = requests.find(r => r.id === requestId);
       if (updatedRequest) {
         console.log(`NOTIFICATION_POINT: Order status updated to ${newStatusKey}. Notify user ${updatedRequest.familyId}. Order ID: ${requestId}`);
@@ -365,6 +407,14 @@ function VendorOrderDashboard() {
       const userMessage = `Erreur lors du passage de la commande ${requestId.substring(0,4)} au statut ${statusLabel}. Veuillez réessayer.`;
       setError(userMessage);
       showSnackbar(userMessage, "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Mise à Jour Statut",
+          `Erreur mise à jour statut commande #${requestId.substring(0,8)} vers ${statusLabel}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(prevState => ({ ...prevState, [requestId]: false }));
     }

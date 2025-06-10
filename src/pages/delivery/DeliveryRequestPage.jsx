@@ -24,6 +24,8 @@ import { LocalShipping, AccessTime, LocationOn, Person, ArrowBack } from "@mui/i
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore"
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 // Composant pour la sélection d'un bayam selam
 import VendorSelection from "../../components/delivery/VendorSelection"
@@ -272,6 +274,17 @@ function DeliveryRequestPage() {
       alert("Placeholder: Vendor would be notified of your new request.");
 
       const newDeliveryId = deliveryRef.id; // Capture the ID here
+
+      // Send success notification to current user
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Demande de Livraison Soumise",
+          `Votre demande de livraison #${newDeliveryId.substring(0, 8)} a été soumise avec succès.`
+        );
+      }
+
       setSuccess(true)
       // Rediriger vers la page de suivi après 2 secondes
       setTimeout(() => {
@@ -286,6 +299,15 @@ function DeliveryRequestPage() {
         userErrorMessage = "Erreur de réseau. Veuillez vérifier votre connexion internet et réessayer.";
       }
       setError(userErrorMessage);
+      // Send failure notification to current user
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de la Soumission",
+          `Erreur lors de la soumission de votre demande: ${userErrorMessage}` // Use the user-friendly error
+        );
+      }
     } finally {
       setIsLoading(false)
     }

@@ -36,6 +36,8 @@ import {
   Login as LoginIcon,
 } from "@mui/icons-material"
 import CinematiqueLottie from "../components/CinematiqueLottie";
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
 
 export default function LoginPage() {
   const theme = useTheme()
@@ -95,6 +97,18 @@ export default function LoginPage() {
       const user = userCredential.user
       await createUserDocumentIfNeeded(user)
 
+      // Login Success Notification
+      const fcmTokenSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenSuccess) {
+        triggerSendNotification(
+          fcmTokenSuccess,
+          "Connexion réussie",
+          "Bienvenue ! Vous êtes maintenant connecté."
+        );
+      } else {
+        console.warn("Connexion réussie, mais jeton FCM introuvable pour la notification push.");
+      }
+
       // Vendor redirection logic
       const vendorDocRef = doc(db, "vendors", user.uid)
       const vendorDocSnap = await getDoc(vendorDocRef)
@@ -126,6 +140,16 @@ export default function LoginPage() {
       } else {
         setError("Échec de la connexion. Vérifiez vos identifiants.")
       }
+
+      // Login Failure Notification
+      const fcmTokenFailure = await getCurrentUserFCMToken();
+      if (fcmTokenFailure) {
+        triggerSendNotification(
+          fcmTokenFailure,
+          "Tentative de connexion échouée",
+          error // Send the specific error message
+        );
+      }
       setLoading(false)
     }
   }
@@ -139,6 +163,18 @@ export default function LoginPage() {
       const result = await signInWithPopup(auth, provider)
       const user = result.user
       await createUserDocumentIfNeeded(user)
+
+      // Login Success Notification (Google)
+      const fcmTokenGoogleSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenGoogleSuccess) {
+        triggerSendNotification(
+          fcmTokenGoogleSuccess,
+          "Connexion Google réussie",
+          "Bienvenue ! Vous êtes maintenant connecté avec Google."
+        );
+      } else {
+        console.warn("Connexion Google réussie, mais jeton FCM introuvable pour la notification push.");
+      }
 
       // Vendor redirection logic
       const vendorDocRef = doc(db, "vendors", user.uid)
@@ -166,6 +202,16 @@ export default function LoginPage() {
         setError("Un compte existe déjà avec cette adresse email.")
       } else {
         setError("Échec de la connexion avec Google.")
+      }
+
+      // Login Failure Notification (Google)
+      const fcmTokenGoogleFailure = await getCurrentUserFCMToken();
+      if (fcmTokenGoogleFailure) {
+        triggerSendNotification(
+          fcmTokenGoogleFailure,
+          "Tentative de connexion Google échouée",
+          error // Send the specific error message
+        );
       }
       setGoogleLoading(false)
     }

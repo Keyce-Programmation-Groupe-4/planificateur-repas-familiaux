@@ -18,9 +18,11 @@ import {
 import { LocalShipping, History, Cancel } from "@mui/icons-material"
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
-import { collection, query, where, orderBy, onSnapshot, doc, getDoc } from "firebase/firestore"
+import { collection, query, where, orderBy, onSnapshot, doc, getDoc, updateDoc, serverTimestamp } from "firebase/firestore" // Added updateDoc, serverTimestamp
 import DeliveryStatusCard from "../../components/delivery/DeliveryStatusCard"
 import { DELIVERY_STATUSES } from "../../config/deliveryStatuses" // Added import
+import { triggerSendNotification } from '../../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../../utils/authUtils';
 
 function MyDeliveriesPage() {
   const theme = useTheme()
@@ -96,8 +98,83 @@ function MyDeliveriesPage() {
   }
 
   const handleCancelDelivery = async (deliveryId) => {
-    // Cette fonction sera implémentée dans DeliveryStatusCard
-    console.log("Annuler livraison:", deliveryId)
+    const deliveryToCancel = deliveries.find(d => d.id === deliveryId);
+    if (!deliveryToCancel) {
+      setError("Livraison non trouvée.");
+      return;
+    }
+
+    // Check if the delivery can be cancelled by the user
+    const cancellableStatuses = [
+      DELIVERY_STATUSES.PENDING_VENDOR_CONFIRMATION.key,
+      DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key,
+      // Add other statuses if user can cancel at more stages, e.g., CONFIRMED before SHOPPING
+    ];
+
+    if (!cancellableStatuses.includes(deliveryToCancel.status)) {
+      setError(`Vous ne pouvez pas annuler une livraison avec le statut: ${getDeliveryStatusByKey(deliveryToCancel.status)?.label || deliveryToCancel.status}.`);
+      // Optionally use a snackbar here too for better UX
+      // showSnackbar(`Annulation non permise pour le statut: ${getDeliveryStatusByKey(deliveryToCancel.status)?.label || deliveryToCancel.status}.`, "warning");
+      return;
+    }
+
+    if (!window.confirm(`Êtes-vous sûr de vouloir annuler la livraison #${deliveryId.substring(0,8)} ?`)) {
+      return;
+    }
+
+    setIsLoading(true); // Use main isLoading or a specific one for this action
+    setError('');
+    try {
+      const deliveryRef = doc(db, "deliveryRequests", deliveryId);
+      await updateDoc(deliveryRef, {
+        status: DELIVERY_STATUSES.CANCELLED_BY_USER.key,
+        updatedAt: serverTimestamp(),
+        statusHistory: [
+          ...(deliveryToCancel.statusHistory || []),
+          {
+            status: DELIVERY_STATUSES.CANCELLED_BY_USER.key,
+            timestamp: serverTimestamp(),
+            changedBy: "user",
+            userId: currentUser?.uid,
+            reason: "Annulation par l'utilisateur depuis la page 'Mes Livraisons'",
+          },
+        ],
+      });
+
+      // No need to call fetchDeliveries() due to onSnapshot listener, it will update automatically.
+      // setDeliveries(prev => prev.map(d => d.id === deliveryId ? {...d, status: DELIVERY_STATUSES.CANCELLED_BY_USER.key} : d)); // Optimistic update
+
+      const successMsg = `Livraison #${deliveryId.substring(0,8)} annulée avec succès.`;
+      // Replace alert with Snackbar if available, or use a state for success message
+      alert(successMsg); // Placeholder, ideally use Snackbar
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Livraison Annulée",
+          successMsg
+        );
+      }
+      // NOTIFICATION_POINT: Notify vendor if needed
+      if (deliveryToCancel.vendorId) {
+        console.log(`NOTIFICATION_POINT: User cancelled delivery. Notify vendor ${deliveryToCancel.vendorId}. Delivery ID: ${deliveryId}`);
+      }
+
+    } catch (err) {
+      console.error("Erreur lors de l'annulation de la livraison:", err);
+      const errorMsg = `Échec de l'annulation de la livraison #${deliveryId.substring(0,8)}. ${err.message}`;
+      setError(errorMsg); // Show error on page
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de l'Annulation",
+          errorMsg
+        );
+      }
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   const getFilteredDeliveries = () => {

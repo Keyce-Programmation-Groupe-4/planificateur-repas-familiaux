@@ -21,6 +21,8 @@ import {
 import { doc, getDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { useAuth } from '../../contexts/AuthContext';
+import { triggerSendNotification } from '../../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../../utils/authUtils';
 
 const OrderReviewPage = () => {
   const { orderId } = useParams();
@@ -184,13 +186,30 @@ const OrderReviewPage = () => {
         finalAgreedTotalCost: prev.vendorProposedTotalCost
       }));
       alert('Commande acceptée et confirmée ! Vous allez être redirigé vers le suivi.');
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Commande Confirmée",
+          `Votre commande #${orderId.substring(0,8)} a été confirmée avec les ajustements du vendeur.`
+        );
+      }
       // NOTIFICATION POINT
       // console.log(`NOTIFICATION_POINT: User accepted order adjustments. Notify vendor ${orderDetails.vendorId}. Order ID: ${orderId}`); // Keep if needed
       setError('');
       navigate(`/delivery/tracking/${orderId}`);
     } catch (err) {
       console.error("Erreur détaillée lors de l'acceptation de la commande:", err);
-      setError("Impossible d'accepter la commande pour le moment. Veuillez réessayer. Si le problème persiste, contactez le support.");
+      const errorMsg = "Impossible d'accepter la commande pour le moment. Veuillez réessayer. Si le problème persiste, contactez le support.";
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de l'Acceptation",
+          `Échec de la confirmation de la commande #${orderId.substring(0,8)}: ${err.message}`
+        );
+      }
     } finally {
       setAccepting(false);
     }
@@ -221,13 +240,30 @@ const OrderReviewPage = () => {
 
       setOrderDetails(prev => ({ ...prev, status: newStatus }));
       alert('Commande rejetée et annulée. Vous allez être redirigé vers votre liste de livraisons.');
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Commande Rejetée",
+          `Vous avez rejeté les ajustements pour la commande #${orderId.substring(0,8)}. La commande est annulée.`
+        );
+      }
       // NOTIFICATION POINT
       console.log(`NOTIFICATION_POINT: User rejected order adjustments. Notify vendor ${orderDetails.vendorId}. Order ID: ${orderId}`);
       setError('');
       navigate('/deliveries'); // Navigate to a general deliveries list or dashboard
     } catch (err) {
       console.error("Erreur détaillée lors du rejet de la commande:", err);
-      setError("Impossible de rejeter la commande pour le moment. Veuillez réessayer. Si le problème persiste, contactez le support.");
+      const errorMsg = "Impossible de rejeter la commande pour le moment. Veuillez réessayer. Si le problème persiste, contactez le support.";
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec du Rejet",
+          `Échec du rejet de la commande #${orderId.substring(0,8)}: ${err.message}`
+        );
+      }
     } finally {
       setRejecting(false);
     }

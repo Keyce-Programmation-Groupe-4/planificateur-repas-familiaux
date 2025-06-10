@@ -55,6 +55,8 @@ import pdfFonts from "pdfmake/build/vfs_fonts";
 // --- Firebase Imports ---
 import { db, functions } from "../../firebaseConfig";
 import { httpsCallable } from "firebase/functions";
+import { triggerSendNotification } from "../../../utils/notificationUtils";
+import { getCurrentUserFCMToken } from "../../../utils/authUtils";
 import {
   doc,
   getDoc,
@@ -407,13 +409,30 @@ function WeeklyPlannerPage() {
         setWeeklyPlanData(planDataToSave);
 
         setShowSuccess(true);
+        const fcmTokenSuccess = await getCurrentUserFCMToken();
+        if (fcmTokenSuccess) {
+          triggerSendNotification(
+            fcmTokenSuccess,
+            "Planning Sauvegardé",
+            `Votre planning de repas pour la semaine ${weekId} a été sauvegardé.`
+          );
+        }
         setTimeout(() => setShowSuccess(false), 2000);
         setTimeout(() => {
           performAllergyCheck();
         }, 500);
       } catch (err) {
         console.error("Error saving plan to Firestore: ", err);
-        setError("La sauvegarde a échoué. Veuillez réessayer.");
+        const errorMsg = `La sauvegarde du planning pour la semaine ${weekId} a échoué: ${err.message}`;
+        setError(errorMsg);
+        const fcmTokenFailure = await getCurrentUserFCMToken();
+        if (fcmTokenFailure) {
+          triggerSendNotification(
+            fcmTokenFailure,
+            "Échec Sauvegarde Planning",
+            errorMsg
+          );
+        }
       } finally {
         setIsSaving(false);
       }
@@ -531,10 +550,28 @@ function WeeklyPlannerPage() {
       const notifyFunction = httpsCallable(functions, "notifyFamilyPlanReady");
       const result = await notifyFunction({ familyId: familyId, weekId: weekId });
       console.log("Cloud function result:", result.data);
-      setNotificationResult({ open: true, message: result.data.message || "Notifications envoyées !", severity: "success" });
+      const successMsg = result.data.message || "Notifications envoyées !";
+      setNotificationResult({ open: true, message: successMsg, severity: "success" });
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Notification Famille Envoyée",
+          `La notification au sujet du planning de la semaine ${weekId} a été envoyée.`
+        );
+      }
     } catch (error) {
       console.error("Error calling notifyFamilyPlanReady function:", error);
-      setNotificationResult({ open: true, message: error.message || "Erreur lors de l'envoi des notifications.", severity: "error" });
+      const errorMsg = error.message || "Erreur lors de l'envoi des notifications.";
+      setNotificationResult({ open: true, message: errorMsg, severity: "error" });
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Notification Famille",
+          `Erreur envoi notification pour planning ${weekId}: ${errorMsg}`
+        );
+      }
     } finally {
       setIsNotifying(false);
     }

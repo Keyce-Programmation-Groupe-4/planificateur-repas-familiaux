@@ -47,6 +47,8 @@ import {
 import { db } from "../../firebaseConfig"
 import { collection, getDocs, doc, updateDoc, deleteDoc, addDoc } from "firebase/firestore" // Added addDoc
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 const initialVendorFormState = {
   name: "",
@@ -177,11 +179,30 @@ function AdminVendorManagement() {
           throw new Error("Action inconnue.");
       }
       showSnackbar(successMessage, "success");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        // Craft a more specific title based on action for notification
+        let notificationTitle = "Action Vendeur Réussie";
+        if (action === "approve") notificationTitle = "Vendeur Approuvé";
+        else if (action === "reject") notificationTitle = "Vendeur Rejeté";
+        else if (action === "activate") notificationTitle = "Vendeur Activé";
+        else if (action === "deactivate") notificationTitle = "Vendeur Désactivé";
+        else if (action === "delete") notificationTitle = "Vendeur Supprimé";
+        triggerSendNotification(fcmToken, notificationTitle, successMessage);
+      }
       fetchVendors();
     } catch (err) {
       console.error(`Erreur lors de l'action '${action}' sur le vendeur:`, err);
-      // setActionError might not be useful if snackbar shows error
-      showSnackbar(`Erreur lors de l'action sur le vendeur: ${err.message}`, "error");
+      const errorMessage = `Erreur lors de l'action '${action}' sur ${vendor.name}: ${err.message}`;
+      showSnackbar(errorMessage, "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Action Vendeur",
+          errorMessage
+        );
+      }
     } finally {
       setActionLoading(false);
       handleCloseConfirmActionDialog();
@@ -245,6 +266,14 @@ function AdminVendorManagement() {
           // isApproved and isActive are managed by separate actions
         });
         showSnackbar("Vendeur mis à jour avec succès!", "success");
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Vendeur Mis à Jour",
+            `Les détails du vendeur "${name.trim()}" ont été mis à jour.`
+          );
+        }
       } else {
         // Add new vendor
         await addDoc(collection(db, "vendors"), {
@@ -257,12 +286,29 @@ function AdminVendorManagement() {
           createdAt: new Date(), // Optional: timestamp
         });
         showSnackbar("Nouveau vendeur ajouté avec succès!", "success");
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Nouveau Vendeur Ajouté",
+            `Le vendeur "${name.trim()}" a été ajouté.`
+          );
+        }
       }
       handleCloseFormDialog();
       fetchVendors(); // Refresh list
     } catch (err) {
       console.error("Erreur lors de la sauvegarde du vendeur:", err);
-      showSnackbar("Erreur lors de la sauvegarde du vendeur.", "error");
+      const errorMsg = `Erreur lors de la sauvegarde du vendeur "${name.trim()}": ${err.message}`;
+      showSnackbar(errorMsg, "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Sauvegarde Vendeur",
+          errorMsg
+        );
+      }
     } finally {
       setActionLoading(false);
     }

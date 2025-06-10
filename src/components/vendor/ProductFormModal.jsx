@@ -11,6 +11,8 @@ import { db, storage } from '../../firebaseConfig'; // Ensure storage is exporte
 import { doc, addDoc, updateDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
 import { useAuth } from '../../contexts/AuthContext';
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 // Sample categories - this could come from a config file or Firestore in the future
 const PREDEFINED_CATEGORIES = ["Légumes", "Fruits", "Viandes", "Poissons", "Épices", "Boissons", "Autre"];
@@ -196,11 +198,38 @@ function ProductFormModal({ open, onClose, product, onSave }) {
         // The prompt's code implies `addDoc` is used and `productId` is for image path consistency, which is fine.
       }
 
-      onSave();
-      onClose();
+      // Notifications on success
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        if (isEditMode) {
+          triggerSendNotification(
+            fcmToken,
+            "Produit Mis à Jour",
+            `Votre produit "${formData.name}" a été mis à jour avec succès.`
+          );
+        } else {
+          triggerSendNotification(
+            fcmToken,
+            "Produit Ajouté",
+            `Nouveau produit "${formData.name}" ajouté avec succès à vos listes.`
+          );
+        }
+      }
+
+      onSave(); // Call this to refetch products on the parent page
+      onClose(); // Close the modal
     } catch (err) {
       console.error("Error saving product:", err);
       setError(`Erreur lors de l'enregistrement du produit: ${err.message}`);
+      // Notification on failure
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de l'Enregistrement",
+          `Erreur lors de l'enregistrement du produit "${formData.name}": ${err.message}`
+        );
+      }
     } finally {
       setIsSubmitting(false);
     }

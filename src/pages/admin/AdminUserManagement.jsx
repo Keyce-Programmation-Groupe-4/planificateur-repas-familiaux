@@ -31,6 +31,8 @@ import {
 } from "@mui/material"
 import { People as PeopleIcon, MoreVert as MoreVertIcon } from "@mui/icons-material"
 import { db } from "../../firebaseConfig" // Assuming firebaseConfig is correctly set up
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 import { collection, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore"
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 
@@ -130,10 +132,26 @@ function AdminUserManagement() {
         `Utilisateur ${selectedUser.disabled ? "activé" : "désactivé"} avec succès.`,
         "success"
       )
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Statut Utilisateur Modifié",
+          `Le statut de ${selectedUser.displayName || selectedUser.email} a été ${selectedUser.disabled ? "activé" : "désactivé"}.`
+        );
+      }
       fetchUsers() // Refresh data
     } catch (err) {
       console.error("Erreur lors du changement de statut:", err)
       showSnackbar("Erreur lors du changement de statut.", "error")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Modification Statut",
+          `Erreur lors de la modification du statut de ${selectedUser.displayName || selectedUser.email}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false)
       setSelectedUser(null) // Clear selected user
@@ -172,16 +190,69 @@ function AdminUserManagement() {
         `Rôle Admin ${selectedUser.isAdmin ? "retiré de" : "attribué à"} ${selectedUser.displayName || selectedUser.email} avec succès.`,
         "success"
       );
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Rôle Admin Modifié",
+          `Le rôle admin pour ${selectedUser.displayName || selectedUser.email} a été ${selectedUser.isAdmin ? "retiré" : "attribué"}.`
+        );
+      }
       fetchUsers(); // Refresh data
     } catch (err) {
       console.error("Erreur lors du changement de rôle Admin:", err);
       showSnackbar("Erreur lors du changement de rôle Admin.", "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Modification Rôle Admin",
+          `Erreur lors de la modification du rôle admin pour ${selectedUser.displayName || selectedUser.email}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false);
       setSelectedUser(null);
     }
   };
 
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    setActionLoading(true);
+    handleCloseConfirmDialog();
+
+    try {
+      await deleteDoc(doc(db, "users", selectedUser.id));
+      showSnackbar(
+        `Utilisateur ${selectedUser.displayName || selectedUser.email} supprimé avec succès.`,
+        "success"
+      );
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Utilisateur Supprimé",
+          `L'utilisateur ${selectedUser.displayName || selectedUser.email} a été supprimé.`
+        );
+      }
+      fetchUsers(); // Refresh data
+    } catch (err) {
+      console.error("Erreur lors de la suppression de l'utilisateur:", err);
+      showSnackbar("Erreur lors de la suppression de l'utilisateur.", "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Suppression Utilisateur",
+          `Erreur lors de la suppression de ${selectedUser.displayName || selectedUser.email}: ${err.message}`
+        );
+      }
+    } finally {
+      setActionLoading(false);
+      setSelectedUser(null);
+    }
+  };
 
   if (isLoading || actionLoading) {
     return (

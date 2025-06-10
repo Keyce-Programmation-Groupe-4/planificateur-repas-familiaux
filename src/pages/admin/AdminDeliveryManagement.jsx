@@ -48,6 +48,8 @@ import { orderBy as firestoreOrderBy } from "firebase/firestore"; // Import orde
 import { format } from "date-fns" // For formatting dates
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
 import { DELIVERY_STATUS_LIST, getDeliveryStatusByKey } from "../../config/deliveryStatuses" // Added import
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 function AdminDeliveryManagement() {
   const theme = useTheme();
@@ -200,10 +202,27 @@ function AdminDeliveryManagement() {
         ]
       });
       showSnackbar("Statut de la livraison mis à jour avec succès!", "success");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        const statusLabel = getDeliveryStatusByKey(selectedStatusToUpdate)?.adminLabel || selectedStatusToUpdate;
+        triggerSendNotification(
+          fcmToken,
+          "Statut Livraison Mis à Jour",
+          `Statut pour livraison #${selectedDelivery.id.substring(0,6)} changé à '${statusLabel}'.`
+        );
+      }
       fetchDeliveryRequests(); // Refresh list
     } catch (err) {
       console.error("Erreur lors de la mise à jour du statut:", err);
       showSnackbar("Erreur lors de la mise à jour du statut.", "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec Mise à Jour Statut",
+          `Échec MAJ statut pour livraison #${selectedDelivery.id.substring(0,6)}: ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false);
       handleCloseStatusUpdateDialog();

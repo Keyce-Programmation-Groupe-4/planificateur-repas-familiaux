@@ -22,6 +22,7 @@ import VendorOrderDashboard from "./pages/vendor/VendorOrderDashboard"; // Assum
 import VendorDashboardProfilePage from "./pages/vendor/VendorProfilePage"; // Renamed import for clarity
 import VendorProductsPage from "./pages/vendor/VendorProductsPage"; // Added for vendor products
 import { AuthProvider } from "./contexts/AuthContext"
+import Notifications from './components/Notifications/Notifications.jsx'; // <<< ADD THIS
 import DeliveryRequestPage from "./pages/delivery/DeliveryRequestPage"
 import DeliveryTrackingPage from "./pages/delivery/DeliveryTrackingPage"
 import MyDeliveriesPage from "./pages/delivery/MyDeliveriesPage"
@@ -46,6 +47,7 @@ const UserRoutesLayout = () => (
 function App() {
   return (
     <AuthProvider>
+      <Notifications /> {/* <<< ADD THIS HERE */}
       <Routes>
         {/* User Facing Routes wrapped by Main Layout */}
         <Route element={<UserRoutesLayout />}>

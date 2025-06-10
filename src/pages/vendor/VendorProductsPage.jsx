@@ -27,6 +27,8 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import { useAuth } from '../../contexts/AuthContext';
 import { db } from '../../firebaseConfig';
 import { collection, query, where, getDocs, doc, deleteDoc } from 'firebase/firestore';
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 import ProductFormModal from '../../components/vendor/ProductFormModal';
 
@@ -74,14 +76,32 @@ function VendorProductsPage() {
       return;
     }
     try {
+      const productToDelete = products.find(p => p.id === productId);
+      const productName = productToDelete ? productToDelete.name : "Inconnu";
       await deleteDoc(doc(db, "products", productId));
       setProducts(products.filter(p => p.id !== productId));
-      // Show success message (e.g., using a Snackbar)
       alert("Produit supprimé avec succès !"); // Placeholder
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Produit Supprimé",
+          `Votre produit "${productName}" a été supprimé avec succès.`
+        );
+      }
     } catch (err) {
       console.error("Error deleting product:", err);
+      const productToDelete = products.find(p => p.id === productId);
+      const productName = productToDelete ? productToDelete.name : "Inconnu";
       setError("Erreur lors de la suppression du produit.");
-      // Show error message
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de la Suppression",
+          `Erreur lors de la suppression du produit "${productName}": ${err.message}`
+        );
+      }
     }
   };
 
