@@ -20,7 +20,7 @@ async function requestNotificationPermission() {
       console.log('Notification permission granted.');
       // Get token
       // You'll need to replace 'YOUR_VAPID_KEY_HERE' with the VAPID key you obtained in Step 1
-          const currentToken = await getToken(messaging, { vapidKey: 'YOUR_VAPID_KEY_HERE' }); // Ensure your VAPID key is here
+          const currentToken = await getToken(messaging, { vapidKey: 'BG8mUrc9uXPAvGildndS__arh0iZnGIBY4tpg8MgION-0pqHaLTUxt9DNVzuF8Hoh1eWXuIIFnqtkyfA5z119nU' }); // Ensure your VAPID key is here
       if (currentToken) {
         console.log('FCM Token:', currentToken);
             localStorage.setItem('fcmToken', currentToken); // <<< ADD THIS LINE

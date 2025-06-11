@@ -147,7 +147,7 @@ export default function LoginPage() {
         triggerSendNotification(
           fcmTokenFailure,
           "Tentative de connexion échouée",
-          error // Send the specific error message
+          "la tentative de connexion a échoué. Veuillez vérifier vos identifiants."
         );
       }
       setLoading(false)
@@ -210,7 +210,7 @@ export default function LoginPage() {
         triggerSendNotification(
           fcmTokenGoogleFailure,
           "Tentative de connexion Google échouée",
-          error // Send the specific error message
+          "La tentative de connexion avec Google a échoué. Veuillez réessayer."
         );
       }
       setGoogleLoading(false)
