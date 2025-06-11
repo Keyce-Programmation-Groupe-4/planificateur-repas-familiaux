@@ -28,6 +28,10 @@ import MicIcon from '@mui/icons-material/Mic'
 import StopIcon from '@mui/icons-material/Stop'
 import { differenceInYears } from "date-fns"
 import ReactMarkdown from 'react-markdown' // Ajout de react-markdown
+
+// Import action functions
+import { addFamilyMemberByEmail, generateWeeklyMealPlan, exportWeeklyPlanToPdf, exportShoppingListToPdf } from '../chatbotActions.js';
+import { Timestamp } from 'firebase/firestore'; // For weekId generation, if needed beyond the helper
 import rehypeSanitize from 'rehype-sanitize' // Pour sécuriser le rendu Markdown
 import { githubLight } from '@uiw/codemirror-theme-github' // Pour styliser les blocs de code (optionnel)
 import CodeMirror from '@uiw/react-codemirror' // Pour rendre les blocs de code
@@ -50,9 +54,12 @@ const generateUserContext = (userData, familyData, familyMembers) => {
       context += `- Âge: ${age} ans\n`;
     } catch (e) { console.error("Erreur calcul âge:", e); }
   }
-  if (userData.personalInfo?.familyRelationship) {
-    context += `- Rôle familial: ${userData.personalInfo.familyRelationship}\n`;
+  // Clarify familyRole
+  const familyRole = userData.personalInfo?.familyRelationship || userData.familyRole;
+  if (familyRole) {
+    context += `- Rôle dans la famille: ${familyRole}\n`;
   }
+
   context += `\nPréférences alimentaires:\n`;
   context += `- Régime: ${userData.dietaryPreferences?.diet || 'Aucun régime spécifique'}\n`;
   context += `- Allergies: ${userData.dietaryPreferences?.allergies?.join(", ") || 'Aucune allergie connue'}\n`;
@@ -62,16 +69,30 @@ const generateUserContext = (userData, familyData, familyMembers) => {
   if (userData.dietaryPreferences?.favorites?.length > 0) {
     context += `- Favoris: ${userData.dietaryPreferences.favorites.join(", ")}\n`;
   }
+
   if (familyData) {
     context += `\nInformations famille:\n`;
     context += `- Nom de la famille: ${familyData.familyName || "Non spécifié"}\n`;
+    // Explicitly include familyId
+    if (familyData.id) {
+      context += `- ID Famille: ${familyData.id}\n`;
+    }
+    // Admin Status
+    if (userData.uid && familyData.adminUid) {
+      context += `- Statut Admin: ${userData.uid === familyData.adminUid ? 'Oui' : 'Non'}\n`;
+    }
+
     if (familyMembers?.length > 0) {
       context += `- Membres (${familyMembers.length}):\n`;
       familyMembers.forEach(member => {
-        if (member.uid !== userData.uid) {
-          context += `  * ${member.displayName || "Membre"} (${member.familyRole || "Membre"})\n`;
-          if (member.dietaryPreferences?.diet) context += `    - Régime: ${member.dietaryPreferences.diet}\n`;
-          if (member.dietaryPreferences?.allergies?.length > 0) context += `    - Allergies: ${member.dietaryPreferences.allergies.join(", ")}\n`;
+        // Display info for all members, including the current user if part of familyMembers list
+        const memberRole = member.uid === familyData.adminUid ? 'Admin' : (member.familyRole || 'Membre');
+        context += `  * ${member.displayName || "Membre"} (${memberRole})\n`;
+        if (member.uid === userData.uid) { // Note for current user's own listed preferences if available
+            context += `    (Préférences personnelles listées ci-dessus)\n`;
+        } else { // For other members
+            if (member.dietaryPreferences?.diet) context += `    - Régime: ${member.dietaryPreferences.diet}\n`;
+            if (member.dietaryPreferences?.allergies?.length > 0) context += `    - Allergies: ${member.dietaryPreferences.allergies.join(", ")}\n`;
         }
       });
     }
@@ -95,6 +116,21 @@ const generateWelcomeMessage = (userData, familyData) => {
   if (familyData) welcomeMessage += `Vous faites partie de la famille ${familyData.familyName}. `;
   welcomeMessage += "Demandez-moi des recettes ou de l'aide pour planifier !";
   return welcomeMessage;
+};
+
+// Helper to get weekId in YYYY-WW format
+// NOTE: This should ideally be a robust, shared utility.
+const getWeekIdForChatbot = (dateInput = new Date()) => {
+    const date = new Date(dateInput);
+    date.setHours(0, 0, 0, 0);
+    // Monday is day 1, Sunday is day 0 if getDay() is used directly.
+    // Adjust to make Monday the first day of the week (ISO 8601).
+    date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+    const year = date.getFullYear();
+    const firstDayOfYear = new Date(year, 0, 1);
+    // Calculate the week number
+    const weekNumber = Math.ceil(((date - firstDayOfYear) / 86400000 + 1) / 7);
+    return `${year}-W${String(weekNumber).padStart(2, '0')}`;
 };
 
 // Fonction pour appeler l'API Gemini
@@ -241,17 +277,89 @@ export default function Chatbot({ userData, familyData, familyMembers, isOpen, o
     setChatError('');
     setVoiceError('');
 
-    try {
-      const historyForAPI = updatedMessages.slice(welcomeMessageSet ? 1 : 0);
-      const botResponse = await callGeminiAPI(historyForAPI, userContext);
-      setChatMessages(prev => [...prev, { sender: 'bot', text: botResponse }]);
-    } catch (error) {
-      console.error("Erreur envoi message:", error);
-      setChatError(`Erreur: ${error.message || 'Impossible de contacter l\'assistant.'}`);
-    } finally {
-      setIsChatLoading(false);
+    let botResponseText = "";
+    let actionTaken = false;
+
+    if (messageText.startsWith('/')) {
+        actionTaken = true;
+        const parts = messageText.split(' ');
+        const command = parts[0];
+
+        // Ensure userData.email is available. It might be directly on userData or inside personalInfo.
+        const currentUserEmail = userData?.email || userData?.personalInfo?.email;
+
+        if (command === '/invite' && parts.length > 1) {
+            const email = parts[1];
+            if (userData && userData.uid && userData.displayName && currentUserEmail && familyData && familyData.id && familyData.adminUid && familyData.familyName) {
+                const currentUserForAction = {
+                    uid: userData.uid,
+                    displayName: userData.displayName,
+                    email: currentUserEmail
+                };
+                const currentFamilyForAction = {
+                    id: familyData.id,
+                    adminUid: familyData.adminUid,
+                    familyName: familyData.familyName
+                };
+                const result = await addFamilyMemberByEmail(currentUserForAction, currentFamilyForAction, email);
+                botResponseText = result.success ? result.message : result.error;
+            } else {
+                botResponseText = "Données utilisateur ou familiales insuffisantes ou incorrectes pour l'invitation. Vérifiez que l'email de l'utilisateur est disponible et que les détails de la famille (ID, Admin UID, Nom) sont chargés.";
+            }
+        } else if (command === '/generate_plan') {
+            const type = parts[1] || 'all';
+            const currentWeekId = getWeekIdForChatbot();
+            // Assuming familyData.id is the familyId userData is associated with for planning
+            if (familyData && familyData.id) {
+                const result = await generateWeeklyMealPlan(familyData.id, currentWeekId, type);
+                botResponseText = result.success ? result.message : result.error;
+            } else {
+                botResponseText = "ID de famille non disponible. Assurez-vous d'être associé à une famille.";
+            }
+        } else if (command === '/export_plan_pdf') {
+            const weekArg = parts[1] || 'current';
+            const targetWeekId = weekArg === 'current' ? getWeekIdForChatbot() : weekArg;
+            if (familyData && familyData.id) {
+                const result = await exportWeeklyPlanToPdf(familyData.id, targetWeekId);
+                botResponseText = result.success ? result.message : result.error;
+            } else {
+                botResponseText = "ID de famille non disponible pour exporter le planning.";
+            }
+        } else if (command === '/export_list_pdf') {
+            const weekArg = parts[1] || 'current';
+            const targetWeekId = weekArg === 'current' ? getWeekIdForChatbot() : weekArg;
+            if (familyData && familyData.id) {
+                const result = await exportShoppingListToPdf(familyData.id, targetWeekId);
+                botResponseText = result.success ? result.message : result.error;
+            } else {
+                botResponseText = "ID de famille non disponible pour exporter la liste de courses.";
+            }
+        } else {
+            botResponseText = `Commande "${command}" inconnue ou format incorrect. Commandes disponibles: /invite <email>, /generate_plan [type], /export_plan_pdf [weekId], /export_list_pdf [weekId].`;
+            actionTaken = false;
+        }
+
+        if(actionTaken){
+             setChatMessages(prev => [...prev, { sender: 'bot', text: botResponseText }]);
+             setIsChatLoading(false);
+        }
     }
-  }, [userInput, chatMessages, isChatLoading, userContext, welcomeMessageSet]);
+
+    if (!actionTaken) {
+        try {
+          // userContext is already in the component's state, generated by useEffect
+          const historyForAPI = updatedMessages.slice(welcomeMessageSet ? 1 : 0);
+          const geminiResponse = await callGeminiAPI(historyForAPI, userContext);
+          setChatMessages(prev => [...prev, { sender: 'bot', text: geminiResponse }]);
+        } catch (error) {
+          console.error("Erreur envoi message:", error);
+          setChatError(`Erreur: ${error.message || 'Impossible de contacter l\'assistant.'}`);
+          setChatMessages(prev => [...prev, { sender: 'bot', text: `Erreur: ${error.message || 'Impossible de contacter l\'assistant.'}` }]);
+        } finally {
+          setIsChatLoading(false);
+        }
+    }
+  }, [userInput, chatMessages, isChatLoading, userContext, welcomeMessageSet, userData, familyData]); // Added userData and familyData
 
   const handleToggleRecording = () => {
     if (!isSpeechSupported) {

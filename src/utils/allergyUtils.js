@@ -1,151 +1,175 @@
-// Utilitaire pour vérifier les allergies alimentaires
-import { collection, query, where, getDocs } from "firebase/firestore";
+// src/utils/allergyUtils.js
+import { collection, query, where, getDocs, doc, getDoc } from "firebase/firestore";
 import { db } from "../firebaseConfig";
 
 /**
- * Vérifie si des membres de la famille ont des allergies aux ingrédients des recettes planifiées
- * @param {string} familyId - ID de la famille
- * @param {Object} weeklyPlanData - Données du planning hebdomadaire
- * @param {Array} availableRecipes - Liste des recettes disponibles
- * @returns {Promise<Object>} Résultat de la vérification des allergies
+ * Checks for allergies in a given meal plan for a specific family.
+ *
+ * @param {string} familyId - The ID of the family.
+ * @param {object} planData - The weekly meal plan data.
+ * @param {Array<object>} availableRecipes - Array of all available recipe objects, including their ingredients.
+ * @returns {Promise<object>} An object containing allergy information:
+ *                            { hasAllergies: boolean, alerts: Array<object>, message: string }
+ *                            Each alert object: { meal: string, day: string, recipeName: string, memberName: string, allergy: string, severity: string }
  */
-export const checkAllergies = async (familyId, weeklyPlanData, availableRecipes) => {
+export const checkAllergies = async (familyId, planData, availableRecipes) => {
+  let hasAllergies = false;
+  const alerts = [];
+  let message = "";
+
+  if (!familyId || !planData || !planData.days || !availableRecipes) {
+    console.error("Invalid parameters for allergy check.");
+    return { hasAllergies: false, alerts: [], message: "Données invalides pour la vérification des allergies." };
+  }
+
   try {
-    // Récupérer les membres de la famille avec leurs allergies
-    const familyMembersRef = collection(db, "families", familyId, "members");
-    const membersSnapshot = await getDocs(familyMembersRef);
-    
-    const familyMembers = membersSnapshot.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // 1. Fetch family document to get memberUids
+    const familyDocRef = doc(db, "families", familyId);
+    const familyDocSnap = await getDoc(familyDocRef);
 
-    // Filtrer les membres qui ont des allergies
-    const membersWithAllergies = familyMembers.filter(member => 
-      member.allergies && member.allergies.length > 0
-    );
+    if (!familyDocSnap.exists()) {
+      console.error(`Family document with ID ${familyId} not found.`);
+      return { hasAllergies: false, alerts: [], message: "Données de la famille introuvables pour la vérification des allergies." };
+    }
+    const familyData = familyDocSnap.data();
+    const memberUids = familyData.memberUids || [];
 
-    if (membersWithAllergies.length === 0) {
-      return {
-        hasAllergies: false,
-        alerts: [],
-        message: "Aucune allergie détectée dans la famille."
-      };
+    if (memberUids.length === 0) {
+      // No members, so no allergies to check against.
+      return { hasAllergies: false, alerts: [], message: "Aucun membre trouvé dans la famille pour vérifier les allergies." };
     }
 
-    const alerts = [];
-    const recipeAllergyMap = new Map();
+    // 2. Fetch each user document based on memberUids
+    const memberPromises = memberUids.map(uid => getDoc(doc(db, "users", uid)));
+    const memberDocsSnap = await Promise.all(memberPromises);
 
-    // Parcourir tous les jours et repas du planning
-    Object.entries(weeklyPlanData.days || {}).forEach(([day, meals]) => {
-      Object.entries(meals).forEach(([mealType, recipeId]) => {
-        if (recipeId) {
-          const recipe = availableRecipes.find(r => r.id === recipeId);
-          if (recipe && recipe.ingredients) {
-            // Vérifier chaque membre avec allergies
-            membersWithAllergies.forEach(member => {
-              member.allergies.forEach(allergy => {
-                // Vérifier si l'allergène est présent dans les ingrédients
-                const hasAllergen = recipe.ingredients.some(ingredient => 
-                  ingredient.name.toLowerCase().includes(allergy.toLowerCase()) ||
-                  allergy.toLowerCase().includes(ingredient.name.toLowerCase())
-                );
+    const familyMembers = memberDocsSnap.map(docSnap => {
+      if (docSnap.exists()) {
+        const userData = docSnap.data();
+        return {
+          id: docSnap.id, // User's UID
+          name: userData.displayName || userData.personalInfo?.firstName || "Membre inconnu",
+          // Assuming dietaryRestrictions array stores allergy strings directly
+          allergies: userData.dietaryPreferences?.allergies || userData.dietaryRestrictions || [],
+          // Assuming allergySeveritiesMap is { "allergenName": "severityLevel" }
+          allergySeveritiesMap: userData.dietaryPreferences?.allergySeverities || userData.allergySeveritiesMap || {}
+        };
+      }
+      return null;
+    }).filter(member => member !== null && member.allergies && member.allergies.length > 0);
 
-                if (hasAllergen) {
-                  const alertKey = `${day}-${mealType}-${recipeId}-${member.id}-${allergy}`;
-                  if (!recipeAllergyMap.has(alertKey)) {
-                    alerts.push({
-                      day,
-                      mealType,
-                      recipeName: recipe.name,
-                      recipeId,
-                      memberName: member.name,
-                      memberId: member.id,
-                      allergen: allergy,
-                      ingredients: recipe.ingredients.filter(ing => 
-                        ing.name.toLowerCase().includes(allergy.toLowerCase()) ||
-                        allergy.toLowerCase().includes(ing.name.toLowerCase())
-                      ),
-                      severity: member.allergySeverity?.[allergy] || "modérée"
-                    });
-                    recipeAllergyMap.set(alertKey, true);
-                  }
-                }
-              });
-            });
-          }
+    if (familyMembers.length === 0) {
+      // No members with allergies found.
+      return { hasAllergies: false, alerts: [], message: "Aucun membre avec des allergies spécifiées trouvé." };
+    }
+
+    const days = Object.keys(planData.days);
+
+    for (const day of days) {
+      const meals = planData.days[day];
+      if (!meals) continue;
+
+      for (const mealType of Object.keys(meals)) { // breakfast, lunch, dinner
+        const recipeId = meals[mealType];
+        if (!recipeId) continue;
+
+        const recipe = availableRecipes.find(r => r.id === recipeId);
+        if (!recipe || !recipe.ingredients || recipe.ingredients.length === 0) {
+          continue;
         }
-      });
-    });
 
-    return {
-      hasAllergies: alerts.length > 0,
-      alerts,
-      message: alerts.length > 0 
-        ? `${alerts.length} alerte(s) d'allergie détectée(s) dans le planning.`
-        : "Aucune allergie détectée dans le planning de la semaine."
-    };
+        familyMembers.forEach(member => {
+          member.allergies.forEach(allergy => {
+            // Check if any ingredient name contains the allergy string.
+            // This is a simple substring check. More sophisticated matching might be needed.
+            const offendingIngredients = recipe.ingredients.filter(ingredient =>
+              ingredient && ingredient.name && typeof ingredient.name === 'string' &&
+              ingredient.name.toLowerCase().includes(allergy.toLowerCase())
+            );
+
+            if (offendingIngredients.length > 0) {
+              hasAllergies = true;
+              const severity = (member.allergySeveritiesMap && member.allergySeveritiesMap[allergy.toLowerCase()]) || "modérée";
+              alerts.push({
+                day: day, // Keep original key for now, format later if needed by UI
+                meal: mealType,
+                recipeName: recipe.name,
+                memberName: member.name,
+                allergy: allergy,
+                severity: severity,
+                offendingIngredients: offendingIngredients.map(ing => ing.name)
+              });
+            }
+          });
+        });
+      }
+    }
+
+    if (hasAllergies) {
+      const uniqueAlerts = alerts.reduce((acc, current) => {
+        const x = acc.find(item =>
+            item.recipeName === current.recipeName &&
+            item.memberName === current.memberName &&
+            item.allergy === current.allergy &&
+            item.day === current.day && // Ensure day is part of uniqueness
+            item.meal === current.meal  // Ensure meal is part of uniqueness
+        );
+        if (!x) {
+            return acc.concat([current]);
+        } else {
+            return acc;
+        }
+      }, []);
+
+      message = `Attention ! ${uniqueAlerts.length} conflit(s) d'allergie(s) détecté(s) dans le planning.`;
+      return { hasAllergies: true, alerts: uniqueAlerts, message };
+    } else {
+      message = "Aucun conflit d'allergie détecté dans le planning.";
+      return { hasAllergies: false, alerts: [], message };
+    }
 
   } catch (error) {
-    console.error("Erreur lors de la vérification des allergies:", error);
-    return {
-      hasAllergies: false,
-      alerts: [],
-      message: "Erreur lors de la vérification des allergies.",
-      error: error.message
-    };
+    console.error("Erreur lors de la vérification des allergies :", error);
+    return { hasAllergies: false, alerts: [], message: `Erreur lors de la vérification des allergies: ${error.message}` };
   }
 };
 
-/**
- * Formate le nom du jour en français
- * @param {string} dayKey - Clé du jour (monday, tuesday, etc.)
- * @returns {string} Nom du jour en français
- */
+
+// Helper functions (potentially for UI display of alerts)
 export const formatDayName = (dayKey) => {
   const dayNames = {
     monday: "Lundi",
-    tuesday: "Mardi", 
+    tuesday: "Mardi",
     wednesday: "Mercredi",
     thursday: "Jeudi",
     friday: "Vendredi",
     saturday: "Samedi",
-    sunday: "Dimanche"
+    sunday: "Dimanche",
   };
-  return dayNames[dayKey] || dayKey;
+  return dayNames[dayKey.toLowerCase()] || dayKey;
 };
 
-/**
- * Formate le type de repas en français
- * @param {string} mealType - Type de repas (breakfast, lunch, dinner)
- * @returns {string} Type de repas en français
- */
-export const formatMealType = (mealType) => {
-  const mealTypes = {
+export const formatMealType = (mealKey) => {
+  const mealNames = {
     breakfast: "Petit-déjeuner",
     lunch: "Déjeuner",
-    dinner: "Dîner"
+    dinner: "Dîner",
   };
-  return mealTypes[mealType] || mealType;
+  return mealNames[mealKey.toLowerCase()] || mealKey;
 };
 
-/**
- * Obtient la couleur de sévérité pour l'affichage
- * @param {string} severity - Niveau de sévérité
- * @returns {string} Couleur correspondante
- */
 export const getSeverityColor = (severity) => {
   switch (severity?.toLowerCase()) {
-    case "légère":
-      return "#FFA726"; // Orange
-    case "modérée":
-      return "#FF7043"; // Orange foncé
     case "sévère":
-      return "#F44336"; // Rouge
-    case "critique":
-      return "#D32F2F"; // Rouge foncé
+    case "severe":
+      return "red";
+    case "modérée":
+    case "moderate":
+      return "orange";
+    case "faible":
+    case "low":
+      return "green";
     default:
-      return "#FF7043"; // Orange foncé par défaut
+      return "grey";
   }
 };
-
