@@ -74,7 +74,7 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
         if (!recipeId) continue;
 
         const recipe = availableRecipes.find(r => r.id === recipeId);
-        if (!recipe || !recipe.ingredients || recipe.ingredients.length === 0) {
+        if (!recipe || !recipe.ingredientsList || recipe.ingredientsList.length === 0) {
           continue;
         }
 
@@ -82,9 +82,9 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
           member.allergies.forEach(allergy => {
             // Check if any ingredient name contains the allergy string.
             // This is a simple substring check. More sophisticated matching might be needed.
-            const offendingIngredients = recipe.ingredients.filter(ingredient =>
-              ingredient && ingredient.name && typeof ingredient.name === 'string' &&
-              ingredient.name.toLowerCase().includes(allergy.toLowerCase())
+            const offendingIngredients = recipe.ingredientsList.filter(ingredient =>
+              ingredient && ingredient.ingredientName && typeof ingredient.ingredientName === 'string' &&
+              ingredient.ingredientName.toLowerCase().includes(allergy.toLowerCase())
             );
 
             if (offendingIngredients.length > 0) {
@@ -97,7 +97,7 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
                 memberName: member.name,
                 allergy: allergy,
                 severity: severity,
-                offendingIngredients: offendingIngredients.map(ing => ing.name)
+                offendingIngredients: offendingIngredients.map(ing => ing.ingredientName)
               });
             }
           });
