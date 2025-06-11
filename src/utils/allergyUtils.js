@@ -92,7 +92,7 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
               const severity = (member.allergySeveritiesMap && member.allergySeveritiesMap[allergy.toLowerCase()]) || "modérée";
               alerts.push({
                 day: day, // Keep original key for now, format later if needed by UI
-                meal: mealType,
+                mealType: mealType,
                 recipeName: recipe.name,
                 memberName: member.name,
                 allergy: allergy,
