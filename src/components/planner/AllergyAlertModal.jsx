@@ -183,7 +183,7 @@ const AllergyAlertModal = ({ open, onClose, alerts = [], message = "" }) => {
                               {alert.ingredients.map((ingredient, idx) => (
                                 <Chip
                                   key={idx}
-                                  label={`${ingredient.name} (${ingredient.quantity} ${ingredient.unit})`}
+                                  label={`${ingredient.ingredientName} (${ingredient.quantity} ${ingredient.unit})`}
                                   size="small"
                                   variant="outlined"
                                   sx={{ fontSize: "0.75rem" }}
