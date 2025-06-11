@@ -97,7 +97,7 @@ export const checkAllergies = async (familyId, planData, availableRecipes) => {
                 memberName: member.name,
                 allergy: allergy,
                 severity: severity,
-                offendingIngredients: offendingIngredients.map(ing => ing.ingredientName)
+                ingredients: offendingIngredients
               });
             }
           });
