@@ -41,6 +41,8 @@ import {
 import { db } from "../../firebaseConfig"
 import { collection, getDocs, query, orderBy, addDoc, updateDoc, deleteDoc, doc } from "firebase/firestore"
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 const initialIngredientState = {
   name: "",
@@ -150,6 +152,14 @@ function AdminIngredientManagement() {
           unit: currentIngredient.unit.trim() || null,
         });
         showSnackbar("Ingrédient mis à jour avec succès!", "success");
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Ingrédient Mis à Jour",
+            `L'ingrédient "${currentIngredient.name}" a été mis à jour.`
+          );
+        }
       } else {
         await addDoc(collection(db, "ingredients"), {
           name: currentIngredient.name.trim(),
@@ -157,12 +167,28 @@ function AdminIngredientManagement() {
           unit: currentIngredient.unit.trim() || null,
         });
         showSnackbar("Ingrédient ajouté avec succès!", "success");
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Ingrédient Ajouté",
+            `L'ingrédient "${currentIngredient.name}" a été ajouté.`
+          );
+        }
       }
       handleCloseDialog();
       fetchIngredients(); // Refresh list
     } catch (err) {
       console.error("Erreur lors de la sauvegarde de l'ingrédient:", err);
       showSnackbar("Erreur lors de la sauvegarde de l'ingrédient.", "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          `Échec de la ${isEditing ? "Mise à Jour" : "Création"}`,
+          `Erreur en sauvegardant l'ingrédient "${currentIngredient.name}": ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false);
     }
@@ -207,10 +233,26 @@ function AdminIngredientManagement() {
     try {
       await deleteDoc(doc(db, "ingredients", selectedIngredient.id));
       showSnackbar("Ingrédient supprimé avec succès!", "success");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Ingrédient Supprimé",
+          `L'ingrédient "${selectedIngredient.name}" a été supprimé.`
+        );
+      }
       fetchIngredients(); // Refresh list
     } catch (err) {
       console.error("Erreur lors de la suppression de l'ingrédient:", err);
       showSnackbar("Erreur lors de la suppression de l'ingrédient.", "error");
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de la Suppression",
+          `Erreur en supprimant l'ingrédient "${selectedIngredient.name}": ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false);
       handleCloseConfirmDeleteDialog();

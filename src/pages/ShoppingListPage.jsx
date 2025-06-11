@@ -42,6 +42,8 @@ import { db } from "../firebaseConfig"
 import { collection, doc, getDoc, getDocs, setDoc, updateDoc, serverTimestamp } from "firebase/firestore"
 import "jspdf-autotable"
 import PriceInputDialog from "../components/ShoppingList/PriceInputDialog"
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
 import ShoppingListCategory from "../components/ShoppingList/ShoppingListCategory"
 import { convertToStandardUnit, formatQuantityUnit, findStandardUnit } from "../utils/UnitConverter.js" // Assuming findStandardUnit exists
 
@@ -376,11 +378,29 @@ function ShoppingListPage() {
 
         console.log("Shopping list saved/updated successfully:", shoppingListDocData)
         setShoppingListDoc(shoppingListDocData) // Update local state with the full document
-        setSuccessMessage(isRefresh ? "Liste actualisée avec succès !" : "Liste de courses générée avec succès !")
+        const successMsg = isRefresh ? "Liste actualisée avec succès !" : "Liste de courses générée avec succès !";
+        setSuccessMessage(successMsg)
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            isRefresh ? "Liste Actualisée" : "Liste Générée",
+            `Votre liste de courses pour la semaine ${targetWeekId} a été ${isRefresh ? 'actualisée' : 'générée'}.`
+          );
+        }
         setTimeout(() => setSuccessMessage(""), 3000)
       } catch (err) {
         console.error(`Error ${isRefresh ? "refreshing" : "generating"} shopping list: `, err)
-        setError(err.message || `Erreur lors de ${isRefresh ? "l'actualisation" : "la génération"} de la liste.`)
+        const errorMsg = err.message || `Erreur lors de ${isRefresh ? "l'actualisation" : "la génération"} de la liste.`;
+        setError(errorMsg)
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Erreur Liste de Courses",
+            `Échec de ${isRefresh ? "l'actualisation" : "la génération"} de la liste: ${errorMsg}`
+          );
+        }
       } finally {
         setIsGenerating(false)
         setIsLoading(false) // Also set main loading to false
@@ -541,11 +561,34 @@ function ShoppingListPage() {
         if (newCheckedStatus) {
           console.log(`Stock updated for ${itemToUpdate.name}`)
           setSuccessMessage(`Stock mis à jour pour ${itemToUpdate.name}.`)
+          // Notification for stock update (optional, can be noisy)
+          // const fcmTokenStock = await getCurrentUserFCMToken();
+          // if (fcmTokenStock) {
+          //   triggerSendNotification(fcmTokenStock, "Stock Mis à Jour", `Le stock pour '${itemToUpdate.name}' a été mis à jour.`);
+          // }
           setTimeout(() => setSuccessMessage(""), 2000)
+        }
+        // Notification for item status change
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Article Mis à Jour",
+            `L'article '${itemToUpdate.name}' a été marqué comme ${newCheckedStatus ? 'acheté' : 'à acheter'}.`
+          );
         }
       } catch (err) {
         console.error("Error updating item status or stock:", err)
-        setError("Erreur lors de la mise à jour de l'article ou du stock.")
+        const errorMsg = `Erreur lors de la mise à jour de l'article ou du stock pour '${itemToUpdate.name}'.`;
+        setError(errorMsg);
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Erreur Mise à Jour Article",
+            `${errorMsg}: ${err.message}`
+          );
+        }
         // Revert optimistic UI update on error?
         setShoppingListDoc((prevDoc) => {
           const revertedItems = [...prevDoc.items]
@@ -573,9 +616,18 @@ function ShoppingListPage() {
     try {
       await updateDoc(listDocRef, { items: updatedItems })
       console.log("All items unchecked.")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Articles Décochés", "Tous les articles de la liste ont été décochés.");
+      }
     } catch (err) {
       console.error("Error unchecking all items:", err)
-      setError("Erreur lors de la désélection de tous les articles.")
+      const errorMsg = "Erreur lors de la désélection de tous les articles.";
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Erreur", `${errorMsg}: ${err.message}`);
+      }
       // Revert UI?
       setShoppingListDoc(shoppingListDoc) // Revert to original doc state
     }
@@ -594,9 +646,18 @@ function ShoppingListPage() {
     try {
       await updateDoc(listDocRef, { items: remainingItems })
       console.log("Checked items cleared.")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Articles Supprimés", "Les articles cochés ont été supprimés de la liste.");
+      }
     } catch (err) {
       console.error("Error clearing checked items:", err)
-      setError("Erreur lors de la suppression des articles cochés.")
+      const errorMsg = "Erreur lors de la suppression des articles cochés.";
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Erreur", `${errorMsg}: ${err.message}`);
+      }
       // Revert UI?
       setShoppingListDoc(shoppingListDoc) // Revert to original doc state
     }
@@ -638,11 +699,27 @@ function ShoppingListPage() {
         updatedAt: serverTimestamp(),
       })
       console.log("Standard price updated successfully in Firestore.")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Prix Enregistré",
+          `Le prix pour '${ingredientName}' (${unit}) a été sauvegardé: ${price.toLocaleString("fr-FR")} XAF.`
+        );
+      }
       handleClosePriceDialog()
       generateOrRefreshShoppingList(true) // Re-generate/refresh list to reflect new price/cost
     } catch (error) {
       console.error("Error updating standard price in Firestore: ", error)
-      alert("Erreur lors de la sauvegarde du prix standard.")
+      alert("Erreur lors de la sauvegarde du prix standard.") // Keep existing alert for direct user feedback
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Erreur Prix",
+          `Échec de la sauvegarde du prix pour '${ingredientName}': ${error.message}`
+        );
+      }
     }
   }
 

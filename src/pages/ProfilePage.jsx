@@ -63,6 +63,8 @@ import { db, storage } from "../firebaseConfig"
 import { updateProfile } from "firebase/auth"
 import { doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore"
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
 
@@ -299,10 +301,26 @@ export default function ProfilePage() {
       await updateDoc(userDocRef, updatedData)
 
       setSuccess("Profil mis à jour avec succès !")
+      const fcmTokenSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenSuccess) {
+        triggerSendNotification(
+          fcmTokenSuccess,
+          "Profil Mis à Jour",
+          "Vos informations de profil ont été mises à jour avec succès."
+        );
+      }
       setIsEditing(false)
       setTimeout(() => setSuccess(""), 3000)
     } catch (err) {
       console.error("Profile Update Error:", err)
+      const fcmTokenFailure = await getCurrentUserFCMToken();
+      if (fcmTokenFailure) {
+        triggerSendNotification(
+          fcmTokenFailure,
+          "Échec de la Mise à Jour du Profil",
+          `Erreur: ${err.message}`
+        );
+      }
       setError("Échec de la mise à jour du profil. Détails: " + err.message)
     } finally {
       setLoading(false)
@@ -371,6 +389,14 @@ export default function ProfilePage() {
       },
       (error) => {
         console.error("Photo Upload Error:", error)
+        const fcmTokenFailure = getCurrentUserFCMToken(); // Not awaiting here due to sync context
+        if (fcmTokenFailure) {
+          triggerSendNotification(
+            fcmTokenFailure,
+            "Échec de l'Upload de Photo",
+            `Erreur lors de l'upload: ${error.code}`
+          );
+        }
         setError("Échec de l'upload de la photo. " + error.code)
         setUploadingPhoto(false)
         setPhotoUploadProgress(0)
@@ -385,9 +411,25 @@ export default function ProfilePage() {
             updatedAt: serverTimestamp(),
           })
           setSuccess("Photo de profil mise à jour !")
+          const fcmTokenSuccess = await getCurrentUserFCMToken();
+          if (fcmTokenSuccess) {
+            triggerSendNotification(
+              fcmTokenSuccess,
+              "Photo de Profil Mise à Jour",
+              "Votre photo de profil a été modifiée avec succès."
+            );
+          }
           setTimeout(() => setSuccess(""), 3000)
         } catch (updateError) {
           console.error("Error updating profile with new photo URL:", updateError)
+          const fcmTokenFailure = await getCurrentUserFCMToken();
+          if (fcmTokenFailure) {
+            triggerSendNotification(
+              fcmTokenFailure,
+              "Échec de la Mise à Jour de la Photo",
+              `Erreur lors de la mise à jour du profil: ${updateError.message}`
+            );
+          }
           setError("Échec de la mise à jour du profil avec la nouvelle photo.")
         } finally {
           setUploadingPhoto(false)

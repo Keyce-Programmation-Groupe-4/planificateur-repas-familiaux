@@ -65,6 +65,8 @@ import {
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore"
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
 
 export default function FamilyPage() {
   const theme = useTheme()
@@ -217,10 +219,20 @@ export default function FamilyPage() {
       })
       await batch.commit()
       setCreateFamilyDialogOpen(false)
-      setSuccessMessage("Famille créée avec succès !")
+      const successMsg = `Famille "${newFamilyName.trim()}" créée avec succès !`;
+      setSuccessMessage(successMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Famille Créée", successMsg);
+      }
     } catch (err) {
       console.error("Error creating family:", err)
-      setError("Erreur lors de la création de la famille.")
+      const errorMsg = `Erreur lors de la création de la famille: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Création Famille", errorMsg);
+      }
     } finally {
       setIsCreatingFamily(false)
     }
@@ -279,11 +291,21 @@ export default function FamilyPage() {
         },
       })
       await batch.commit()
-      setSuccessMessage(`Invitation envoyée à ${inviteEmail} ! Un email de notification a également été envoyé.`)
+      const successMsg = `Invitation envoyée à ${inviteEmail.trim()} ! Un email de notification a également été envoyé.`;
+      setSuccessMessage(successMsg);
       setInviteEmail("")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Invitation Envoyée", successMsg);
+      }
     } catch (err) {
       console.error("Error sending invitation:", err)
-      setError(err.message || "Erreur lors de l'envoi de l'invitation.")
+      const errorMsg = err.message || "Erreur lors de l'envoi de l'invitation.";
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Envoi Invitation", errorMsg);
+      }
     } finally {
       setIsSendingInvite(false)
     }
@@ -315,11 +337,21 @@ export default function FamilyPage() {
         memberUids: arrayUnion(currentUser.uid),
       })
       await batch.commit()
-      setSuccessMessage(`Vous avez rejoint la famille ${invitation.familyName} !`)
+      const successMsg = `Vous avez rejoint la famille ${invitation.familyName} !`;
+      setSuccessMessage(successMsg);
       setInvitations((prev) => prev.filter((inv) => inv.id !== invitation.id))
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Invitation Acceptée", successMsg);
+      }
     } catch (err) {
       console.error("Error accepting invitation:", err)
-      setError("Erreur lors de l'acceptation de l'invitation.")
+      const errorMsg = `Erreur lors de l'acceptation de l'invitation pour la famille ${invitation.familyName}: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Acceptation Invitation", errorMsg);
+      }
     } finally {
       setIsProcessingInvite(null)
     }
@@ -335,11 +367,21 @@ export default function FamilyPage() {
         status: "declined",
         updatedAt: serverTimestamp(),
       })
-      setSuccessMessage("Invitation refusée.")
+      const successMsg = "Invitation refusée.";
+      setSuccessMessage(successMsg);
       setInvitations((prev) => prev.filter((inv) => inv.id !== invitationId))
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Invitation Refusée", successMsg);
+      }
     } catch (err) {
       console.error("Error declining invitation:", err)
-      setError("Erreur lors du refus de l'invitation.")
+      const errorMsg = `Erreur lors du refus de l'invitation: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Refus Invitation", errorMsg);
+      }
     } finally {
       setIsProcessingInvite(null)
     }
@@ -358,10 +400,22 @@ export default function FamilyPage() {
       setMembersData((prev) =>
         prev.map((m) => (m.uid === memberUid ? { ...m, familyRole: "SecondaryAdmin" } : m))
       )
-      setSuccessMessage("Membre promu au rôle d'admin secondaire.")
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const successMsg = `Membre ${memberName} promu au rôle d'admin secondaire.`;
+      setSuccessMessage(successMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Membre Promu", successMsg);
+      }
     } catch (err) {
       console.error("Error promoting member:", err)
-      setError("Erreur lors de la promotion du membre.")
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const errorMsg = `Erreur lors de la promotion de ${memberName}: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Promotion Membre", errorMsg);
+      }
     } finally {
       setIsProcessingAction(null)
     }
@@ -380,10 +434,22 @@ export default function FamilyPage() {
       setMembersData((prev) =>
         prev.map((m) => (m.uid === memberUid ? { ...m, familyRole: "Member" } : m))
       )
-      setSuccessMessage("Rôle d'admin secondaire retiré.")
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const successMsg = `Rôle d'admin secondaire retiré pour ${memberName}.`;
+      setSuccessMessage(successMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Membre Rétrogradé", successMsg);
+      }
     } catch (err) {
       console.error("Error demoting member:", err)
-      setError("Erreur lors du retrait du rôle d'admin secondaire.")
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const errorMsg = `Erreur lors de la rétrogradation de ${memberName}: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Rétrogradation Membre", errorMsg);
+      }
     } finally {
       setIsProcessingAction(null)
     }
@@ -410,11 +476,23 @@ export default function FamilyPage() {
         updatedAt: serverTimestamp(),
       })
       await batch.commit()
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const successMsg = `Membre ${memberName} retiré de la famille.`;
       setMembersData((prev) => prev.filter((member) => member.uid !== memberUid))
-      setSuccessMessage("Membre retiré de la famille.")
+      setSuccessMessage(successMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Membre Retiré", successMsg);
+      }
     } catch (err) {
       console.error("Error removing member:", err)
-      setError("Erreur lors du retrait du membre.")
+      const memberName = membersData.find(m => m.uid === memberUid)?.displayName || memberUid;
+      const errorMsg = `Erreur lors du retrait de ${memberName}: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Retrait Membre", errorMsg);
+      }
     } finally {
       setIsProcessingAction(null)
     }
@@ -441,12 +519,22 @@ export default function FamilyPage() {
         updatedAt: serverTimestamp(),
       })
       await batch.commit()
-      setSuccessMessage("Vous avez quitté la famille avec succès.")
+      const successMsg = "Vous avez quitté la famille avec succès.";
+      setSuccessMessage(successMsg);
       setFamilyData(null)
       setMembersData([])
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Famille Quittée", successMsg);
+      }
     } catch (err) {
       console.error("Error leaving family:", err)
-      setError("Erreur lors de la tentative de quitter la famille.")
+      const errorMsg = `Erreur lors de la tentative de quitter la famille: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec pour Quitter Famille", errorMsg);
+      }
     } finally {
       setIsProcessingAction(null)
       setLeaveFamilyDialogOpen(false)
@@ -507,7 +595,12 @@ export default function FamilyPage() {
         dietaryRestrictions: currentRestrictions,
         updatedAt: serverTimestamp(),
       })
-      setSuccessMessage("Besoins alimentaires mis à jour avec succès !")
+      const successMsg = "Besoins alimentaires mis à jour avec succès !";
+      setSuccessMessage(successMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Besoins Alimentaires Mis à Jour", successMsg);
+      }
       // AuthContext's onSnapshot for userData should pick this up.
       // If membersData state also holds a copy of currentUser's data, it might need manual update here
       // or a refetch, but membersData is typically for *other* members.
@@ -515,7 +608,12 @@ export default function FamilyPage() {
       setEditRestrictionsDialogOpen(false)
     } catch (err) {
       console.error("Error updating dietary restrictions:", err)
-      setError("Erreur lors de la mise à jour des besoins alimentaires.")
+      const errorMsg = `Erreur lors de la mise à jour des besoins alimentaires: ${err.message}`;
+      setError(errorMsg);
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(fcmToken, "Échec Mise à Jour Besoins", errorMsg);
+      }
     } finally {
       setIsProcessingAction(null) // Reset with the specific key or just null if it's generic
     }

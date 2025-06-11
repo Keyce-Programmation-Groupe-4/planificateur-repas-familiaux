@@ -4,6 +4,7 @@ import { getFirestore, enableIndexedDbPersistence } from "firebase/firestore";
 import { getAuth } from "firebase/auth";
 import { getStorage } from "firebase/storage";
 import { getFunctions } from "firebase/functions"; // 👈 Ajouter l'import pour Functions
+import { getMessaging } from "firebase/messaging"; // <<< ADD THIS
 
 const firebaseConfig = {
   apiKey: "AIzaSyDFgmRQKx4M3Gr36ab9S9bxPXknawWb-Sc",
@@ -43,7 +44,8 @@ enableIndexedDbPersistence(db)
 const auth = getAuth(app);
 const functions = getFunctions(app, "europe-west1"); // 👈 Initialiser Functions (adaptez la région si nécessaire)
 const storage = getStorage(app); 
+const messaging = getMessaging(app); // <<< ADD THIS
 
 // Exporter les instances
-export { app, db, auth, storage, functions }; // 👈 Exporter functions
+export { app, db, auth, storage, functions, messaging }; // <<< ADD messaging to exports
 // export const analytics = getAnalytics(app); // Si vous utilisez Google Analytics

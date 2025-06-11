@@ -35,6 +35,9 @@ import {
   Lock as LockIcon,
 } from "@mui/icons-material"
 import StarsIcon from '@mui/icons-material/Stars';
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
+
 export default function SignupPage() {
   const theme = useTheme()
   const navigate = useNavigate()
@@ -103,6 +106,18 @@ export default function SignupPage() {
       // Create user document in Firestore
       await createUserDocument(user, { displayName: displayName.trim() })
 
+      // Signup Success Notification
+      const fcmTokenSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenSuccess) {
+        triggerSendNotification(
+          fcmTokenSuccess,
+          "Inscription réussie !",
+          `Bienvenue ${displayName.trim()} ! Votre compte a été créé.`
+        );
+      } else {
+        console.warn("Inscription réussie, mais jeton FCM introuvable pour la notification push.");
+      }
+
       // Navigate to home page
       navigate("/")
     } catch (err) {
@@ -115,6 +130,16 @@ export default function SignupPage() {
         setError("Le mot de passe est trop faible.")
       } else {
         setError("Échec de l'inscription. Veuillez réessayer.")
+      }
+
+      // Signup Failure Notification
+      const fcmTokenFailure = await getCurrentUserFCMToken();
+      if (fcmTokenFailure) {
+        triggerSendNotification(
+          fcmTokenFailure,
+          "Tentative d'inscription échouée",
+          err.message || "Erreur inconnue" // Send the specific error message
+        );
       }
       setLoading(false)
     }
@@ -132,6 +157,18 @@ export default function SignupPage() {
       // Create user document if it doesn't exist
       await createUserDocument(user)
 
+      // Google Signup Success Notification
+      const fcmTokenGoogleSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenGoogleSuccess) {
+        triggerSendNotification(
+          fcmTokenGoogleSuccess,
+          "Inscription Google réussie !",
+          `Bienvenue ${user.displayName || 'Utilisateur'} ! Votre compte a été créé avec Google.`
+        );
+      } else {
+        console.warn("Inscription Google réussie, mais jeton FCM introuvable pour la notification push.");
+      }
+
       navigate("/")
     } catch (err) {
       console.error("Google Signup Error:", err)
@@ -139,6 +176,16 @@ export default function SignupPage() {
         setError("Connexion annulée.")
       } else {
         setError("Échec de la connexion avec Google.")
+      }
+
+      // Google Signup Failure Notification
+      const fcmTokenGoogleFailure = await getCurrentUserFCMToken();
+      if (fcmTokenGoogleFailure) {
+        triggerSendNotification(
+          fcmTokenGoogleFailure,
+          "Tentative d'inscription Google échouée",
+          err.message || "Erreur inconnue" // Send the specific error message
+        );
       }
       setGoogleLoading(false)
     }

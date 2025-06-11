@@ -85,6 +85,8 @@ import {
 
 // --- Context Import --- 
 import { useAuth } from '../contexts/AuthContext';
+import { triggerSendNotification } from '../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../utils/authUtils';
 
 // --- Utility Import --- 
 // import { formatQuantityUnit } from '../utils/unitConverter'; // Might not be needed here
@@ -521,19 +523,34 @@ export default function IngredientsPage() {
         const ingredientRef = doc(db, 'ingredients', editingIngredient.id);
         dataToSave.updatedBy = currentUser.uid;
         await updateDoc(ingredientRef, dataToSave);
-        setSuccessMessage(`Ingrédient '${dataToSave.name}' mis à jour.`);
+        const successMsgUpdate = `Ingrédient '${dataToSave.name}' mis à jour.`;
+        setSuccessMessage(successMsgUpdate);
+        const fcmTokenUpdate = await getCurrentUserFCMToken();
+        if (fcmTokenUpdate) {
+          triggerSendNotification(fcmTokenUpdate, "Ingrédient Mis à Jour", successMsgUpdate);
+        }
       } else {
         // Add new ingredient
         dataToSave.createdAt = serverTimestamp();
         dataToSave.createdBy = currentUser.uid;
         const docRef = await addDoc(collection(db, 'ingredients'), dataToSave);
-        setSuccessMessage(`Ingrédient '${dataToSave.name}' créé avec succès.`);
+        const successMsgAdd = `Ingrédient '${dataToSave.name}' créé avec succès.`;
+        setSuccessMessage(successMsgAdd);
+        const fcmTokenAdd = await getCurrentUserFCMToken();
+        if (fcmTokenAdd) {
+          triggerSendNotification(fcmTokenAdd, "Ingrédient Créé", successMsgAdd);
+        }
       }
       handleCloseIngredientDialog();
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       console.error('Error saving ingredient:', err);
-      setError('Erreur lors de la sauvegarde de l\'ingrédient.');
+      const errorMsg = `Erreur lors de la sauvegarde de l'ingrédient '${ingredientFormData.name.trim()}': ${err.message}`;
+      setError(errorMsg);
+      const fcmTokenError = await getCurrentUserFCMToken();
+      if (fcmTokenError) {
+        triggerSendNotification(fcmTokenError, "Échec Sauvegarde Ingrédient", errorMsg);
+      }
       setIsSavingIngredient(false); // Keep dialog open on error
     }
   };
@@ -601,12 +618,22 @@ export default function IngredientsPage() {
     try {
       const ingredientRef = doc(db, 'ingredients', ingredientToDelete.id);
       await deleteDoc(ingredientRef);
-      setSuccessMessage(`Ingrédient '${ingredientToDelete.name}' supprimé.`);
+      const successMsgDelete = `Ingrédient '${ingredientToDelete.name}' supprimé.`;
+      setSuccessMessage(successMsgDelete);
+      const fcmTokenDelete = await getCurrentUserFCMToken();
+      if (fcmTokenDelete) {
+        triggerSendNotification(fcmTokenDelete, "Ingrédient Supprimé", successMsgDelete);
+      }
       handleCloseDeleteConfirm();
       setTimeout(() => setSuccessMessage(''), 3000);
     } catch (err) {
       console.error('Error deleting ingredient:', err);
-      setError('Erreur lors de la suppression de l\'ingrédient.');
+      const errorMsgDelete = `Erreur lors de la suppression de l'ingrédient '${ingredientToDelete.name}': ${err.message}`;
+      setError(errorMsgDelete);
+      const fcmTokenErrorDelete = await getCurrentUserFCMToken();
+      if (fcmTokenErrorDelete) {
+        triggerSendNotification(fcmTokenErrorDelete, "Échec Suppression Ingrédient", errorMsgDelete);
+      }
     } finally {
       setIsSavingIngredient(false);
     }

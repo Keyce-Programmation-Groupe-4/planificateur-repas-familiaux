@@ -49,6 +49,8 @@ import { db } from "../../firebaseConfig"
 import { collection, getDocs, orderBy, query, doc, deleteDoc, writeBatch, serverTimestamp } from "firebase/firestore"
 import { format } from "date-fns"
 import AdminLayout from "../../components/AdminLayout.jsx" // Added AdminLayout
+import { triggerSendNotification } from '../../utils/notificationUtils';
+import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 function AdminRecipeManagement() {
   const theme = useTheme()
@@ -140,10 +142,26 @@ function AdminRecipeManagement() {
       const recipeRef = doc(db, "recipes", selectedRecipe.id)
       await deleteDoc(recipeRef)
       showSnackbar(`Recette "${selectedRecipe.name}" supprimée avec succès.`, "success")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Recette Supprimée",
+          `La recette "${selectedRecipe.name}" a été supprimée avec succès.`
+        );
+      }
       fetchRecipes()
     } catch (err) {
       console.error("Erreur lors de la suppression de la recette:", err)
       showSnackbar("Erreur lors de la suppression de la recette.", "error")
+      const fcmToken = await getCurrentUserFCMToken();
+      if (fcmToken) {
+        triggerSendNotification(
+          fcmToken,
+          "Échec de la Suppression",
+          `Erreur lors de la suppression de la recette "${selectedRecipe.name}": ${err.message}`
+        );
+      }
     } finally {
       setActionLoading(false)
       setSelectedRecipe(null)
@@ -308,11 +326,27 @@ function AdminRecipeManagement() {
       }
 
       showSnackbar(`Téléversement réussi! ${recipesUploadedCount} recettes ajoutées.`, "success");
+      const fcmTokenSuccess = await getCurrentUserFCMToken();
+      if (fcmTokenSuccess) {
+        triggerSendNotification(
+          fcmTokenSuccess,
+          "Téléversement CSV Réussi",
+          `${recipesUploadedCount} recettes ont été ajoutées avec succès via CSV.`
+        );
+      }
       fetchRecipes();
 
     } catch (error) {
       console.error("Erreur lors du téléversement par lot:", error);
       showSnackbar(`Erreur durant le téléversement: ${error.message}. ${recipesUploadedCount} recettes ont pu être ajoutées.`, "error", 8000);
+      const fcmTokenFailure = await getCurrentUserFCMToken();
+      if (fcmTokenFailure) {
+        triggerSendNotification(
+          fcmTokenFailure,
+          "Échec du Téléversement CSV",
+          `Erreur lors du téléversement CSV: ${error.message}. ${recipesUploadedCount} recettes ont pu être ajoutées avant l'échec.`
+        );
+      }
     } finally {
       setIsProcessingCsv(false);
       setSelectedFile(null);
