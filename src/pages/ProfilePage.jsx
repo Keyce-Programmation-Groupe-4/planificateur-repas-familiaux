@@ -21,7 +21,6 @@ import {
   alpha,
   Fade,
   Zoom,
-  Autocomplete,
   FormControl,
   InputLabel,
   Select,

@@ -9,6 +9,7 @@ import {
   Paper,
   TextField,
   Button,
+  Tooltip,
   Grid,
   Alert,
   CircularProgress,
@@ -659,12 +660,6 @@ function DeliveryRequestPage() {
                 </Box>
               </Grid>
 
-              <Grid item xs={12} sm={6}>
-                      value={deliveryAddress}
-                      onChange={(e) => {
-                        setDeliveryAddress(e.target.value);
-                        // If user types manually after a selection, clear coordinates
-              {/* The rest of the Grid items for date, time, instructions remain unchanged here */}
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth
