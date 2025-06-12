@@ -64,7 +64,7 @@ import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-m
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
 import { updateProfile } from "firebase/auth"
-import { doc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, query, onSnapshot, orderBy, deleteDoc } from "firebase/firestore" // Added deleteDoc
+import { doc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, query, onSnapshot, orderBy, deleteDoc, writeBatch } from "firebase/firestore" // Added deleteDoc and writeBatch
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { triggerSendNotification } from '../utils/notificationUtils';
 import { getCurrentUserFCMToken } from '../utils/authUtils';
@@ -312,6 +312,47 @@ export default function ProfilePage() {
     }
   }, [currentUser]);
 
+  const handleSetDefaultAddress = async (addressId) => {
+    if (!currentUser?.uid) {
+      setAddressError("Utilisateur non authentifié.");
+      return;
+    }
+
+    setLoading(true); // Use general loading state or a specific one for addresses
+    setAddressError("");
+    setSuccess("");
+
+    const newSavedAddresses = savedAddresses.map(addr => ({
+      ...addr,
+      isDefault: addr.id === addressId,
+    }));
+
+    try {
+      const batch = writeBatch(db);
+      savedAddresses.forEach(addr => {
+        const addressRef = doc(db, 'users', currentUser.uid, 'savedAddresses', addr.id);
+        if (addr.id === addressId) {
+          if (!addr.isDefault) { // Only update if it's not already default
+            batch.update(addressRef, { isDefault: true });
+          }
+        } else {
+          if (addr.isDefault) { // Only update if it was default
+            batch.update(addressRef, { isDefault: false });
+          }
+        }
+      });
+      await batch.commit();
+      setSavedAddresses(newSavedAddresses);
+      setSuccess("Adresse par défaut mise à jour !");
+      setTimeout(() => setSuccess(""), 3000);
+    } catch (err) {
+      console.error("Error setting default address:", err);
+      setAddressError("Erreur lors de la mise à jour de l'adresse par défaut.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Reset Add Address Form when dialog closes
   useEffect(() => {
     if (!openAddAddressDialog) {
@@ -381,10 +422,14 @@ export default function ProfilePage() {
 
     try {
       if (editingAddress) { // Editing existing address
+        // For existing addresses, we don't change the isDefault flag here.
+        // It should be managed by handleSetDefaultAddress.
         await updateDoc(doc(db, 'users', currentUser.uid, 'savedAddresses', editingAddress.id), addressData);
         setSuccess("Adresse modifiée avec succès !");
       } else { // Adding new address
-        addressData.createdAt = serverTimestamp(); // Add createdAt only for new addresses
+        addressData.createdAt = serverTimestamp();
+        // Set as default if it's the first address, otherwise not default
+        addressData.isDefault = savedAddresses.length === 0;
         await addDoc(collection(db, 'users', currentUser.uid, 'savedAddresses'), addressData);
         setSuccess("Nouvelle adresse enregistrée avec succès !");
       }
@@ -1980,7 +2025,10 @@ export default function ProfilePage() {
                                 <Grid item xs={12} sm={6} md={4} key={addr.id}>
                                   <Card sx={{borderRadius:3, boxShadow: theme.shadows[1], height:'100%', display:'flex', flexDirection:'column', '&:hover': {boxShadow: theme.shadows[4], transform: 'translateY(-2px)'}, transition: 'all 0.2s ease-in-out'}}>
                                     <CardContent sx={{flexGrow:1}}>
-                                      <Typography variant="h6" sx={{fontWeight:500, mb:0.5, color: theme.palette.primary.dark}}>{addr.name}</Typography>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.5 }}>
+                                        <Typography variant="h6" sx={{fontWeight:500, color: theme.palette.primary.dark, mr: 1 }}>{addr.name}</Typography>
+                                        {addr.isDefault && <Chip label="Défaut" color="primary" size="small" sx={{ height: 'auto', fontSize: '0.7rem' }} />}
+                                      </Box>
                                       <Typography variant="body2" color="text.secondary">{addr.formattedAddress}</Typography>
                                       {/* Optional: display lat/lng or a mini-map later */}
                                       {/*
@@ -1989,13 +2037,28 @@ export default function ProfilePage() {
                                       </Typography>
                                       */}
                                     </CardContent>
-                                     <CardActions sx={{justifyContent:'flex-end', p:1, pt:0}}>
-                                        <IconButton size="small" onClick={() => handleOpenEditAddressDialog(addr)} aria-label="modifier l'adresse">
-                                          <EditIcon fontSize="small"/>
-                                        </IconButton>
-                                        <IconButton size="small" onClick={() => handleDeleteAddressClick(addr)} aria-label="supprimer l'adresse" color="error">
-                                          <DeleteIcon fontSize="small"/>
-                                        </IconButton>
+                                     <CardActions sx={{justifyContent:'space-between', p:1, pt:0, alignItems:'center'}}>
+                                        <Box>
+                                          {!addr.isDefault && (
+                                            <Button
+                                              size="small"
+                                              onClick={() => handleSetDefaultAddress(addr.id)}
+                                              disabled={loading || addr.isDefault} // Disable if loading or already default
+                                              variant="text"
+                                              sx={{textTransform: 'none', fontSize: '0.8rem', '&:hover': {backgroundColor: alpha(theme.palette.primary.main, 0.05)}}}
+                                            >
+                                              Définir par défaut
+                                            </Button>
+                                          )}
+                                        </Box>
+                                        <Box>
+                                          <IconButton size="small" onClick={() => handleOpenEditAddressDialog(addr)} aria-label="modifier l'adresse" disabled={loading}>
+                                            <EditIcon fontSize="small"/>
+                                          </IconButton>
+                                          <IconButton size="small" onClick={() => handleDeleteAddressClick(addr)} aria-label="supprimer l'adresse" color="error" disabled={loading}>
+                                            <DeleteIcon fontSize="small"/>
+                                          </IconButton>
+                                        </Box>
                                      </CardActions>
                                   </Card>
                                 </Grid>

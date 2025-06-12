@@ -17,7 +17,7 @@ import {
   TrackChanges as TrackChangesIcon // For service radius
 } from "@mui/icons-material";
 import { useTheme } from '@mui/material/styles';
-import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-maps/api"; // Added
+import { GoogleMap, Marker, Circle, useJsApiLoader, Autocomplete } from "@react-google-maps/api"; // Added Circle
 import { useCallback } from "react"; // Added
 
 // Constants (can be moved to a config file later)
@@ -490,6 +490,24 @@ function VendorProfilePage() {
                               setMarkerPosition(newPos);
                               setFormData(prev => ({ ...prev, latitude: newPos.lat, longitude: newPos.lng }));
                               setFormError("L'adresse textuelle ne se met pas à jour par déplacement du marqueur. Ajustez manuellement si besoin.");
+                            }}
+                          />
+                        )}
+                        {editMode && markerPosition && formData.serviceRadius && parseFloat(formData.serviceRadius) > 0 && (
+                          <Circle
+                            center={markerPosition}
+                            radius={parseFloat(formData.serviceRadius) * 1000} // Convert km to meters
+                            options={{
+                              strokeColor: theme.palette.primary.main,
+                              strokeOpacity: 0.8,
+                              strokeWeight: 2,
+                              fillColor: theme.palette.primary.main,
+                              fillOpacity: 0.20, // Adjusted for better visibility of the map underneath
+                              clickable: false,
+                              draggable: false,
+                              editable: false,
+                              visible: true,
+                              zIndex: 1,
                             }}
                           />
                         )}

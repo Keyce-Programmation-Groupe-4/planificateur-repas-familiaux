@@ -12,18 +12,13 @@ import {
   alpha,
   Tooltip, // Added for tooltip on recommendation
 } from "@mui/material"
-import { LocalShipping, Star, Category, Recommend as RecommendIcon } from "@mui/icons-material" // Added RecommendIcon
-import TravelExploreIcon from '@mui/icons-material/TravelExplore'; // For distance
-import { calculateDistance } from "../../utils/geolocationUtils";
+import { LocalShipping, Star, Category, Recommend as RecommendIcon, Room as RoomIcon } from "@mui/icons-material" // Added RecommendIcon and RoomIcon for distance
+import TravelExploreIcon from '@mui/icons-material/TravelExplore'; // Kept for now, might switch to RoomIcon
 
-function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = false, userLatitude, userLongitude }) { // Added props
+function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = false, distanceToUser }) { // Changed props
   const theme = useTheme()
 
-  let distance = null;
-  if (userLatitude != null && userLongitude != null &&
-      vendor.address && vendor.address.lat != null && vendor.address.lng != null) {
-    distance = calculateDistance(userLatitude, userLongitude, vendor.address.lat, vendor.address.lng);
-  }
+  // Distance is now passed as a prop: distanceToUser
 
   return (
     <Card
@@ -115,11 +110,11 @@ function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = fa
             />
           </Box>
 
-          {distance !== null && (
+          {distanceToUser !== null && typeof distanceToUser === 'number' && (
             <Box sx={{ display: 'flex', alignItems: 'center', mt: 1.5, color: 'text.secondary', justifyContent: 'flex-start' }}>
-              <TravelExploreIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
-              <Typography variant="body2">
-                Distance: {distance.toFixed(1)} km
+              <RoomIcon sx={{ fontSize: '1.1rem', mr: 0.5, color: theme.palette.info.main }} />
+              <Typography variant="body2" sx={{ color: theme.palette.info.dark }}>
+                ~{distanceToUser.toFixed(1)} km
               </Typography>
             </Box>
           )}
