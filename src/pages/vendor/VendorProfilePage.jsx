@@ -13,7 +13,8 @@ import {
 import {
   Storefront, Email, Phone, LocationOn, Category, CheckCircle, ToggleOn,
   Info, EuroSymbol, AccessTime, Edit as EditIcon, Save as SaveIcon, Cancel as CancelIcon,
-  PhotoCamera // Added for image upload
+  PhotoCamera, // Added for image upload
+  TrackChanges as TrackChangesIcon // For service radius
 } from "@mui/icons-material";
 import { useTheme } from '@mui/material/styles';
 
@@ -56,6 +57,10 @@ function VendorProfilePage() {
                 baseFee: userData.baseFee === null || userData.baseFee === undefined ? '' : String(userData.baseFee),
                 availability: userData.availability || '',
                 vendorType: userData.vendorType || '',
+                formattedAddress: userData.address?.formattedAddress || '',
+                latitude: userData.address?.lat || null,
+                longitude: userData.address?.lng || null,
+                serviceRadius: userData.serviceRadius === null || userData.serviceRadius === undefined ? '' : String(userData.serviceRadius),
             });
             setProfileImageFile(null); // Clear any selected file when toggling editMode or userData changes
             // setProfileImagePreview(userData.photoURL || null); // Already set above
@@ -144,6 +149,12 @@ function VendorProfilePage() {
         availability: formData.availability.trim(),
         vendorType: formData.vendorType,
         photoURL: newPhotoURL,
+        address: {
+          formattedAddress: formData.formattedAddress ? formData.formattedAddress.trim() : '',
+          lat: formData.latitude === '' || formData.latitude === null ? null : parseFloat(formData.latitude),
+          lng: formData.longitude === '' || formData.longitude === null ? null : parseFloat(formData.longitude),
+        },
+        serviceRadius: formData.serviceRadius === '' || formData.serviceRadius === null ? null : parseFloat(formData.serviceRadius),
         updatedAt: serverTimestamp(),
       };
 
@@ -330,8 +341,82 @@ function VendorProfilePage() {
                 <ListItemIcon><ToggleOn /></ListItemIcon>
                 <ListItemText primary="Compte Actif" secondary={statusText(userData.isActive)} secondaryTypographyProps={{ style: { color: statusColor(userData.isActive), fontWeight: 'bold' } }}/>
               </ListItem>
+              {/* Display Location and Service Radius in View Mode */}
+              {!editMode && (
+                <>
+                  <ListItem>
+                    <ListItemIcon><LocationOn /></ListItemIcon>
+                    <ListItemText primary="Adresse" secondary={userData.address?.formattedAddress || "Non spécifiée"} />
+                  </ListItem>
+                  <ListItem>
+                    <ListItemIcon><TrackChangesIcon /></ListItemIcon>
+                    <ListItemText primary="Rayon de Service" secondary={userData.serviceRadius ? `${userData.serviceRadius} km` : "Non spécifié"} />
+                  </ListItem>
+                </>
+              )}
             </List>
           </Grid>
+
+          {/* Location and Service Radius Inputs in Edit Mode */}
+          {editMode && (
+            <Grid item xs={12}>
+              <Typography variant="h6" gutterBottom sx={{ color: 'primary.main', borderBottom: `2px solid ${theme.palette.primary.light}`, pb: 1, mt:2, mb:2 }}>
+                Localisation et Rayon de Service
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    label="Adresse Complète"
+                    name="formattedAddress"
+                    value={formData.formattedAddress || ''}
+                    onChange={handleInputChange}
+                    fullWidth
+                    size="small"
+                    disabled={isSaving}
+                    multiline
+                    rows={2}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    label="Latitude"
+                    name="latitude"
+                    type="number"
+                    value={formData.latitude === null ? '' : formData.latitude}
+                    onChange={handleInputChange}
+                    fullWidth
+                    size="small"
+                    disabled={isSaving}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    label="Longitude"
+                    name="longitude"
+                    type="number"
+                    value={formData.longitude === null ? '' : formData.longitude}
+                    onChange={handleInputChange}
+                    fullWidth
+                    size="small"
+                    disabled={isSaving}
+                  />
+                </Grid>
+                <Grid item xs={12} sm={4}>
+                  <TextField
+                    label="Rayon de Service (km)"
+                    name="serviceRadius"
+                    type="number"
+                    value={formData.serviceRadius === null ? '' : formData.serviceRadius}
+                    onChange={handleInputChange}
+                    fullWidth
+                    size="small"
+                    InputProps={{ inputProps: { min: 0 } }}
+                    disabled={isSaving}
+                  />
+                </Grid>
+              </Grid>
+            </Grid>
+          )}
 
           <Grid item xs={12}>
             <Typography variant="h6" gutterBottom sx={{ color: 'primary.main', borderBottom: `2px solid ${theme.palette.primary.light}`, pb: 1, mt:2, mb:2 }}>

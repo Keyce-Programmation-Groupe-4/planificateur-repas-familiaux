@@ -78,6 +78,10 @@ function VendorSignupPage() {
     vendorType: "",
     password: "", // Added password
     confirmPassword: "", // Added confirmPassword
+    formattedAddress: "",
+    latitude: "", // Keep as string for input, parse on submit
+    longitude: "", // Keep as string for input, parse on submit
+    serviceRadius: "", // Keep as string for input, parse on submit
   })
 
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -105,7 +109,7 @@ function VendorSignupPage() {
     setIsSubmitting(true)
 
     // Validation
-    const { name, phone, email, password, confirmPassword, specialties, deliveryZones, vendorType, baseFee: baseFeeStr } = formData;
+    const { name, phone, email, password, confirmPassword, specialties, deliveryZones, vendorType, baseFee: baseFeeStr, formattedAddress, latitude, longitude, serviceRadius: serviceRadiusStr } = formData;
 
     if (!name.trim() || !phone.trim() || !email.trim() || !password || !confirmPassword || !vendorType) {
       setError("Veuillez remplir tous les champs obligatoires (*) y compris email et mot de passe.");
@@ -145,6 +149,16 @@ function VendorSignupPage() {
       return;
     }
 
+    let serviceRadiusNum = null;
+    if (serviceRadiusStr.trim() !== "") {
+      serviceRadiusNum = parseFloat(serviceRadiusStr);
+      if (isNaN(serviceRadiusNum) || serviceRadiusNum < 0) {
+        setError("Le rayon de service doit être un nombre positif.");
+        setIsSubmitting(false);
+        return;
+      }
+    }
+
     const auth = getAuth(app);
 
     try {
@@ -164,6 +178,12 @@ function VendorSignupPage() {
         baseFee: baseFee,
         availability: formData.availability.trim() || "Non spécifiée",
         vendorType: vendorType,
+        address: {
+          formattedAddress: formattedAddress.trim() || '',
+          lat: latitude.trim() ? parseFloat(latitude) : null,
+          lng: longitude.trim() ? parseFloat(longitude) : null,
+        },
+        serviceRadius: serviceRadiusNum, // Already parsed or null
         isActive: false,
         isApproved: false,
         rating: 0,
@@ -388,6 +408,56 @@ function VendorSignupPage() {
                 value={formData.description}
                 onChange={handleInputChange("description")}
                 placeholder="Décrivez brièvement votre activité, vos produits, votre expérience..."
+                disabled={isSubmitting}
+              />
+            </Grid>
+
+            {/* Location and Service Radius Fields */}
+            <Grid item xs={12}>
+              <TextField
+                variant="outlined"
+                fullWidth
+                label="Adresse Complète (pour la carte)"
+                value={formData.formattedAddress}
+                onChange={handleInputChange("formattedAddress")}
+                disabled={isSubmitting}
+                multiline
+                rows={2}
+                placeholder="Ex: Rue des Lilas, Quartier Bastos, Yaoundé"
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                variant="outlined"
+                fullWidth
+                label="Latitude (optionnel)"
+                value={formData.latitude}
+                onChange={handleInputChange("latitude")}
+                placeholder="Ex: 3.866667"
+                disabled={isSubmitting}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField
+                variant="outlined"
+                fullWidth
+                label="Longitude (optionnel)"
+                value={formData.longitude}
+                onChange={handleInputChange("longitude")}
+                placeholder="Ex: 11.516667"
+                disabled={isSubmitting}
+              />
+            </Grid>
+             <Grid item xs={12} sm={6}>
+              <TextField
+                variant="outlined"
+                fullWidth
+                label="Rayon de Service (km)"
+                type="number" // Allows numeric keyboard on mobile, but validation handles non-numeric
+                value={formData.serviceRadius}
+                onChange={handleInputChange("serviceRadius")}
+                placeholder="Ex: 5"
+                InputProps={{ inputProps: { min: 0 } }}
                 disabled={isSubmitting}
               />
             </Grid>

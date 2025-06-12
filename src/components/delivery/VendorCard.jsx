@@ -13,9 +13,17 @@ import {
   Tooltip, // Added for tooltip on recommendation
 } from "@mui/material"
 import { LocalShipping, Star, Category, Recommend as RecommendIcon } from "@mui/icons-material" // Added RecommendIcon
+import TravelExploreIcon from '@mui/icons-material/TravelExplore'; // For distance
+import { calculateDistance } from "../../utils/geolocationUtils";
 
-function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = false }) { // Added isRecommendedMatch prop
+function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = false, userLatitude, userLongitude }) { // Added props
   const theme = useTheme()
+
+  let distance = null;
+  if (userLatitude != null && userLongitude != null &&
+      vendor.address && vendor.address.lat != null && vendor.address.lng != null) {
+    distance = calculateDistance(userLatitude, userLongitude, vendor.address.lat, vendor.address.lng);
+  }
 
   return (
     <Card
@@ -106,6 +114,15 @@ function VendorCard({ vendor, onClick, selected = false, isRecommendedMatch = fa
               }}
             />
           </Box>
+
+          {distance !== null && (
+            <Box sx={{ display: 'flex', alignItems: 'center', mt: 1.5, color: 'text.secondary', justifyContent: 'flex-start' }}>
+              <TravelExploreIcon sx={{ fontSize: '1rem', mr: 0.5 }} />
+              <Typography variant="body2">
+                Distance: {distance.toFixed(1)} km
+              </Typography>
+            </Box>
+          )}
         </CardContent>
       </CardActionArea>
     </Card>

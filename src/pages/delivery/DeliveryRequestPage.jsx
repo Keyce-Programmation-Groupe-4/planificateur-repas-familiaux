@@ -21,6 +21,7 @@ import {
   StepLabel,
 } from "@mui/material"
 import { LocalShipping, AccessTime, LocationOn, Person, ArrowBack } from "@mui/icons-material"
+import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore"
@@ -29,6 +30,9 @@ import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
 // Composant pour la sélection d'un bayam selam
 import VendorSelection from "../../components/delivery/VendorSelection"
+import { calculateDistance } from "../../utils/geolocationUtils";
+
+const RATE_PER_KM = 100; // Example: 100 CFA per kilometer
 
 function DeliveryRequestPage() {
   const theme = useTheme()
@@ -49,12 +53,51 @@ function DeliveryRequestPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
 
-  // New state variables
+  // Google Maps API Loader
+  const [libraries] = useState(['places']); // Define libraries here
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries,
+  });
+
+  // New state variables for Autocomplete and coordinates
+  const [deliveryLatitude, setDeliveryLatitude] = useState(null);
+  const [deliveryLongitude, setDeliveryLongitude] = useState(null);
+  const [autocompleteInstance, setAutocompleteInstance] = useState(null);
+
+
+  // New state variables for costs
   const [currentInitialItemTotalCost, setCurrentInitialItemTotalCost] = useState(0);
   const [currentDeliveryFee, setCurrentDeliveryFee] = useState(0);
   const [currentInitialTotalEstimatedCost, setCurrentInitialTotalEstimatedCost] = useState(0);
   const [currentRequestedItems, setCurrentRequestedItems] = useState([]);
 
+
+  // Autocomplete Handlers
+  const onAutocompleteLoad = (autocomplete) => {
+    setAutocompleteInstance(autocomplete);
+  };
+
+  const onPlaceChanged = () => {
+    if (autocompleteInstance !== null) {
+      const place = autocompleteInstance.getPlace();
+      if (place && place.formatted_address && place.geometry && place.geometry.location) {
+        setDeliveryAddress(place.formatted_address);
+        setDeliveryLatitude(place.geometry.location.lat());
+        setDeliveryLongitude(place.geometry.location.lng());
+        setError(null); // Clear previous address errors
+      } else {
+        console.log('Place selection error or incomplete data from Autocomplete.');
+        // Optionally, set an error message for the user
+        // setError("L'adresse sélectionnée n'est pas valide ou complète. Veuillez réessayer.");
+        // Clear coordinates if selection is invalid
+        setDeliveryLatitude(null);
+        setDeliveryLongitude(null);
+      }
+    } else {
+      console.log('Autocomplete is not loaded yet!');
+    }
+  };
 
   // Récupérer l'ID de la liste de courses depuis sessionStorage
   const shoppingListId = sessionStorage.getItem("currentShoppingListId")
@@ -172,12 +215,21 @@ function DeliveryRequestPage() {
     setCurrentInitialItemTotalCost(calculatedInitialItemTotalCost);
     setCurrentRequestedItems(calculatedRequestedItems);
 
-    const calculatedDeliveryFee = selectedVendor?.baseFee || 0;
-    setCurrentDeliveryFee(calculatedDeliveryFee);
+    let dynamicDeliveryFee = selectedVendor?.baseFee || 0;
+    if (selectedVendor && selectedVendor.address && selectedVendor.address.lat != null && selectedVendor.address.lng != null &&
+        deliveryLatitude != null && deliveryLongitude != null) {
+      const distanceInKm = calculateDistance(deliveryLatitude, deliveryLongitude, selectedVendor.address.lat, selectedVendor.address.lng);
+      if (distanceInKm !== null) {
+        dynamicDeliveryFee += distanceInKm * RATE_PER_KM;
+      }
+    }
 
-    // Ensure this uses the potentially updated calculatedInitialItemTotalCost
-    setCurrentInitialTotalEstimatedCost(calculatedInitialItemTotalCost + calculatedDeliveryFee);
-  }, [shoppingList, selectedVendor]);
+    dynamicDeliveryFee = Math.round(dynamicDeliveryFee); // Round to nearest integer
+    setCurrentDeliveryFee(dynamicDeliveryFee);
+
+    // Ensure this uses the potentially updated calculatedInitialItemTotalCost and dynamicDeliveryFee
+    setCurrentInitialTotalEstimatedCost(calculatedInitialItemTotalCost + dynamicDeliveryFee);
+  }, [shoppingList, selectedVendor, deliveryLatitude, deliveryLongitude]);
 
 
   const sortVendorsBySpecialtyMatch = (vendors, categories) => {
@@ -248,7 +300,11 @@ function DeliveryRequestPage() {
         status: "pending_vendor_confirmation",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        deliveryAddress,
+        deliveryLocation: { // NEW STRUCTURE
+          address: deliveryAddress, // The string address
+          latitude: deliveryLatitude,
+          longitude: deliveryLongitude,
+        },
         deliveryInstructions,
         requestedDate: deliveryDate,
         requestedTime: deliveryTime,
@@ -383,17 +439,65 @@ function DeliveryRequestPage() {
 
             <Grid container spacing={3}>
               <Grid item xs={12}>
-                <TextField
-                  fullWidth
-                  label="Adresse de livraison"
-                  value={deliveryAddress}
-                  onChange={(e) => setDeliveryAddress(e.target.value)}
-                  required
-                  variant="outlined"
-                  InputProps={{
-                    startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
-                  }}
-                />
+                {loadError && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    Erreur de chargement Google Maps: {loadError.message}. Veuillez vérifier votre clé API ou réessayer plus tard.
+                  </Alert>
+                )}
+                {isLoaded && !loadError ? (
+                  <Autocomplete
+                    onLoad={onAutocompleteLoad}
+                    onPlaceChanged={onPlaceChanged}
+                    options={{
+                      types: ['address'],
+                      // Optional: componentRestrictions: { country: 'CI' } // Example for Côte d'Ivoire
+                    }}
+                  >
+                    <TextField
+                      fullWidth
+                      label="Adresse de livraison"
+                      value={deliveryAddress}
+                      onChange={(e) => {
+                        setDeliveryAddress(e.target.value);
+                        // If user types manually after a selection, clear coordinates
+                        if (deliveryLatitude || deliveryLongitude) {
+                          setDeliveryLatitude(null);
+                          setDeliveryLongitude(null);
+                          // Optionally inform user that selection is preferred for accuracy
+                          setError("Veuillez sélectionner une adresse depuis la liste pour une localisation précise.");
+                        } else {
+                           setError(null); // Clear error if they are just typing
+                        }
+                      }}
+                      required
+                      variant="outlined"
+                      placeholder="Recherchez et sélectionnez votre adresse..."
+                      InputProps={{
+                        startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
+                      }}
+                    />
+                  </Autocomplete>
+                ) : !loadError && (
+                  <Box sx={{display:'flex', alignItems:'center', gap:2}}>
+                     <CircularProgress size={24}/>
+                     <Typography>Chargement de la recherche d'adresse...</Typography>
+                  </Box>
+                )}
+                 {/* Fallback if not loaded and no error yet, or if error prevents Autocomplete */}
+                {!isLoaded && !loadError && (
+                    <TextField
+                        fullWidth
+                        label="Adresse de livraison (Chargement...)"
+                        value={deliveryAddress}
+                        onChange={(e) => setDeliveryAddress(e.target.value)}
+                        required
+                        variant="outlined"
+                        disabled
+                        InputProps={{
+                            startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
+                        }}
+                    />
+                )}
               </Grid>
 
               <Grid item xs={12} sm={6}>
@@ -443,7 +547,7 @@ function DeliveryRequestPage() {
               <Button
                 variant="contained"
                 onClick={handleNext}
-                disabled={!deliveryAddress || !deliveryDate || !deliveryTime}
+                disabled={!deliveryAddress || !deliveryDate || !deliveryTime || !deliveryLatitude || !deliveryLongitude || !isLoaded}
               >
                 Suivant
               </Button>
@@ -460,7 +564,13 @@ function DeliveryRequestPage() {
             {availableVendors.length === 0 ? (
               <Alert severity="info">Aucun vendeur disponible pour le moment. Veuillez réessayer plus tard.</Alert>
             ) : (
-              <VendorSelection vendors={availableVendors} onSelect={handleVendorSelect} selected={selectedVendor} />
+              <VendorSelection
+                vendors={availableVendors}
+                onSelect={handleVendorSelect}
+                selected={selectedVendor}
+                userLatitude={deliveryLatitude}
+                userLongitude={deliveryLongitude}
+              />
             )}
 
             <Box sx={{ display: "flex", justifyContent: "space-between", mt: 3 }}>
@@ -485,6 +595,11 @@ function DeliveryRequestPage() {
                     Adresse de livraison
                   </Typography>
                   <Typography>{deliveryAddress}</Typography>
+                  {deliveryLatitude && deliveryLongitude && (
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                      (Lat: {deliveryLatitude.toFixed(5)}, Lng: {deliveryLongitude.toFixed(5)})
+                    </Typography>
+                  )}
                 </Box>
 
                 <Box>
