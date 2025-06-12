@@ -49,6 +49,7 @@ import {
   Storefront,
   ReceiptLong, // New icon for header
 } from "@mui/icons-material"
+import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
 import { doc, getDoc, onSnapshot, updateDoc, collection, addDoc, serverTimestamp } from "firebase/firestore"
@@ -74,6 +75,26 @@ function DeliveryTrackingPage() {
   // const [userRejectionReason, setUserRejectionReason] = useState("") // Removed
   // const [rejectConfirmDialogOpen, setRejectConfirmDialogOpen] = useState(false) // Removed
   const [actionLoading, setActionLoading] = useState(false) // For disabling buttons during Firestore updates
+
+  // Google Maps state
+  const [mapRef, setMapRef] = useState(null);
+  const [activeInfoWindow, setActiveInfoWindow] = useState(null); // { position: {lat, lng}, content: "InfoWindow Content" }
+  const [mapLibraries] = useState(['places']); // Or empty array if not using places features here
+
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: mapLibraries,
+  });
+
+  const onMapLoad = (map) => {
+    setMapRef(map);
+  };
+
+  const onMapUnmount = () => {
+    setMapRef(null);
+    setActiveInfoWindow(null);
+  };
+
 
   useEffect(() => {
     if (!deliveryId) {
@@ -138,6 +159,30 @@ function DeliveryTrackingPage() {
 
     return () => unsubscribe()
   }, [deliveryId, familyId])
+
+  // useEffect to fit map bounds
+  useEffect(() => {
+    if (mapRef && isLoaded && deliveryData && vendorData) {
+      if (deliveryData.deliveryLocation?.latitude != null && deliveryData.deliveryLocation?.longitude != null &&
+          vendorData.address?.lat != null && vendorData.address?.lng != null) {
+
+        const bounds = new window.google.maps.LatLngBounds();
+        bounds.extend({ lat: deliveryData.deliveryLocation.latitude, lng: deliveryData.deliveryLocation.longitude });
+        bounds.extend({ lat: vendorData.address.lat, lng: vendorData.address.lng });
+
+        if (bounds.getNorthEast() && bounds.getSouthWest()) { // Check if bounds are valid
+            // Check if NE and SW are different to prevent error with fitBounds on single point or identical points
+            if (!bounds.getNorthEast().equals(bounds.getSouthWest())) {
+                 mapRef.fitBounds(bounds);
+            } else {
+                // If points are the same, just center and zoom
+                mapRef.setCenter(bounds.getCenter());
+                mapRef.setZoom(15); // Or a suitable zoom level for a single point
+            }
+        }
+      }
+    }
+  }, [mapRef, deliveryData, vendorData, isLoaded]);
 
   const getStepFromStatus = (statusKey) => {
     const statusObj = getDeliveryStatusByKey(statusKey);
@@ -253,6 +298,15 @@ function DeliveryTrackingPage() {
       </Container>
     )
   }
+
+  const mapContainerStyle = {
+    width: '100%',
+    height: '300px', // Adjusted height
+    marginTop: '16px',
+    marginBottom: '16px',
+    borderRadius: theme.shape.borderRadius,
+    overflow: 'hidden', // Ensures map corners are rounded if Box has borderRadius
+  };
 
   const activeStep = getStepFromStatus(deliveryData?.status)
   const currentStatusKey = deliveryData?.status;
@@ -383,6 +437,60 @@ function DeliveryTrackingPage() {
             </Step>
           </Stepper>
         )}
+
+        {/* Google Map Display */}
+        {isLoaded && deliveryData && (
+          <Box sx={mapContainerStyle}>
+            <GoogleMap
+              mapContainerStyle={{ width: '100%', height: '100%' }}
+              onLoad={onMapLoad}
+              onUnmount={onMapUnmount}
+              center={{ lat: deliveryData.deliveryLocation?.latitude || 5.3454, lng: deliveryData.deliveryLocation?.longitude || -4.0242 }} // Fallback center
+              zoom={10} // Fallback zoom, fitBounds will adjust
+            >
+              {/* Vendor Marker */}
+              {vendorData && vendorData.address && vendorData.address.lat != null && vendorData.address.lng != null && (
+                <Marker
+                  position={{ lat: vendorData.address.lat, lng: vendorData.address.lng }}
+                  title={vendorData.name || 'Emplacement du Vendeur'}
+                  onClick={() => setActiveInfoWindow({
+                    position: { lat: vendorData.address.lat, lng: vendorData.address.lng },
+                    content: vendorData.name || 'Vendeur',
+                  })}
+                  icon={{
+                    url: 'http://maps.google.com/mapfiles/ms/icons/store.png',
+                    scaledSize: new window.google.maps.Size(32, 32),
+                  }}
+                />
+              )}
+
+              {/* User Delivery Location Marker */}
+              {deliveryData.deliveryLocation && deliveryData.deliveryLocation.latitude != null && deliveryData.deliveryLocation.longitude != null && (
+                <Marker
+                  position={{ lat: deliveryData.deliveryLocation.latitude, lng: deliveryData.deliveryLocation.longitude }}
+                  title="Votre lieu de livraison"
+                  onClick={() => setActiveInfoWindow({
+                    position: { lat: deliveryData.deliveryLocation.latitude, lng: deliveryData.deliveryLocation.longitude },
+                    content: deliveryData.deliveryLocation.address || 'Lieu de Livraison',
+                  })}
+                />
+              )}
+
+              {/* InfoWindow */}
+              {activeInfoWindow && (
+                <InfoWindow
+                  position={activeInfoWindow.position}
+                  onCloseClick={() => setActiveInfoWindow(null)}
+                >
+                  <Typography variant="body2">{activeInfoWindow.content}</Typography>
+                </InfoWindow>
+              )}
+            </GoogleMap>
+          </Box>
+        )}
+        {loadError && <Alert severity="error" sx={{my:2}}>Impossible de charger la carte Google Maps.</Alert>}
+        {isLoading && !deliveryData && !isLoaded && <Typography sx={{my:2, textAlign:'center'}}><CircularProgress size={20} sx={{mr:1}}/>Chargement de la carte...</Typography>}
+
 
         {/* Section for User Acceptance */}
         {currentStatusKey === DELIVERY_STATUSES.PENDING_USER_ACCEPTANCE.key && (
