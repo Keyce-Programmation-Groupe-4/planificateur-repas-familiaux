@@ -42,7 +42,7 @@ export default mergeConfig(
           ]
         },
         workbox: {
-          maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
+          maximumFileSizeToCacheInBytes: 10 * 1024 * 1024, // 10 MB
         },
         
         devOptions: {
