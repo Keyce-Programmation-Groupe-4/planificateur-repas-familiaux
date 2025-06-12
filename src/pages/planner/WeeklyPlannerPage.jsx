@@ -176,6 +176,15 @@ function WeeklyPlannerPage() {
       setAllergyAlerts(result.alerts || []);
       if (result.hasAllergies && result.alerts.length > 0) {
         setAllergyModalOpen(true);
+        // Envoyer une notification push en cas d'allergies détectées
+        const fcmToken = await getCurrentUserFCMToken();
+        if (fcmToken) {
+          triggerSendNotification(
+            fcmToken,
+            "Alerte Allergies",
+            `Attention, des allergies ont été détectées dans votre planning: ${result.alerts.join(", ")}.`
+          );
+        }
       }
     } catch (error) {
       console.error("Erreur lors de la vérification des allergies:", error);
