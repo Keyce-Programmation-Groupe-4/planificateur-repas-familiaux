@@ -1,7 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react" // Added useEffect, useCallback
 import { useNavigate } from "react-router-dom"
+import {
+  GoogleMap,
+  Marker,
+  useJsApiLoader,
+  Autocomplete,
+} from "@react-google-maps/api" // Added Google Maps imports
 import {
   Container,
   Box,
@@ -31,6 +37,7 @@ import {
   CheckCircle as CheckCircleIcon,
   LockOutlined as LockIcon, // For password fields
   EmailOutlined as EmailIcon, // For email field
+  LocationOn as LocationOnIcon, // For map/address section
 } from "@mui/icons-material"
 import { db, app } from "../../firebaseConfig" // Assuming 'app' is exported for getAuth
 import { getAuth, createUserWithEmailAndPassword } from "firebase/auth"
@@ -88,12 +95,35 @@ function VendorSignupPage() {
   const [error, setError] = useState("")
   const [success, setSuccess] = useState(false)
 
+  // Google Maps States
+  const [mapLibraries] = useState(["places"])
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: mapLibraries,
+  })
+  const [mapCenter, setMapCenter] = useState({ lat: 5.3454, lng: -4.0242 }) // Default to Abidjan
+  const [markerPosition, setMarkerPosition] = useState(null)
+  const [autocompleteInstance, setAutocompleteInstance] = useState(null)
+  const [mapRef, setMapRef] = useState(null)
+
   const handleInputChange = (field) => (event) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: event.target.value,
-    }))
-  }
+    const { value } = event.target;
+    setFormData((prev) => {
+      const newState = { ...prev, [field]: value };
+      // If user types in formattedAddress manually, clear coordinates
+      if (field === "formattedAddress" && (prev.latitude || prev.longitude)) {
+        newState.latitude = "";
+        newState.longitude = "";
+        setMarkerPosition(null);
+        // Optionally, provide feedback that map pin needs re-verification
+        setError("L'adresse manuelle a désynchronisé le marqueur. Veuillez rechercher à nouveau ou cliquer sur la carte.");
+      } else if (field !== "formattedAddress") {
+        setError(""); // Clear error if changing other fields
+      }
+      return newState;
+    });
+  };
+
 
   const handleMultiSelectChange = (field) => (event) => {
     const value = typeof event.target.value === "string" ? event.target.value.split(",") : event.target.value
@@ -105,7 +135,7 @@ function VendorSignupPage() {
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    setError("")
+    setError("") // Clear previous errors at the start of submission
     setIsSubmitting(true)
 
     // Validation
@@ -180,8 +210,8 @@ function VendorSignupPage() {
         vendorType: vendorType,
         address: {
           formattedAddress: formattedAddress.trim() || '',
-          lat: latitude.trim() ? parseFloat(latitude) : null,
-          lng: longitude.trim() ? parseFloat(longitude) : null,
+          lat: latitude ? parseFloat(latitude) : null, // Directly use, as it's now number or empty string
+          lng: longitude ? parseFloat(longitude) : null,
         },
         serviceRadius: serviceRadiusNum, // Already parsed or null
         isActive: false,
@@ -284,6 +314,11 @@ function VendorSignupPage() {
         {error && (
           <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}> {/* Standardized border radius */}
             {error}
+          </Alert>
+        )}
+        {loadError && (
+          <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+            La carte Google Maps n'a pas pu se charger. La sélection d'adresse pourrait être limitée.
           </Alert>
         )}
 
@@ -412,43 +447,91 @@ function VendorSignupPage() {
               />
             </Grid>
 
-            {/* Location and Service Radius Fields */}
-            <Grid item xs={12}>
-              <TextField
-                variant="outlined"
-                fullWidth
-                label="Adresse Complète (pour la carte)"
-                value={formData.formattedAddress}
-                onChange={handleInputChange("formattedAddress")}
-                disabled={isSubmitting}
-                multiline
-                rows={2}
-                placeholder="Ex: Rue des Lilas, Quartier Bastos, Yaoundé"
-              />
+            {/* Map and Address Section */}
+            <Grid item xs={12} sx={{ mt: 1 }}>
+              <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary' }}>
+                <LocationOnIcon sx={{ mr: 0.5, fontSize: '1.1rem' }} />
+                Adresse de l'Entreprise
+              </Typography>
+              {!isLoaded && !loadError && <CircularProgress size={24} />}
+              {isLoaded && (
+                <Autocomplete
+                  onLoad={(ac) => setAutocompleteInstance(ac)}
+                  onPlaceChanged={() => {
+                    if (autocompleteInstance) {
+                      const place = autocompleteInstance.getPlace();
+                      if (place && place.geometry && place.geometry.location) {
+                        setFormData(prev => ({
+                          ...prev,
+                          formattedAddress: place.formatted_address || prev.formattedAddress,
+                          latitude: place.geometry.location.lat(),
+                          longitude: place.geometry.location.lng(),
+                        }));
+                        setMapCenter(place.geometry.location.toJSON());
+                        setMarkerPosition(place.geometry.location.toJSON());
+                        setError(""); // Clear address error
+                      } else {
+                        // If place is not valid, but user selected something, maybe clear lat/lng
+                        setFormData(prev => ({ ...prev, latitude: "", longitude: ""}));
+                        setMarkerPosition(null);
+                         setError("Adresse non reconnue par Google Maps. Veuillez réessayer ou placer le marqueur manuellement.");
+                      }
+                    }
+                  }}
+                  options={{ types: ["address"] /*, componentRestrictions: { country: "CI" } */ }}
+                >
+                  <TextField
+                    variant="outlined"
+                    fullWidth
+                    label="Rechercher votre adresse..."
+                    value={formData.formattedAddress}
+                    onChange={handleInputChange("formattedAddress")}
+                    disabled={isSubmitting || !isLoaded}
+                    placeholder="Commencez à taper votre adresse..."
+                    sx={{ mb: 1.5 }}
+                  />
+                </Autocomplete>
+              )}
             </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                variant="outlined"
-                fullWidth
-                label="Latitude (optionnel)"
-                value={formData.latitude}
-                onChange={handleInputChange("latitude")}
-                placeholder="Ex: 3.866667"
-                disabled={isSubmitting}
-              />
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <TextField
-                variant="outlined"
-                fullWidth
-                label="Longitude (optionnel)"
-                value={formData.longitude}
-                onChange={handleInputChange("longitude")}
-                placeholder="Ex: 11.516667"
-                disabled={isSubmitting}
-              />
-            </Grid>
-             <Grid item xs={12} sm={6}>
+
+            {isLoaded && (
+              <Grid item xs={12}>
+                <Box sx={{ height: "300px", width: "100%", mb: 1.5, borderRadius: 1, overflow:'hidden', border: `1px solid ${theme.palette.divider}` }}>
+                  <GoogleMap
+                    mapContainerStyle={{ height: "100%", width: "100%" }}
+                    center={mapCenter}
+                    zoom={markerPosition ? 15 : 10}
+                    onLoad={(map) => setMapRef(map)}
+                    onClick={(e) => {
+                      const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                      setMarkerPosition(newPos);
+                      setFormData(prev => ({ ...prev, latitude: newPos.lat, longitude: newPos.lng }));
+                      // Note: formattedAddress does not update on map click
+                      setError("L'adresse textuelle ne se met pas à jour par clic sur la carte. Utilisez la recherche pour cela.");
+                    }}
+                  >
+                    {markerPosition && (
+                      <Marker
+                        position={markerPosition}
+                        draggable={true}
+                        onDragEnd={(e) => {
+                          const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                          setMarkerPosition(newPos);
+                          setFormData(prev => ({ ...prev, latitude: newPos.lat, longitude: newPos.lng }));
+                           setError("L'adresse textuelle ne se met pas à jour en déplaçant le marqueur. Utilisez la recherche pour cela.");
+                        }}
+                      />
+                    )}
+                  </GoogleMap>
+                </Box>
+                 <Typography variant="caption" color="text.secondary">
+                    Si l'adresse recherchée n'est pas exacte, cliquez sur la carte ou déplacez le marqueur pour ajuster la position.
+                </Typography>
+              </Grid>
+            )}
+            {/* End Map and Address Section */}
+
+            <Grid item xs={12} sm={6}> {/* Service Radius moved to its own line for clarity if map takes full width */}
               <TextField
                 variant="outlined"
                 fullWidth

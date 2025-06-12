@@ -19,12 +19,17 @@ import {
   Stepper,
   Step,
   StepLabel,
+  IconButton, // Added for MyLocation button
+  FormControl, // Added for Select
+  InputLabel,  // Added for Select
+  Select,      // Added for Select
+  MenuItem,    // Added for Select
 } from "@mui/material"
-import { LocalShipping, AccessTime, LocationOn, Person, ArrowBack } from "@mui/icons-material"
+import { LocalShipping, AccessTime, LocationOn, Person, ArrowBack, MyLocation as MyLocationIcon } from "@mui/icons-material" // Added MyLocationIcon
 import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
-import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp } from "firebase/firestore"
+import { doc, getDoc, collection, query, where, getDocs, addDoc, serverTimestamp, onSnapshot, orderBy } from "firebase/firestore" // Added onSnapshot, orderBy
 import { triggerSendNotification } from '../../utils/notificationUtils';
 import { getCurrentUserFCMToken } from '../../utils/authUtils';
 
@@ -52,6 +57,13 @@ function DeliveryRequestPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(false)
+  const [isFetchingCurrentLocation, setIsFetchingCurrentLocation] = useState(false);
+
+  // State for Saved Addresses
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [isLoadingSavedAddresses, setIsLoadingSavedAddresses] = useState(true);
+  const [selectedSavedAddressId, setSelectedSavedAddressId] = useState('');
+
 
   // Google Maps API Loader
   const [libraries] = useState(['places']); // Define libraries here
@@ -178,6 +190,92 @@ function DeliveryRequestPage() {
   // but it's safer to pass categories directly to sortVendorsBySpecialtyMatch if possible.
   // For now, this setup implies fetchShoppingList completes fully, including category extraction and sorting.
   }, [familyId, shoppingListId])
+
+  // Fetch Saved Addresses
+  useEffect(() => {
+    if (currentUser?.uid) {
+      setIsLoadingSavedAddresses(true);
+      const addressesRef = collection(db, 'users', currentUser.uid, 'savedAddresses');
+      const q = query(addressesRef, orderBy('createdAt', 'desc')); // Assuming you want them ordered
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const addresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setSavedAddresses(addresses);
+        setIsLoadingSavedAddresses(false);
+      }, (err) => {
+        console.error("Error fetching saved addresses:", err);
+        setError("Impossible de charger les adresses enregistrées."); // Use main error state for simplicity
+        setIsLoadingSavedAddresses(false);
+      });
+      return () => unsubscribe();
+    } else {
+      setSavedAddresses([]);
+      setIsLoadingSavedAddresses(false);
+    }
+  }, [currentUser]);
+
+  const handleUseMyLocation = async () => {
+    setIsFetchingCurrentLocation(true);
+    setError(null); // Clear previous errors
+
+    if (!navigator.geolocation) {
+      setError("La géolocalisation n'est pas supportée par votre navigateur.");
+      setIsFetchingCurrentLocation(false);
+      return;
+    }
+
+    if (!isLoaded) {
+        setError("L'API Google Maps n'est pas encore chargée. Veuillez patienter.");
+        setIsFetchingCurrentLocation(false);
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setDeliveryLatitude(latitude);
+        setDeliveryLongitude(longitude);
+
+        if (window.google && window.google.maps && window.google.maps.Geocoder) {
+          const geocoder = new window.google.maps.Geocoder();
+          geocoder.geocode({ location: { lat: latitude, lng: longitude } }, (results, status) => {
+            if (status === 'OK') {
+              if (results[0]) {
+                setDeliveryAddress(results[0].formatted_address);
+              } else {
+                setError("Aucune adresse trouvée pour votre position actuelle.");
+                setDeliveryAddress(""); // Clear address if not found
+              }
+            } else {
+              setError(`Erreur du géocodeur: ${status}. Essayez de rechercher l'adresse manuellement.`);
+              setDeliveryAddress(""); // Clear address on geocoding error
+            }
+            setIsFetchingCurrentLocation(false);
+          });
+        } else {
+          setError("Service de géocodage non disponible. Les coordonnées ont été définies, veuillez entrer l'adresse manuellement.");
+          // Keep lat/lng, user can manually fill address
+          setIsFetchingCurrentLocation(false);
+        }
+      },
+      (geoError) => {
+        let errorMessage = "Erreur lors de la récupération de la position.";
+        switch (geoError.code) {
+          case geoError.PERMISSION_DENIED:
+            errorMessage = "Permission de géolocalisation refusée. Veuillez l'activer dans les paramètres de votre navigateur.";
+            break;
+          case geoError.POSITION_UNAVAILABLE:
+            errorMessage = "Position actuelle non disponible.";
+            break;
+          case geoError.TIMEOUT:
+            errorMessage = "Timeout lors de la récupération de la position.";
+            break;
+        }
+        setError(errorMessage);
+        setIsFetchingCurrentLocation(false);
+      }
+    );
+  };
 
   // useEffect for calculating costs and requested items
   useEffect(() => {
@@ -439,67 +537,134 @@ function DeliveryRequestPage() {
 
             <Grid container spacing={3}>
               <Grid item xs={12}>
+                {isLoadingSavedAddresses ? (
+                  <CircularProgress size={24} sx={{mr:1}} />
+                ) : savedAddresses.length > 0 && (
+                  <FormControl fullWidth sx={{ mb: 2 }}>
+                    <InputLabel id="saved-address-select-label">Choisir une adresse enregistrée</InputLabel>
+                    <Select
+                      labelId="saved-address-select-label"
+                      id="saved-address-select"
+                      value={selectedSavedAddressId}
+                      label="Choisir une adresse enregistrée"
+                      onChange={(e) => {
+                        const addressId = e.target.value;
+                        setSelectedSavedAddressId(addressId);
+                        if (addressId) {
+                          const selectedAddr = savedAddresses.find(addr => addr.id === addressId);
+                          if (selectedAddr) {
+                            setDeliveryAddress(selectedAddr.formattedAddress);
+                            setDeliveryLatitude(selectedAddr.latitude);
+                            setDeliveryLongitude(selectedAddr.longitude);
+                            setError(null); // Clear errors
+                          }
+                        } else { // "Autre" or "Entrer une nouvelle adresse" selected
+                          setDeliveryAddress('');
+                          setDeliveryLatitude(null);
+                          setDeliveryLongitude(null);
+                          // Optionally focus the Autocomplete input
+                          // document.getElementById('autocomplete-delivery-address')?.focus();
+                        }
+                      }}
+                    >
+                      <MenuItem value="">
+                        <em>--- Entrer une nouvelle adresse ---</em>
+                      </MenuItem>
+                      {savedAddresses.map((addr) => (
+                        <MenuItem key={addr.id} value={addr.id}>
+                          {addr.name} - {addr.formattedAddress.substring(0,30)}...
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                )}
+              </Grid>
+
+              <Grid item xs={12}>
                 {loadError && (
                   <Alert severity="error" sx={{ mb: 2 }}>
                     Erreur de chargement Google Maps: {loadError.message}. Veuillez vérifier votre clé API ou réessayer plus tard.
                   </Alert>
                 )}
-                {isLoaded && !loadError ? (
-                  <Autocomplete
-                    onLoad={onAutocompleteLoad}
-                    onPlaceChanged={onPlaceChanged}
-                    options={{
-                      types: ['address'],
-                      // Optional: componentRestrictions: { country: 'CI' } // Example for Côte d'Ivoire
-                    }}
-                  >
-                    <TextField
-                      fullWidth
-                      label="Adresse de livraison"
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {isLoaded && !loadError ? (
+                    <Autocomplete
+                      id="autocomplete-delivery-address" // Added ID for potential focus
+                      onLoad={onAutocompleteLoad}
+                      onPlaceChanged={onPlaceChanged}
+                      options={{
+                        types: ['address'],
+                        // Optional: componentRestrictions: { country: 'CI' } // Example for Côte d'Ivoire
+                      }}
+                      sx={{flexGrow:1}}
+                    >
+                      <TextField
+                        fullWidth
+                        label="Adresse de livraison"
+                        value={deliveryAddress}
+                        onChange={(e) => {
+                          setDeliveryAddress(e.target.value);
+                          // If user types manually after a selection, clear coordinates
+                          if (deliveryLatitude || deliveryLongitude) {
+                            setDeliveryLatitude(null);
+                            setDeliveryLongitude(null);
+                            setSelectedSavedAddressId(''); // Clear saved address selection
+                            setError("Veuillez sélectionner une adresse depuis la liste pour une localisation précise ou utiliser le bouton 'Ma Position'.");
+                          } else {
+                             setError(null); // Clear error if they are just typing
+                          }
+                        }}
+                        required
+                        variant="outlined"
+                        placeholder="Recherchez et sélectionnez votre adresse..."
+                        InputProps={{
+                          startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
+                        }}
+                      />
+                    </Autocomplete>
+                  ) : !loadError && (
+                    <Box sx={{display:'flex', alignItems:'center', gap:2, flexGrow:1}}>
+                       <CircularProgress size={24}/>
+                       <Typography>Chargement de la recherche d'adresse...</Typography>
+                    </Box>
+                  )}
+                   {/* Fallback if not loaded and no error yet, or if error prevents Autocomplete */}
+                  {!isLoaded && !loadError && (
+                      <TextField
+                          fullWidth
+                          label="Adresse de livraison (Chargement...)"
+                          value={deliveryAddress}
+                          onChange={(e) => setDeliveryAddress(e.target.value)}
+                          required
+                          variant="outlined"
+                          disabled
+                          InputProps={{
+                              startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
+                          }}
+                          sx={{flexGrow:1}}
+                      />
+                  )}
+                  <Tooltip title="Utiliser ma position actuelle">
+                    <span> {/* Span needed for tooltip on disabled button */}
+                    <IconButton
+                      onClick={handleUseMyLocation}
+                      disabled={!isLoaded || isFetchingCurrentLocation}
+                      color="primary"
+                      aria-label="utiliser ma position actuelle"
+                    >
+                      {isFetchingCurrentLocation ? <CircularProgress size={24} /> : <MyLocationIcon />}
+                    </IconButton>
+                    </span>
+                  </Tooltip>
+                </Box>
+              </Grid>
+
+              <Grid item xs={12} sm={6}>
                       value={deliveryAddress}
                       onChange={(e) => {
                         setDeliveryAddress(e.target.value);
                         // If user types manually after a selection, clear coordinates
-                        if (deliveryLatitude || deliveryLongitude) {
-                          setDeliveryLatitude(null);
-                          setDeliveryLongitude(null);
-                          // Optionally inform user that selection is preferred for accuracy
-                          setError("Veuillez sélectionner une adresse depuis la liste pour une localisation précise.");
-                        } else {
-                           setError(null); // Clear error if they are just typing
-                        }
-                      }}
-                      required
-                      variant="outlined"
-                      placeholder="Recherchez et sélectionnez votre adresse..."
-                      InputProps={{
-                        startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
-                      }}
-                    />
-                  </Autocomplete>
-                ) : !loadError && (
-                  <Box sx={{display:'flex', alignItems:'center', gap:2}}>
-                     <CircularProgress size={24}/>
-                     <Typography>Chargement de la recherche d'adresse...</Typography>
-                  </Box>
-                )}
-                 {/* Fallback if not loaded and no error yet, or if error prevents Autocomplete */}
-                {!isLoaded && !loadError && (
-                    <TextField
-                        fullWidth
-                        label="Adresse de livraison (Chargement...)"
-                        value={deliveryAddress}
-                        onChange={(e) => setDeliveryAddress(e.target.value)}
-                        required
-                        variant="outlined"
-                        disabled
-                        InputProps={{
-                            startAdornment: <LocationOn sx={{ mr: 1, color: "text.secondary" }} />,
-                        }}
-                    />
-                )}
-              </Grid>
-
+              {/* The rest of the Grid items for date, time, instructions remain unchanged here */}
               <Grid item xs={12} sm={6}>
                 <TextField
                   fullWidth

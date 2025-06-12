@@ -17,6 +17,8 @@ import {
   TrackChanges as TrackChangesIcon // For service radius
 } from "@mui/icons-material";
 import { useTheme } from '@mui/material/styles';
+import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-maps/api"; // Added
+import { useCallback } from "react"; // Added
 
 // Constants (can be moved to a config file later)
 const DELIVERY_ZONES = [
@@ -43,48 +45,93 @@ function VendorProfilePage() {
   const [profileImageFile, setProfileImageFile] = useState(null);
   const [profileImagePreview, setProfileImagePreview] = useState(null);
 
+  // Google Maps States
+  const [mapLibraries] = useState(["places"]);
+  const { isLoaded: isMapApiLoaded, loadError: mapLoadError } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: mapLibraries,
+  });
+  const [mapCenter, setMapCenter] = useState({ lat: 5.3454, lng: -4.0242 }); // Default to Abidjan
+  const [markerPosition, setMarkerPosition] = useState(null);
+  const [autocompleteInstance, setAutocompleteInstance] = useState(null);
+  const [mapRef, setMapRef] = useState(null);
 
-  // Effect to initialize formData and profileImagePreview
+
+  // Effect to initialize formData, profileImagePreview, and map states
   useEffect(() => {
     if (userData) {
-        setProfileImagePreview(userData.photoURL || null); // Always update preview from userData if available
-        if (editMode) {
-            setFormData({
-                name: userData.name || '',
-                phone: userData.phone || '',
-                description: userData.description || '',
-                deliveryZones: userData.deliveryZones || [],
-                baseFee: userData.baseFee === null || userData.baseFee === undefined ? '' : String(userData.baseFee),
-                availability: userData.availability || '',
-                vendorType: userData.vendorType || '',
-                formattedAddress: userData.address?.formattedAddress || '',
-                latitude: userData.address?.lat || null,
-                longitude: userData.address?.lng || null,
-                serviceRadius: userData.serviceRadius === null || userData.serviceRadius === undefined ? '' : String(userData.serviceRadius),
-            });
-            setProfileImageFile(null); // Clear any selected file when toggling editMode or userData changes
-            // setProfileImagePreview(userData.photoURL || null); // Already set above
-            setFormError('');
+      setProfileImagePreview(userData.photoURL || null);
+      if (editMode) {
+        const initialLat = userData.address?.lat || null;
+        const initialLng = userData.address?.lng || null;
+        setFormData({
+          name: userData.name || '',
+          phone: userData.phone || '',
+          description: userData.description || '',
+          deliveryZones: userData.deliveryZones || [],
+          baseFee: userData.baseFee === null || userData.baseFee === undefined ? '' : String(userData.baseFee),
+          availability: userData.availability || '',
+          vendorType: userData.vendorType || '',
+          formattedAddress: userData.address?.formattedAddress || '',
+          latitude: initialLat,
+          longitude: initialLng,
+          serviceRadius: userData.serviceRadius === null || userData.serviceRadius === undefined ? '' : String(userData.serviceRadius),
+        });
+
+        if (initialLat && initialLng) {
+          const position = { lat: initialLat, lng: initialLng };
+          setMapCenter(position);
+          setMarkerPosition(position);
+        } else {
+          // Default map center if no address, or keep previous if desired (e.g. general city)
+           setMapCenter({ lat: 5.3454, lng: -4.0242 }); // Abidjan
+           setMarkerPosition(null);
         }
+        setProfileImageFile(null);
+        setFormError('');
+      }
     }
     if (!editMode) {
-        setFormError(''); // Clear errors when exiting edit mode
-        setProfileImageFile(null); // Also clear file if cancelling edit mode
-        if (userData) { // Reset preview to original if cancelling
-             setProfileImagePreview(userData.photoURL || null);
-        }
+      setFormError('');
+      setProfileImageFile(null);
+      if (userData) {
+        setProfileImagePreview(userData.photoURL || null);
+      }
+      // Optionally reset map states when exiting edit mode if they shouldn't persist
+      // setMarkerPosition(null);
+      // setMapCenter({ lat: 5.3454, lng: -4.0242 });
     }
   }, [userData, editMode]);
 
 
   const handleEditToggle = () => {
     setEditMode(!editMode);
-    // Initialization of formData and profileImagePreview is now handled by useEffect
+     if (!editMode && userData?.address?.lat && userData?.address?.lng) {
+      const currentPos = { lat: userData.address.lat, lng: userData.address.lng };
+      setMapCenter(currentPos);
+      setMarkerPosition(currentPos);
+    } else if (!editMode) {
+       setMapCenter({ lat: 5.3454, lng: -4.0242 }); // Default if no initial address
+       setMarkerPosition(null);
+    }
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    setFormData(prev => {
+      const newState = { ...prev, [name]: value };
+      if (name === "formattedAddress" && (prev.latitude || prev.longitude)) {
+        newState.latitude = null;
+        newState.longitude = null;
+        setMarkerPosition(null);
+        // Consider setting formError to guide user
+        setFormError("L'adresse manuelle a désynchronisé le marqueur. Veuillez rechercher à nouveau ou cliquer/déplacer le marqueur sur la carte pour confirmer la position exacte.");
+      } else if (name !== "formattedAddress" && formError.includes("L'adresse manuelle a désynchronisé")) {
+        // Clear specific error if user interacts with other fields
+        setFormError("");
+      }
+      return newState;
+    });
   };
 
   const handleMultiSelectChange = (event) => {
@@ -364,44 +411,97 @@ function VendorProfilePage() {
                 Localisation et Rayon de Service
               </Typography>
               <Grid container spacing={2}>
+                {/* Map and Address Section */}
                 <Grid item xs={12}>
-                  <TextField
-                    label="Adresse Complète"
-                    name="formattedAddress"
-                    value={formData.formattedAddress || ''}
-                    onChange={handleInputChange}
-                    fullWidth
-                    size="small"
-                    disabled={isSaving}
-                    multiline
-                    rows={2}
-                  />
+                  <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', mt:1, mb:1 }}>
+                    <LocationOn sx={{ mr: 0.5, fontSize: '1.1rem' }} />
+                    Adresse de l'Entreprise
+                  </Typography>
+                  {mapLoadError && (
+                    <Alert severity="warning" sx={{ mb: 1.5 }}>
+                      La carte Google Maps n'a pas pu se charger. La sélection d'adresse via la carte est indisponible. Vous pouvez toujours entrer l'adresse manuellement.
+                    </Alert>
+                  )}
+                  {!isMapApiLoaded && !mapLoadError && <CircularProgress size={24} sx={{mb:1}}/>}
+                  {isMapApiLoaded && (
+                    <Autocomplete
+                      onLoad={(ac) => setAutocompleteInstance(ac)}
+                      onPlaceChanged={() => {
+                        if (autocompleteInstance) {
+                          const place = autocompleteInstance.getPlace();
+                          if (place && place.geometry && place.geometry.location) {
+                            setFormData(prev => ({
+                              ...prev,
+                              formattedAddress: place.formatted_address || prev.formattedAddress,
+                              latitude: place.geometry.location.lat(),
+                              longitude: place.geometry.location.lng(),
+                            }));
+                            const newPos = place.geometry.location.toJSON();
+                            setMapCenter(newPos);
+                            setMarkerPosition(newPos);
+                            setFormError(""); // Clear address error
+                          } else {
+                            setFormData(prev => ({ ...prev, latitude: null, longitude: null }));
+                            setMarkerPosition(null);
+                            setFormError("Adresse non reconnue. Veuillez réessayer ou placer/déplacer le marqueur sur la carte.");
+                          }
+                        }
+                      }}
+                      options={{ types: ["address"] }}
+                    >
+                      <TextField
+                        label="Rechercher l'adresse..."
+                        name="formattedAddress" // Ensure name is set for handleInputChange
+                        value={formData.formattedAddress || ''}
+                        onChange={handleInputChange}
+                        fullWidth
+                        size="small"
+                        disabled={isSaving || !isMapApiLoaded}
+                        sx={{ mb: 1.5 }}
+                        placeholder="Commencez à taper pour rechercher..."
+                      />
+                    </Autocomplete>
+                  )}
                 </Grid>
-                <Grid item xs={12} sm={4}>
-                  <TextField
-                    label="Latitude"
-                    name="latitude"
-                    type="number"
-                    value={formData.latitude === null ? '' : formData.latitude}
-                    onChange={handleInputChange}
-                    fullWidth
-                    size="small"
-                    disabled={isSaving}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={4}>
-                  <TextField
-                    label="Longitude"
-                    name="longitude"
-                    type="number"
-                    value={formData.longitude === null ? '' : formData.longitude}
-                    onChange={handleInputChange}
-                    fullWidth
-                    size="small"
-                    disabled={isSaving}
-                  />
-                </Grid>
-                <Grid item xs={12} sm={4}>
+
+                {isMapApiLoaded && (
+                  <Grid item xs={12}>
+                    <Box sx={{ height: "300px", width: "100%", mb: 1, borderRadius: 1, overflow:'hidden', border: `1px solid ${theme.palette.divider}` }}>
+                      <GoogleMap
+                        mapContainerStyle={{ height: "100%", width: "100%" }}
+                        center={mapCenter}
+                        zoom={markerPosition ? 16 : 10}
+                        onLoad={(map) => setMapRef(map)}
+                        onClick={(e) => {
+                           if(isSaving) return;
+                          const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                          setMarkerPosition(newPos);
+                          setFormData(prev => ({ ...prev, latitude: newPos.lat, longitude: newPos.lng }));
+                          setFormError("L'adresse textuelle ne se met pas à jour par clic. Utilisez la recherche ou ajustez manuellement si besoin.");
+                        }}
+                      >
+                        {markerPosition && (
+                          <Marker
+                            position={markerPosition}
+                            draggable={!isSaving}
+                            onDragEnd={(e) => {
+                              if(isSaving) return;
+                              const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                              setMarkerPosition(newPos);
+                              setFormData(prev => ({ ...prev, latitude: newPos.lat, longitude: newPos.lng }));
+                              setFormError("L'adresse textuelle ne se met pas à jour par déplacement du marqueur. Ajustez manuellement si besoin.");
+                            }}
+                          />
+                        )}
+                      </GoogleMap>
+                    </Box>
+                    <Typography variant="caption" color="text.secondary" sx={{display:'block', textAlign:'center'}}>
+                        Recherchez, cliquez sur la carte, ou déplacez le marqueur pour définir la position exacte.
+                    </Typography>
+                  </Grid>
+                )}
+                 {/* End Map and Address Section */}
+                <Grid item xs={12}> {/* Service Radius on its own line for better layout */}
                   <TextField
                     label="Rayon de Service (km)"
                     name="serviceRadius"

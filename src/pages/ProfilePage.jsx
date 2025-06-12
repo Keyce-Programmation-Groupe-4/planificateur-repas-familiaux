@@ -54,19 +54,32 @@ import CakeIcon from '@mui/icons-material/Cake'
 import BarChartIcon from '@mui/icons-material/BarChart'
 import LocalFireDepartmentIcon from '@mui/icons-material/LocalFireDepartment';
 import EditNoteIcon from '@mui/icons-material/EditNote';
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
+import LocationOnIcon from '@mui/icons-material/LocationOn'; // For Saved Addresses Tab
+import DeleteIcon from '@mui/icons-material/Delete'; // For Delete Address Button
 import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider"
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns"
 import { DatePicker } from "@mui/x-date-pickers/DatePicker"
+import { GoogleMap, Marker, useJsApiLoader, Autocomplete } from "@react-google-maps/api"; // For Address Map
 import { useAuth } from "../contexts/AuthContext"
 import { db, storage } from "../firebaseConfig"
 import { updateProfile } from "firebase/auth"
-import { doc, updateDoc, serverTimestamp, Timestamp } from "firebase/firestore"
+import { doc, updateDoc, serverTimestamp, Timestamp, collection, addDoc, query, onSnapshot, orderBy, deleteDoc } from "firebase/firestore" // Added deleteDoc
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage"
 import { triggerSendNotification } from '../utils/notificationUtils';
 import { getCurrentUserFCMToken } from '../utils/authUtils';
 import { format } from "date-fns"
 import { fr } from "date-fns/locale"
+
+// For the new Dialog and CardActions (ensure other MUI imports are kept if this block replaces a smaller one)
+import {
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  CardActions,
+  // List, ListItem, ListItemText might be needed if not already broadly imported
+} from "@mui/material";
 
 // Predefined options
 const DIET_OPTIONS = [
@@ -221,6 +234,32 @@ export default function ProfilePage() {
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
   const [photoUploadProgress, setPhotoUploadProgress] = useState(0)
 
+  // Saved Addresses States
+  const [savedAddresses, setSavedAddresses] = useState([]);
+  const [isLoadingAddresses, setIsLoadingAddresses] = useState(true);
+  const [addressError, setAddressError] = useState('');
+  const [openAddAddressDialog, setOpenAddAddressDialog] = useState(false);
+  const [newAddressName, setNewAddressName] = useState('');
+  const [newAddressMapCenter, setNewAddressMapCenter] = useState({ lat: 5.3454, lng: -4.0242 }); // Default Abidjan
+  const [newAddressMarkerPosition, setNewAddressMarkerPosition] = useState(null);
+  const [newAddressFormatted, setNewAddressFormatted] = useState('');
+  const [newAddressLat, setNewAddressLat] = useState(null);
+  const [newAddressLng, setNewAddressLng] = useState(null);
+  const [newAddressAutocomplete, setNewAddressAutocomplete] = useState(null);
+  const [isAddingAddress, setIsAddingAddress] = useState(false); // Will be used for both add & edit
+  const [mapLibraries] = useState(["places"]);
+
+  // Edit and Delete Address States
+  const [editingAddress, setEditingAddress] = useState(null); // Store address being edited
+  const [openDeleteConfirmDialog, setOpenDeleteConfirmDialog] = useState(false);
+  const [addressToDelete, setAddressToDelete] = useState(null);
+  const [isDeletingAddress, setIsDeletingAddress] = useState(false);
+
+  const { isLoaded: isDialogMapApiLoaded, loadError: dialogMapLoadError } = useJsApiLoader({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: mapLibraries,
+  });
+
   useEffect(() => {
     if (userData) {
       setDisplayName(userData.displayName || "")
@@ -249,9 +288,142 @@ export default function ProfilePage() {
     }
   }, [userData])
 
+  // Fetch Saved Addresses
+  useEffect(() => {
+    if (currentUser?.uid) {
+      setIsLoadingAddresses(true);
+      const addressesRef = collection(db, 'users', currentUser.uid, 'savedAddresses');
+      const q = query(addressesRef, orderBy('createdAt', 'desc'));
+
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const addresses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        setSavedAddresses(addresses);
+        setIsLoadingAddresses(false);
+        setAddressError(''); // Clear previous errors on successful fetch
+      }, (err) => {
+        console.error("Error fetching saved addresses:", err);
+        setAddressError("Impossible de charger les adresses enregistrées.");
+        setIsLoadingAddresses(false);
+      });
+      return () => unsubscribe();
+    } else {
+      setSavedAddresses([]); // Clear addresses if no user
+      setIsLoadingAddresses(false);
+    }
+  }, [currentUser]);
+
+  // Reset Add Address Form when dialog closes
+  useEffect(() => {
+    if (!openAddAddressDialog) {
+      resetNewAddressForm();
+    }
+  }, [openAddAddressDialog]);
+
   const handleTabChange = (event, newValue) => {
     setCurrentTab(newValue)
   }
+
+  const resetNewAddressForm = () => { // Defined before handleProfileUpdate, but after its usage in useEffect
+    setNewAddressName('');
+    setNewAddressFormatted('');
+    setNewAddressLat(null);
+    setNewAddressLng(null);
+    setNewAddressMarkerPosition(null);
+    setNewAddressMapCenter({ lat: 5.3454, lng: -4.0242 }); // Reset to default
+    setAddressError(''); // Clear dialog-specific errors
+    setEditingAddress(null); // Ensure editing state is cleared
+    if (newAddressAutocomplete) {
+        const inputField = document.getElementById('new-address-autocomplete-input'); // Requires TextField to have this id
+        if(inputField) inputField.value = ''; // Clear the visual input
+    }
+  };
+
+  const handleOpenEditAddressDialog = (addr) => {
+    setEditingAddress(addr);
+    setNewAddressName(addr.name);
+    setNewAddressFormatted(addr.formattedAddress);
+    setNewAddressLat(addr.latitude);
+    setNewAddressLng(addr.longitude);
+    const pos = { lat: addr.latitude, lng: addr.longitude };
+    setNewAddressMarkerPosition(pos);
+    setNewAddressMapCenter(pos);
+    setOpenAddAddressDialog(true);
+    setAddressError(''); // Clear any previous errors
+  };
+
+  const handleSaveAddress = async () => { // Renamed from handleSaveNewAddress
+    setIsAddingAddress(true); // Use this state for both add and edit saving
+    setAddressError('');
+
+    if (!newAddressName.trim()) {
+      setAddressError("Le nom de l'adresse est requis.");
+      setIsAddingAddress(false);
+      return;
+    }
+    if (!newAddressFormatted.trim() || newAddressLat == null || newAddressLng == null) {
+      setAddressError("L'adresse complète et les coordonnées (via recherche ou carte) sont requises.");
+      setIsAddingAddress(false);
+      return;
+    }
+    if (!currentUser?.uid) {
+      setAddressError("Utilisateur non authentifié.");
+      setIsAddingAddress(false);
+      return;
+    }
+
+    const addressData = {
+      name: newAddressName.trim(),
+      formattedAddress: newAddressFormatted.trim(),
+      latitude: newAddressLat,
+      longitude: newAddressLng,
+      updatedAt: serverTimestamp(), // For both add and edit
+    };
+
+    try {
+      if (editingAddress) { // Editing existing address
+        await updateDoc(doc(db, 'users', currentUser.uid, 'savedAddresses', editingAddress.id), addressData);
+        setSuccess("Adresse modifiée avec succès !");
+      } else { // Adding new address
+        addressData.createdAt = serverTimestamp(); // Add createdAt only for new addresses
+        await addDoc(collection(db, 'users', currentUser.uid, 'savedAddresses'), addressData);
+        setSuccess("Nouvelle adresse enregistrée avec succès !");
+      }
+      setOpenAddAddressDialog(false);
+      // resetNewAddressForm(); // Called by useEffect
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      console.error("Error saving address:", err);
+      setAddressError(`Erreur lors de l'enregistrement: ${err.message}`);
+    } finally {
+      setIsAddingAddress(false);
+    }
+  };
+
+  const handleDeleteAddressClick = (addr) => {
+    setAddressToDelete(addr);
+    setOpenDeleteConfirmDialog(true);
+  };
+
+  const handleConfirmDeleteAddress = async () => {
+    if (!addressToDelete || !currentUser?.uid) {
+      setAddressError("Aucune adresse à supprimer ou utilisateur non identifié.");
+      return;
+    }
+    setIsDeletingAddress(true);
+    setAddressError('');
+    try {
+      await deleteDoc(doc(db, 'users', currentUser.uid, 'savedAddresses', addressToDelete.id));
+      setSuccess("Adresse supprimée avec succès !");
+      setOpenDeleteConfirmDialog(false);
+      setAddressToDelete(null);
+      setTimeout(() => setSuccess(""), 4000);
+    } catch (err) {
+      console.error("Error deleting address:", err);
+      setAddressError(`Erreur lors de la suppression: ${err.message}`);
+    } finally {
+      setIsDeletingAddress(false);
+    }
+  };
 
   const handleProfileUpdate = async (e) => {
     e.preventDefault()
@@ -929,11 +1101,23 @@ export default function ProfilePage() {
                               {...a11yProps(2)}
                             />
                             <Tab icon={<BarChartIcon />} iconPosition="start" label="Statistiques" {...a11yProps(3)} />
+                            <Tab
+                              icon={<LocationOnIcon />}
+                              iconPosition="start"
+                              label="Mes Adresses"
+                              {...a11yProps(4)} // New tab for saved addresses
+                            />
                           </Tabs>
                         </Box>
 
                         <Box sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
-                          <Box sx={{ display: "flex", justifyContent: "flex-end", mb: 3 }}>
+                          <Box sx={{
+                              display: "flex",
+                              justifyContent: "flex-end",
+                              mb: 3,
+                              // Conditionally hide edit buttons if on the "Mes Adresses" tab, as it has its own add button
+                              visibility: currentTab === 4 ? 'hidden' : 'visible'
+                            }}>
                             {!isEditing ? (
                               <Button
                                 variant="outlined"
@@ -1762,6 +1946,62 @@ export default function ProfilePage() {
                               💡 Note : Les économies sont une estimation basée sur les prix renseignés et peuvent varier selon les fluctuations du marché.
                             </Typography>
                           </TabPanel>
+
+                          {/* Saved Addresses TabPanel Content (Structure Only for now) */}
+                          <TabPanel value={currentTab} index={4}>
+                            <Typography variant="h5" sx={{ mb: 1, fontWeight: 600, display:'flex', alignItems:'center' }}>
+                              <LocationOnIcon sx={{mr:1, color: theme.palette.primary.main}}/> Mes Adresses Enregistrées
+                            </Typography>
+                             <Typography variant="body2" color="text.secondary" sx={{ mb: 2.5 }}>
+                                Gérez vos adresses de livraison fréquentes pour un accès rapide lors de vos commandes.
+                            </Typography>
+                            <Button
+                              variant="contained"
+                              onClick={() => setOpenAddAddressDialog(true)}
+                              sx={{ mb: 3, borderRadius:3, py:1, px:2 }}
+                              startIcon={<LocationOnIcon/>}
+                              size="large"
+                            >
+                              Ajouter une nouvelle adresse
+                            </Button>
+
+                            {/* Display general address errors for this tab, not specific to dialog unless dialog is open */}
+                            {addressError && !openAddAddressDialog && <Alert severity="error" onClose={() => setAddressError('')} sx={{mb:2}}>{addressError}</Alert>}
+
+                            {isLoadingAddresses && <Box sx={{display:'flex', justifyContent:'center', my:4}}><CircularProgress /></Box>}
+
+                            {!isLoadingAddresses && !addressError && savedAddresses.length === 0 && (
+                              <Typography sx={{textAlign:'center', color:'text.secondary', my:4, fontStyle:'italic'}}>
+                                Vous n'avez aucune adresse enregistrée pour le moment.
+                              </Typography>
+                            )}
+                            <Grid container spacing={3}>
+                              {savedAddresses.map(addr => (
+                                <Grid item xs={12} sm={6} md={4} key={addr.id}>
+                                  <Card sx={{borderRadius:3, boxShadow: theme.shadows[1], height:'100%', display:'flex', flexDirection:'column', '&:hover': {boxShadow: theme.shadows[4], transform: 'translateY(-2px)'}, transition: 'all 0.2s ease-in-out'}}>
+                                    <CardContent sx={{flexGrow:1}}>
+                                      <Typography variant="h6" sx={{fontWeight:500, mb:0.5, color: theme.palette.primary.dark}}>{addr.name}</Typography>
+                                      <Typography variant="body2" color="text.secondary">{addr.formattedAddress}</Typography>
+                                      {/* Optional: display lat/lng or a mini-map later */}
+                                      {/*
+                                      <Typography variant="caption" color="text.disabled" sx={{mt:1, display:'block'}}>
+                                        Lat: {addr.latitude?.toFixed(4)}, Lng: {addr.longitude?.toFixed(4)}
+                                      </Typography>
+                                      */}
+                                    </CardContent>
+                                     <CardActions sx={{justifyContent:'flex-end', p:1, pt:0}}>
+                                        <IconButton size="small" onClick={() => handleOpenEditAddressDialog(addr)} aria-label="modifier l'adresse">
+                                          <EditIcon fontSize="small"/>
+                                        </IconButton>
+                                        <IconButton size="small" onClick={() => handleDeleteAddressClick(addr)} aria-label="supprimer l'adresse" color="error">
+                                          <DeleteIcon fontSize="small"/>
+                                        </IconButton>
+                                     </CardActions>
+                                  </Card>
+                                </Grid>
+                              ))}
+                            </Grid>
+                          </TabPanel>
                         </Box>
                       </CardContent>
                     </Card>
@@ -1772,6 +2012,136 @@ export default function ProfilePage() {
           </Fade>
         </Container>
       </Box>
+      {/* Add/Edit Address Dialog */}
+      <Dialog open={openAddAddressDialog} onClose={() => {setOpenAddAddressDialog(false); setEditingAddress(null);}} maxWidth="sm" fullWidth PaperProps={{sx:{borderRadius:4}}}>
+        <DialogTitle sx={{ pb:1, fontWeight:600, fontSize:'1.5rem' }}>
+            {editingAddress ? "Modifier l'Adresse" : "Ajouter une Nouvelle Adresse"}
+        </DialogTitle>
+        <DialogContent dividers sx={{pt:1.5}}>
+          {addressError && <Alert severity="error" onClose={() => setAddressError('')} sx={{my:1}}>{addressError}</Alert>}
+          {dialogMapLoadError && <Alert severity="warning" sx={{my:1}}>Impossible de charger Google Maps. La recherche d'adresse peut être limitée.</Alert>}
+
+          <TextField
+            autoFocus
+            margin="dense"
+            id="new-address-name"
+            label="Nom de l'adresse (ex: Maison, Bureau)"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={newAddressName}
+            onChange={(e) => setNewAddressName(e.target.value)}
+            disabled={isAddingAddress}
+            sx={{"& .MuiOutlinedInput-root": { borderRadius: 3 }, mb:1.5}}
+          />
+
+          {isDialogMapApiLoaded && (
+            <Autocomplete
+              onLoad={(ac) => setNewAddressAutocomplete(ac)}
+              onPlaceChanged={() => {
+                if (newAddressAutocomplete) {
+                  const place = newAddressAutocomplete.getPlace();
+                  if (place && place.geometry && place.geometry.location) {
+                    setNewAddressFormatted(place.formatted_address || '');
+                    setNewAddressLat(place.geometry.location.lat());
+                    setNewAddressLng(place.geometry.location.lng());
+                    const newPos = place.geometry.location.toJSON();
+                    setNewAddressMapCenter(newPos);
+                    setNewAddressMarkerPosition(newPos);
+                    setAddressError(''); // Clear previous dialog errors
+                  } else {
+                    setNewAddressLat(null); setNewAddressLng(null); setNewAddressMarkerPosition(null);
+                    setAddressError("Adresse Google Maps non reconnue. Veuillez réessayer ou placer/déplacer le marqueur sur la carte.");
+                  }
+                }
+              }}
+              options={{ types: ["address"] }}
+            >
+              <TextField
+                id="new-address-autocomplete-input" // ID for reset function
+                label="Rechercher l'adresse..."
+                fullWidth
+                variant="outlined"
+                value={newAddressFormatted} // Controlled by newAddressFormatted
+                onChange={(e) => { // Handle manual typing
+                    setNewAddressFormatted(e.target.value);
+                    if(newAddressLat || newAddressLng) { // User is typing manually after a selection
+                        setNewAddressLat(null); setNewAddressLng(null); setNewAddressMarkerPosition(null);
+                        setAddressError("Coordonnées effacées car l'adresse a été modifiée manuellement. Veuillez re-sélectionner depuis la liste ou ajuster le marqueur sur la carte.");
+                    }
+                }}
+                disabled={isAddingAddress || !isDialogMapApiLoaded}
+                sx={{"& .MuiOutlinedInput-root": { borderRadius: 3 }, my:1.5}}
+                placeholder="Commencez à taper votre adresse..."
+              />
+            </Autocomplete>
+          )}
+          {!isDialogMapApiLoaded && !dialogMapLoadError && <Box sx={{display:'flex', justifyContent:'center', my:2}}><CircularProgress size={24}/></Box>}
+
+          {isDialogMapApiLoaded && (
+            <Box sx={{ height: '300px', width: '100%', my: 1.5, borderRadius:2, overflow:'hidden', border: `1px solid ${theme.palette.divider}` }}>
+              <GoogleMap
+                mapContainerStyle={{ height: "100%", width: "100%" }}
+                center={newAddressMapCenter}
+                zoom={newAddressMarkerPosition ? 16 : 10}
+                onClick={(e) => {
+                  if(isAddingAddress) return;
+                  const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                  setNewAddressMarkerPosition(newPos);
+                  setNewAddressLat(newPos.lat);
+                  setNewAddressLng(newPos.lng);
+                  setAddressError("Le champ d'adresse textuel ne se met pas à jour automatiquement par un clic sur la carte. Utilisez la recherche Google ou ajustez manuellement si nécessaire.");
+                }}
+              >
+                {newAddressMarkerPosition && (
+                  <Marker
+                    position={newAddressMarkerPosition}
+                    draggable={!isAddingAddress}
+                    onDragEnd={(e) => {
+                      if(isAddingAddress) return;
+                      const newPos = { lat: e.latLng.lat(), lng: e.latLng.lng() };
+                      setNewAddressMarkerPosition(newPos);
+                      setNewAddressLat(newPos.lat);
+                      setNewAddressLng(newPos.lng);
+                      setAddressError("Le champ d'adresse textuel ne se met pas à jour automatiquement en déplaçant le marqueur. Utilisez la recherche Google ou ajustez manuellement si nécessaire.");
+                    }}
+                  />
+                )}
+              </GoogleMap>
+            </Box>
+          )}
+           <Typography variant="caption" color="text.secondary" sx={{display:'block', textAlign:'center', mt: isDialogMapApiLoaded ? 0 : 1}}>
+              {isDialogMapApiLoaded ? "Recherchez, cliquez sur la carte, ou déplacez le marqueur pour définir la position exacte." : "Chargement de la carte..."}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{p: {xs:2, sm:3}}}>
+          <Button onClick={() => {setOpenAddAddressDialog(false); setEditingAddress(null);}} disabled={isAddingAddress} color="inherit">Annuler</Button>
+          <Button
+            onClick={handleSaveAddress}
+            variant="contained"
+            disabled={isAddingAddress || !newAddressName.trim() || !newAddressFormatted.trim() || newAddressLat == null || newAddressLng == null}
+            startIcon={isAddingAddress ? <CircularProgress size={16} color="inherit"/> : <SaveIcon/>}
+          >
+            {editingAddress ? "Sauvegarder les Modifications" : "Enregistrer l'Adresse"}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={openDeleteConfirmDialog} onClose={() => {setOpenDeleteConfirmDialog(false); setAddressToDelete(null);}} maxWidth="xs">
+        <DialogTitle>Confirmer la suppression</DialogTitle>
+        <DialogContent>
+          <Typography>Voulez-vous vraiment supprimer l'adresse nommée "{addressToDelete?.name || 'cette adresse'}" ?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => {setOpenDeleteConfirmDialog(false); setAddressToDelete(null);}} disabled={isDeletingAddress} color="inherit">
+            Annuler
+          </Button>
+          <Button onClick={handleConfirmDeleteAddress} color="error" variant="contained" disabled={isDeletingAddress}>
+            {isDeletingAddress ? <CircularProgress size={20} color="inherit"/> : "Supprimer"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </LocalizationProvider>
   )
 }
