@@ -37,7 +37,7 @@ import { githubLight } from '@uiw/codemirror-theme-github' // Pour styliser les 
 import CodeMirror from '@uiw/react-codemirror' // Pour rendre les blocs de code
 
 // --- Constantes et Fonctions Utilitaires pour le Chatbot ---
-const GEMINI_API_KEY = "AIzaSyDfu0Q9IKDvQu5ewtsG7xnh43iebNDDuyU"; // REMPLACEZ PAR VOTRE CLÉ API
+const GEMINI_API_KEY = "your_api_key"; // REMPLACEZ PAR VOTRE CLÉ API
 const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
 // Fonction pour générer le contexte utilisateur pour le chatbot
