@@ -1,161 +1,54 @@
 "use client"
 
-import { createContext, useState, useEffect, useContext } from "react"
-import { onAuthStateChanged, signOut } from "firebase/auth"
-import { auth, db } from "../firebaseConfig"
-import { doc, onSnapshot } from "firebase/firestore" // Import onSnapshot
+import { createContext, useEffect, useContext } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { handleAuthStateChange, logoutUser } from "../redux/slices/authSlice";
+import { auth } from "../firebaseConfig"; // db and onSnapshot are handled by the thunk
 
-const AuthContext = createContext()
+const AuthContext = createContext();
 
 export function useAuth() {
-  return useContext(AuthContext)
+  return useContext(AuthContext);
 }
 
 export default function AuthProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null)
-  const [userData, setUserData] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const dispatch = useDispatch();
+  const { currentUser, userData, loading, error } = useSelector((state) => state.auth);
 
   useEffect(() => {
-    // Listener for authentication state changes
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      setCurrentUser(user)
-      if (!user) {
-        // If user logs out, clear user data and set loading to false
-        setUserData(null)
-        setLoading(false)
-      }
-      // We set loading to false only after Firestore listener is setup or user is logged out
-    })
+    // Dispatch the thunk that handles onAuthStateChanged and data fetching
+    // The thunk itself will manage the listener lifecycle internally or return an unsubscribe if needed.
+    // For onAuthStateChanged, it's often set up once and runs for the app's lifetime.
+    // If handleAuthStateChange returned an unsubscribe function, you'd call it here.
+    // const unsubscribe = dispatch(handleAuthStateChange());
+    // return () => {
+    //   if (unsubscribe && typeof unsubscribe === 'function') {
+    //     unsubscribe();
+    //   }
+    // };
+    dispatch(handleAuthStateChange());
+  }, [dispatch]);
 
-    // Cleanup auth listener on unmount
-    return unsubscribeAuth
-  }, [])
-
-  useEffect(() => {
-    let unsubscribeFirestore = null;
-
-    if (currentUser) {
-      setLoading(true);
-      const vendorDocRef = doc(db, "vendors", currentUser.uid);
-
-      unsubscribeFirestore = onSnapshot(vendorDocRef,
-        (vendorDocSnap) => {
-          if (vendorDocSnap.exists()) {
-            // User is a vendor
-            const vendorData = vendorDocSnap.data();
-            setUserData({
-              uid: currentUser.uid,
-              email: currentUser.email, // From auth
-              ...vendorData,             // Data from Firestore vendors collection
-              isVendor: true,
-              vendorId: currentUser.uid, // Explicitly set for clarity
-              isApproved: vendorData.isApproved === true,
-              isActive: vendorData.isActive === true,
-            });
-            setLoading(false);
-          } else {
-            // User is not a vendor, try to fetch as a regular user from "users" collection
-            const userDocRef = doc(db, "users", currentUser.uid);
-            // Need a nested unsubscribe or manage it carefully.
-            // For simplicity here, we'll create a new unsubscribe for the user path.
-            // The outer unsubscribeFirestore will be overwritten.
-            // A more robust solution might involve a function that returns the correct unsubscribe.
-            const unsubscribeUserDoc = onSnapshot(userDocRef,
-              (userDocSnap) => {
-                if (userDocSnap.exists()) {
-                  setUserData({
-                    uid: currentUser.uid,
-                    email: currentUser.email,
-                    ...userDocSnap.data(),
-                    dietaryRestrictions: userDocSnap.data()?.dietaryRestrictions || [],
-                    isVendor: false
-                  });
-                } else {
-                  // No specific user document, just basic auth info
-                  console.log("User document not found in 'users' for UID:", currentUser.uid, "- setting basic profile.");
-                  setUserData({
-                    uid: currentUser.uid,
-                    email: currentUser.email,
-                    isVendor: false
-                  });
-                }
-                setLoading(false);
-              },
-              (userError) => {
-                console.error("Error listening to user document:", userError);
-                setUserData({
-                  uid: currentUser.uid,
-                  email: currentUser.email,
-                  isVendor: false,
-                  error: "Failed to load user profile"
-                }); // Basic info on error
-                setLoading(false);
-              }
-            );
-            // This ensures the userDoc listener is the one being returned for cleanup if we went down this path
-            unsubscribeFirestore = unsubscribeUserDoc;
-          }
-        },
-        (vendorError) => {
-          console.error("Error listening to vendor document, attempting to fetch as regular user:", vendorError);
-          // Fallback to fetching as a regular user from "users" collection
-          const userDocRef = doc(db, "users", currentUser.uid);
-          const unsubscribeUserDocOnError = onSnapshot(userDocRef,
-            (userDocSnap) => {
-              if (userDocSnap.exists()) {
-                setUserData({
-                  uid: currentUser.uid,
-                  email: currentUser.email,
-                  ...userDocSnap.data(),
-                  dietaryRestrictions: userDocSnap.data()?.dietaryRestrictions || [],
-                  isVendor: false
-                });
-              } else {
-                console.log("User document also not found in 'users' after vendor fetch error for UID:", currentUser.uid);
-                setUserData({
-                  uid: currentUser.uid,
-                  email: currentUser.email,
-                  isVendor: false
-                });
-              }
-              setLoading(false);
-            },
-            (userError) => {
-              console.error("Error listening to user document after vendor error:", userError);
-              setUserData({
-                uid: currentUser.uid,
-                email: currentUser.email,
-                isVendor: false,
-                error: "Failed to load any user profile"
-              });
-              setLoading(false);
-            }
-          );
-          unsubscribeFirestore = unsubscribeUserDocOnError;
-        }
-      );
-    } else {
-      // No user logged in (already handled by the first useEffect for clearing userData)
-      // if (!loading) setLoading(false); // This check might be redundant due to the first useEffect
+  const handleLogout = async () => {
+    try {
+      await dispatch(logoutUser()).unwrap(); // unwrap to catch potential errors here
+    } catch (e) {
+      // Error is already handled in the slice's rejected case and stored in `error`
+      console.error("Logout failed:", e);
     }
-
-    return () => {
-      if (unsubscribeFirestore) {
-        unsubscribeFirestore();
-      }
-    };
-  }, [currentUser]); // Re-run this effect when currentUser changes
+  };
 
   const value = {
     currentUser,
     userData,
-    loading,
-    logout: () => signOut(auth),
-  }
+    loading, // This now comes from Redux store, reflecting auth state and initial data load
+    error, // Auth errors from Redux store
+    logout: handleLogout, // Dispatch Redux action for logout
+  };
 
-  // Render children only when initial loading is complete
-  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>
+  // Render children only when initial auth loading is complete
+  // The definition of 'loading' in the slice (initialState.loading = true) covers this.
+  return <AuthContext.Provider value={value}>{!loading && children}</AuthContext.Provider>;
 }
 
-export { AuthProvider }
+export { AuthProvider };

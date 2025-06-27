@@ -1,64 +1,54 @@
 // src/components/Notifications/Notifications.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 import { Snackbar, Alert } from '@mui/material';
 import { messaging } from '../../firebaseConfig'; // Adjust path as necessary
 import { onMessage } from 'firebase/messaging';
+import { showNotification, hideNotification } from '../../redux/slices/notificationsSlice';
 
 const Notifications = () => {
-  const [notification, setNotification] = useState(null);
-  const [open, setOpen] = useState(false);
+  const dispatch = useDispatch();
+  const { title, body, severity, open, key } = useSelector((state) => state.notifications);
 
   useEffect(() => {
-    // This replaces the onMessage listener in main.jsx if you want to centralize it.
-    // Or, you can keep both if main.jsx handles very basic alerts and this one handles richer UI.
-    // For this example, we assume this is the primary foreground message handler.
     const unsubscribe = onMessage(messaging, (payload) => {
       console.log('Foreground message received in Notifications component: ', payload);
 
-      // Extract title and body from the nested notification object
-      const title = payload.notification?.title || 'New Notification';
-      const body = payload.notification?.body || 'You have a new message.';
+      const notifTitle = payload.notification?.title || 'Nouvelle Notification';
+      const notifBody = payload.notification?.body || 'Vous avez un nouveau message.';
+      // Vous pourriez vouloir mapper payload.data.severity à une valeur de sévérité MUI si disponible
+      const notifSeverity = payload.data?.severity || 'info';
 
-      setNotification({ title, body });
-      setOpen(true);
+      dispatch(showNotification({ title: notifTitle, body: notifBody, severity: notifSeverity }));
     });
-
-    // Request permission when component mounts, if not already handled in main.jsx
-    // This is a good place if you want to tie permission requests to a specific UI element later
-    // For now, main.jsx handles the initial request.
-    // Notification.requestPermission().then(permission => {
-    //   if (permission === 'granted') {
-    //     console.log('Notification permission already granted.');
-    //   }
-    // });
 
     return () => {
       unsubscribe(); // Unsubscribe when component unmounts
     };
-  }, []);
+  }, [dispatch]);
 
   const handleClose = (event, reason) => {
     if (reason === 'clickaway') {
       return;
     }
-    setOpen(false);
-    setNotification(null);
+    dispatch(hideNotification());
   };
 
-  if (!notification) {
+  if (!title && !body) { // Ne rien rendre si aucun titre ou corps (même si open est true par erreur)
     return null;
   }
 
   return (
     <Snackbar
+      key={key} // Important pour re-déclencher l'animation si le message est le même
       open={open}
       autoHideDuration={6000}
       onClose={handleClose}
       anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
     >
-      <Alert onClose={handleClose} severity="info" sx={{ width: '100%' }}>
-        <strong>{notification.title}</strong><br />
-        {notification.body}
+      <Alert onClose={handleClose} severity={severity} sx={{ width: '100%' }} variant="filled">
+        <strong>{title}</strong><br />
+        {body}
       </Alert>
     </Snackbar>
   );

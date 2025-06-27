@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { Link as RouterLink, useNavigate } from "react-router-dom";
+import { useDispatch, useSelector } from "react-redux";
 import {
   Container,
   Typography,
@@ -34,9 +35,10 @@ import {
   DialogActions,
   useMediaQuery,
   Checkbox,
-  FormControlLabel,
+  // FormControlLabel, // Plus utilisé directement pour la sélection
   Badge,
   Divider,
+  CircularProgress, // Pour l'état de chargement de l'importation
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -58,24 +60,26 @@ import {
   Merge as MergeIcon,
   CheckCircle as CheckCircleIcon,
   RadioButtonUnchecked as RadioButtonUncheckedIcon,
-  Delete as DeleteIcon, // Ajoutez cette ligne
+  Delete as DeleteIcon,
 } from "@mui/icons-material";
-import Papa from "papaparse";
-import { useAuth } from "../contexts/AuthContext";
-import { db } from "../firebaseConfig";
+// Papa est utilisé par csvUtils, pas besoin ici directement
+// import Papa from "papaparse";
+import { useAuth } from "../contexts/AuthContext"; // Encore utilisé pour currentUser et userData
 import {
-  collection,
-  query,
-  where,
-  getDocs,
-  orderBy,
-  writeBatch,
-  doc,
-  updateDoc,
-} from "firebase/firestore";
-import { exportRecipesToCSV, parseRecipesFromCSV } from "../utils/csvUtils";
+  fetchRecipes,
+  likeRecipe,
+  importRecipesCSV,
+  bulkDeleteRecipes,
+  setSearchTerm as setStoreSearchTerm,
+  setActiveTab as setStoreActiveTab,
+  toggleRecipeSelection as toggleStoreRecipeSelection,
+  clearSelectedRecipes as clearStoreSelectedRecipes,
+  clearRecipesError,
+  clearImportError,
+} from "../redux/slices/recipesSlice";
+import { exportRecipesToCSV } from "../utils/csvUtils"; // parseRecipesFromCSV est dans le thunk
 
-// Helper to render skeletons
+// Helper to render skeletons (inchangé)
 const renderSkeletons = (theme) => (
   <Grid container spacing={3}>
     {[...Array(6)].map((_, index) => (
@@ -118,90 +122,55 @@ const renderSkeletons = (theme) => (
 );
 
 export default function RecipesListPage() {
-  const { currentUser, userData } = useAuth();
+  const dispatch = useDispatch();
   const navigate = useNavigate();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
-  const [allFamilyRecipes, setAllFamilyRecipes] = useState([]);
-  const [allPublicRecipes, setAllPublicRecipes] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [activeTab, setActiveTab] = useState("family");
+  // State from AuthContext (currentUser for likes, userData for familyId and roles)
+  const { currentUser, userData } = useAuth();
+  const familyId = userData?.familyId;
+  const canModify = userData?.familyRole === "Admin" || userData?.familyRole === "SecondaryAdmin";
+
+  // State from Redux store (recipesSlice)
+  const {
+    familyRecipes,
+    publicRecipes,
+    loading,
+    error: recipesError, // Renommé pour éviter conflit avec error local
+    searchTerm,
+    activeTab,
+    selectedRecipes,
+    importing,
+    importError: recipesImportError, // Renommé
+  } = useSelector((state) => state.recipes);
+
+  // Local UI state (modals, file input, success messages)
+  const [successMessage, setSuccessMessage] = useState(""); // Pour les messages de succès non gérés par Redux
+  const [localError, setLocalError] = useState(""); // Pour les erreurs locales non gérées par Redux (ex: export)
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importFile, setImportFile] = useState(null);
-  const [importError, setImportError] = useState("");
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedRecipes, setSelectedRecipes] = useState([]);
-
-  const canModify = userData?.familyRole === "Admin" || userData?.familyRole === "SecondaryAdmin";
-  const familyId = userData?.familyId;
+  const [selectionMode, setSelectionMode] = useState(false); // Garder local pour la UI de sélection
 
   useEffect(() => {
-    const fetchRecipes = async () => {
-      if (!familyId) {
-        setLoading(false);
-        setAllFamilyRecipes([]);
-        setAllPublicRecipes([]);
-        return;
-      }
-
-      setLoading(true);
-      setError("");
-      try {
-        const recipesRef = collection(db, "recipes");
-        const familyQuery = query(
-          recipesRef,
-          where("familyId", "==", familyId),
-          orderBy("createdAt", "desc")
-        );
-        const publicQuery = query(
-          recipesRef,
-          where("visibility", "==", "public"),
-          orderBy("createdAt", "desc")
-        );
-
-        const [familySnapshot, publicSnapshot] = await Promise.all([
-          getDocs(familyQuery),
-          getDocs(publicQuery),
-        ]);
-
-        const fetchedFamilyRecipes = familySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          likes: doc.data().likes || [],
-        }));
-        const fetchedPublicRecipes = publicSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          likes: doc.data().likes || [],
-        }));
-
-        setAllFamilyRecipes(fetchedFamilyRecipes);
-        setAllPublicRecipes(fetchedPublicRecipes);
-      } catch (err) {
-        console.error("Error fetching recipes:", err);
-        setError("Erreur lors de la récupération des recettes.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (userData) {
-      fetchRecipes();
+    if (familyId) {
+      dispatch(fetchRecipes(familyId));
     }
-  }, [userData, familyId]);
+    // Nettoyer les erreurs Redux au démontage ou au changement de familyId
+    return () => {
+      dispatch(clearRecipesError());
+      dispatch(clearImportError());
+    };
+  }, [dispatch, familyId]);
 
   const handleTabChange = (event, newValue) => {
-    setActiveTab(newValue);
-    setSelectedRecipes([]);
-    setSelectionMode(false);
+    dispatch(setStoreActiveTab(newValue));
+    setSelectionMode(false); // Réinitialiser le mode de sélection UI
+    // selectedRecipes est déjà réinitialisé dans le reducer de setStoreActiveTab
   };
 
   const filteredRecipes = useMemo(() => {
-    const sourceList = activeTab === "family" ? allFamilyRecipes : allPublicRecipes;
+    const sourceList = activeTab === "family" ? familyRecipes : publicRecipes;
     if (!searchTerm) {
       return sourceList;
     }
@@ -211,194 +180,131 @@ export default function RecipesListPage() {
         (recipe.tags &&
           recipe.tags.some((tag) => tag.toLowerCase().includes(searchTerm.toLowerCase())))
     );
-  }, [activeTab, allFamilyRecipes, allPublicRecipes, searchTerm]);
+  }, [activeTab, familyRecipes, publicRecipes, searchTerm]);
+
+  const handleSearchChange = (event) => {
+    dispatch(setStoreSearchTerm(event.target.value));
+  };
 
   const clearSearch = () => {
-    setSearchTerm("");
+    dispatch(setStoreSearchTerm(""));
   };
 
   const handleExport = () => {
     try {
-      const recipesToExport = activeTab === "family" ? allFamilyRecipes : allPublicRecipes;
+      const recipesToExport = activeTab === "family" ? familyRecipes : publicRecipes;
+      if (recipesToExport.length === 0) {
+        setLocalError(`Aucune recette ${activeTab === "family" ? "familiale" : "publique"} à exporter.`);
+        setTimeout(() => setLocalError(""), 3000);
+        return;
+      }
       exportRecipesToCSV(recipesToExport, `recipes_${activeTab}_${new Date().toISOString()}.csv`);
-      setSuccess(`Recettes ${activeTab === "family" ? "familiales" : "publiques"} exportées avec succès !`);
-      setTimeout(() => setSuccess(""), 3000);
+      setSuccessMessage(`Recettes ${activeTab === "family" ? "familiales" : "publiques"} exportées avec succès !`);
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
       console.error("Error exporting recipes:", err);
-      setError("Erreur lors de l'exportation des recettes.");
+      setLocalError("Erreur lors de l'exportation des recettes.");
+      setTimeout(() => setLocalError(""), 3000);
     }
   };
 
   const handleOpenImportDialog = () => {
     setImportDialogOpen(true);
-    setImportError("");
     setImportFile(null);
+    dispatch(clearImportError()); // Nettoyer les erreurs d'import précédentes du store
   };
 
   const handleCloseImportDialog = () => {
     setImportDialogOpen(false);
-    setImportError("");
-    setImportFile(null);
   };
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
     if (file && file.type === "text/csv") {
       setImportFile(file);
-      setImportError("");
+      dispatch(clearImportError());
     } else {
-      setImportError("Veuillez sélectionner un fichier CSV valide.");
+      // Afficher une erreur locale pour le fichier invalide, Redux gérera les erreurs d'upload
+      // setLocalError("Veuillez sélectionner un fichier CSV valide.");
+      // Ou laisser le slice gérer via importError si on dispatch une action pour ça
       setImportFile(null);
     }
   };
 
   const handleImport = async () => {
     if (!importFile) {
-      setImportError("Aucun fichier sélectionné.");
+      // setLocalError("Aucun fichier sélectionné."); // Ou laisser le slice gérer
+      dispatch(importRecipesCSV({ file: null, familyId, userId: currentUser.uid })); // Déclenchera une erreur dans le slice
       return;
     }
-
-    setLoading(true);
-    setImportError("");
     try {
-      const recipes = await parseRecipesFromCSV(importFile);
-      if (recipes.length === 0) {
-        setImportError("Aucune recette valide trouvée dans le fichier CSV.");
-        setLoading(false);
-        return;
-      }
-
-      const batch = writeBatch(db);
-      const recipesRef = collection(db, "recipes");
-
-      recipes.forEach((recipe) => {
-        const newRecipe = {
-          ...recipe,
-          familyId,
-          createdAt: new Date().toISOString(),
-          createdBy: currentUser.uid,
-          visibility: recipe.visibility || "family",
-          likes: [],
-        };
-        const docRef = doc(recipesRef);
-        batch.set(docRef, newRecipe);
-      });
-
-      await batch.commit();
-      setSuccess(`${recipes.length} recette(s) importée(s) avec succès !`);
-      setTimeout(() => setSuccess(""), 3000);
+      await dispatch(importRecipesCSV({ file: importFile, familyId, userId: currentUser.uid })).unwrap();
+      setSuccessMessage("Recettes importées avec succès ! Rechargement des recettes...");
+      dispatch(fetchRecipes(familyId)); // Re-fetch après import
       handleCloseImportDialog();
-
-      const familyQuery = query(
-        recipesRef,
-        where("familyId", "==", familyId),
-        orderBy("createdAt", "desc")
-      );
-      const familySnapshot = await getDocs(familyQuery);
-      setAllFamilyRecipes(familySnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data(), likes: doc.data().likes || [] })));
+      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
-      console.error("Error importing recipes:", err);
-      setImportError("Erreur lors de l'importation des recettes : " + err.message);
-    } finally {
-      setLoading(false);
+      // L'erreur est déjà dans recipesImportError du store, gérée par extraReducers
+      console.error("Import failed:", err);
     }
   };
 
-  const handleLike = async (recipeId, currentLikes) => {
+  const handleLike = (recipeId, currentLikes) => {
     if (!currentUser) {
-      setError("Vous devez être connecté pour liker une recette.");
-      setTimeout(() => setError(""), 3000);
+      setLocalError("Vous devez être connecté pour liker une recette.");
+      setTimeout(() => setLocalError(""), 3000);
       return;
     }
-
-    try {
-      const recipeRef = doc(db, "recipes", recipeId);
-      const isLiked = currentLikes.includes(currentUser.uid);
-      const updatedLikes = isLiked
-        ? currentLikes.filter((uid) => uid !== currentUser.uid)
-        : [...currentLikes, currentUser.uid];
-
-      await updateDoc(recipeRef, { likes: updatedLikes });
-
-      const updateRecipes = (recipes) =>
-        recipes.map((recipe) =>
-          recipe.id === recipeId ? { ...recipe, likes: updatedLikes } : recipe
-        );
-      setAllFamilyRecipes(updateRecipes(allFamilyRecipes));
-      setAllPublicRecipes(updateRecipes(allPublicRecipes));
-    } catch (err) {
-      console.error("Error updating likes:", err);
-      setError("Erreur lors de la mise à jour du like.");
-      setTimeout(() => setError(""), 3000);
-    }
+    dispatch(likeRecipe({ recipeId, currentLikes, userId: currentUser.uid }));
+    // L'erreur de like est gérée dans le slice et peut être affichée via recipesError
   };
 
   const toggleSelectionMode = () => {
     const newSelectionMode = !selectionMode;
     setSelectionMode(newSelectionMode);
-    setSelectedRecipes([]);
-    console.log("Selection mode toggled to:", newSelectionMode);
+    if (!newSelectionMode) {
+      dispatch(clearStoreSelectedRecipes()); // Nettoyer la sélection Redux si on quitte le mode sélection
+    }
   };
 
   const handleRecipeSelect = (recipeId) => {
-    setSelectedRecipes((prev) => {
-      const newSelection = prev.includes(recipeId)
-        ? prev.filter((id) => id !== recipeId)
-        : [...prev, recipeId];
-      console.log("Selected recipes:", newSelection);
-      return newSelection;
-    });
+    dispatch(toggleStoreRecipeSelection(recipeId));
   };
 
   const handleAggregateRecipes = () => {
     if (selectedRecipes.length < 2) {
-      setError("Veuillez sélectionner au moins deux recettes pour les agréger.");
-      setTimeout(() => setError(""), 3000);
+      setLocalError("Veuillez sélectionner au moins deux recettes pour les agréger.");
+      setTimeout(() => setLocalError(""), 3000);
       return;
     }
     navigate("/recipes/aggregate", { state: { selectedRecipeIds: selectedRecipes } });
   };
 
   const handleBulkDelete = async () => {
-  if (selectedRecipes.length === 0) {
-    setError("Veuillez sélectionner au moins une recette à supprimer.");
-    setTimeout(() => setError(""), 3000);
-    return;
-  }
+    if (selectedRecipes.length === 0) {
+      setLocalError("Veuillez sélectionner au moins une recette à supprimer.");
+      setTimeout(() => setLocalError(""), 3000);
+      return;
+    }
 
-  if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${selectedRecipes.length} recette(s) ? Cette action est irréversible.`)) {
-    return;
-  }
+    if (!window.confirm(`Êtes-vous sûr de vouloir supprimer ${selectedRecipes.length} recette(s) ? Cette action est irréversible.`)) {
+      return;
+    }
 
-  setLoading(true);
-  setError("");
-  try {
-    const batch = writeBatch(db);
-    const recipesRef = collection(db, "recipes");
+    try {
+      await dispatch(bulkDeleteRecipes(selectedRecipes)).unwrap();
+      setSuccessMessage(`${selectedRecipes.length} recette(s) supprimée(s) avec succès !`);
+      setSelectionMode(false); // Quitter le mode sélection après suppression
+      // selectedRecipes est déjà vidé dans le reducer après suppression réussie
+      setTimeout(() => setSuccessMessage(""), 3000);
+    } catch (err) {
+      // L'erreur est dans recipesError
+      console.error("Bulk delete failed:", err);
+    }
+  };
 
-    selectedRecipes.forEach((recipeId) => {
-      const docRef = doc(recipesRef, recipeId);
-      batch.delete(docRef);
-    });
-
-    await batch.commit();
-
-    // Mettre à jour les listes locales
-    setAllFamilyRecipes(allFamilyRecipes.filter((recipe) => !selectedRecipes.includes(recipe.id)));
-    setAllPublicRecipes(allPublicRecipes.filter((recipe) => !selectedRecipes.includes(recipe.id)));
-    setSelectedRecipes([]);
-    setSelectionMode(false);
-
-    setSuccess(`${selectedRecipes.length} recette(s) supprimée(s) avec succès !`);
-    setTimeout(() => setSuccess(""), 3000);
-  } catch (err) {
-    console.error("Error deleting recipes:", err);
-    setError("Erreur lors de la suppression des recettes : " + err.message);
-    setTimeout(() => setError(""), 3000);
-  } finally {
-    setLoading(false);
-  }
-};
+  // Affichage des erreurs et succès
+  const currentError = recipesError || localError || recipesImportError;
 
   return (
     <Box
@@ -447,7 +353,7 @@ export default function RecipesListPage() {
           </Box>
         </Fade>
 
-        {success && (
+        {successMessage && (
           <Fade in>
             <Alert 
               severity="success" 
@@ -457,13 +363,14 @@ export default function RecipesListPage() {
                 background: `linear-gradient(135deg, ${alpha(theme.palette.success.main, 0.1)} 0%, ${alpha(theme.palette.success.main, 0.05)} 100%)`,
                 border: `1px solid ${alpha(theme.palette.success.main, 0.2)}`,
               }}
+              onClose={() => setSuccessMessage("")}
             >
-              {success}
+              {successMessage}
             </Alert>
           </Fade>
         )}
 
-        {error && (
+        {currentError && (
           <Fade in>
             <Alert 
               severity="error" 
@@ -473,8 +380,13 @@ export default function RecipesListPage() {
                 background: `linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.1)} 0%, ${alpha(theme.palette.error.main, 0.05)} 100%)`,
                 border: `1px solid ${alpha(theme.palette.error.main, 0.2)}`,
               }}
+              onClose={() => {
+                if(recipesError) dispatch(clearRecipesError());
+                if(localError) setLocalError("");
+                if(recipesImportError) dispatch(clearImportError());
+              }}
             >
-              {error}
+              {typeof currentError === 'object' ? JSON.stringify(currentError) : currentError}
             </Alert>
           </Fade>
         )}
@@ -537,7 +449,7 @@ export default function RecipesListPage() {
                     <FamilyIcon />
                     Ma Famille
                     <Badge 
-                      badgeContent={allFamilyRecipes.length} 
+                      badgeContent={familyRecipes.length}
                       color="primary" 
                       sx={{ ml: 1 }}
                     />
@@ -551,7 +463,7 @@ export default function RecipesListPage() {
                     <PublicIcon />
                     Publiques
                     <Badge 
-                      badgeContent={allPublicRecipes.length} 
+                      badgeContent={publicRecipes.length}
                       color="secondary" 
                       sx={{ ml: 1 }}
                     />
@@ -569,7 +481,7 @@ export default function RecipesListPage() {
                   variant="outlined"
                   size="small"
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={handleSearchChange}
                   InputProps={{
                     startAdornment: (
                       <InputAdornment position="start">
@@ -634,7 +546,7 @@ export default function RecipesListPage() {
                           variant="contained"
                           startIcon={<MergeIcon />}
                           onClick={handleAggregateRecipes}
-                          disabled={selectedRecipes.length < 2}
+                          disabled={selectedRecipes.length < 2 || loading}
                           sx={{ 
                             textTransform: "none", 
                             borderRadius: 3, 
@@ -649,7 +561,7 @@ export default function RecipesListPage() {
                           color="error"
                           startIcon={<DeleteIcon />}
                           onClick={handleBulkDelete}
-                          disabled={selectedRecipes.length === 0}
+                          disabled={selectedRecipes.length === 0 || loading}
                           sx={{ 
                             textTransform: "none", 
                             borderRadius: 3, 
@@ -657,7 +569,7 @@ export default function RecipesListPage() {
                             background: `linear-gradient(135deg, ${theme.palette.error.main} 0%, ${theme.palette.error.dark} 100%)`,
                           }}
                         >
-                          Supprimer ({selectedRecipes.length})
+                          {loading && selectedRecipes.length > 0 ? <CircularProgress size={20} color="inherit" /> : `Supprimer (${selectedRecipes.length})`}
                         </Button>
                       </>
                     )}
@@ -689,9 +601,9 @@ export default function RecipesListPage() {
                 background: alpha(theme.palette.background.paper, 0.5),
               }}
             />
-            {importError && (
-              <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                {importError}
+            {recipesImportError && ( // Utiliser l'erreur du store ici
+              <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }} onClose={() => dispatch(clearImportError())}>
+                {typeof recipesImportError === 'object' ? JSON.stringify(recipesImportError) : recipesImportError}
               </Alert>
             )}
           </DialogContent>
@@ -702,10 +614,10 @@ export default function RecipesListPage() {
             <Button
               onClick={handleImport}
               variant="contained"
-              disabled={!importFile || loading}
+              disabled={!importFile || importing}
               sx={{ borderRadius: 2 }}
             >
-              Importer
+              {importing ? <CircularProgress size={24} color="inherit" /> : "Importer"}
             </Button>
           </DialogActions>
         </Dialog>
@@ -762,7 +674,7 @@ export default function RecipesListPage() {
           </Fade>
         )}
 
-        {loading
+        {loading && (!familyRecipes.length && !publicRecipes.length) // Afficher les squelettes seulement si aucune donnée n'est encore chargée
           ? renderSkeletons(theme)
           : familyId && (
               <Grid container spacing={3}>
@@ -837,7 +749,7 @@ export default function RecipesListPage() {
                               height="200"
                               image={
                                 recipe.photoUrl ||
-                                "/placeholder.svg?height=200&width=300"
+                                "/placeholder.svg?height=200&width=300" // Garder un placeholder générique
                               }
                               alt={recipe.name}
                               sx={{
@@ -950,7 +862,7 @@ export default function RecipesListPage() {
                               <IconButton
                                 size="small"
                                 onClick={() => handleLike(recipe.id, recipe.likes)}
-                                disabled={!currentUser || selectionMode}
+                                disabled={!currentUser || selectionMode || loading} // Désactiver pendant le chargement général
                                 sx={{ 
                                   ml: 1,
                                   transition: "all 0.2s ease",
@@ -1057,7 +969,7 @@ export default function RecipesListPage() {
                             >
                               Voir
                             </Button>
-                            {canModify && recipe.familyId === familyId && (
+                            {canModify && recipe.familyId === familyId && ( // S'assurer que la recette appartient bien à la famille pour modification
                               <Button
                                 size="small"
                                 component={RouterLink}

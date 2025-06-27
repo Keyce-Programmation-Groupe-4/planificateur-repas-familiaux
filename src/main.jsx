@@ -7,7 +7,9 @@ import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from './theme';
 import { BrowserRouter } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext.jsx'; // Assuming AuthProvider is needed
+import { AuthProvider } from './contexts/AuthContext.jsx'; // Assuming AuthProvider is needed for now, will be refactored
+import { Provider } from 'react-redux'; // Import Redux Provider
+import store from './redux/store'; // Import the Redux store
 import { messaging } from './firebaseConfig.js'; // <<< ADD THIS
 import { getToken, onMessage } from 'firebase/messaging'; // <<< ADD THIS
 
@@ -51,13 +53,15 @@ ${payload.notification.body}`);
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <BrowserRouter>
-        <AuthProvider> {/* Assuming AuthProvider is needed */}
-          <App />
-        </AuthProvider> {/* Assuming AuthProvider is needed */}
-      </BrowserRouter>
-    </ThemeProvider>
+    <Provider store={store}> {/* Wrap with Redux Provider */}
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <BrowserRouter>
+          <AuthProvider> {/* This will be refactored or removed later */}
+            <App />
+          </AuthProvider>
+        </BrowserRouter>
+      </ThemeProvider>
+    </Provider>
   </React.StrictMode>,
 );
