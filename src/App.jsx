@@ -185,7 +185,7 @@ function App() {
             }
           />
           <Route
-            path="/vendors/:id"
+            path="/vendors/:vendorId"
             element={
               <ProtectedRoute>
                 <VendorProfilePage />

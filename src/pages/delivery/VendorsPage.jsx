@@ -31,6 +31,7 @@ import {
   ListItemText,
   Divider as MuiDivider, // Renaming to avoid conflict if another Divider is used
 } from "@mui/material"
+import LocationOnIcon from "@mui/icons-material/LocationOn"
 import { Search, Person, Refresh, MyLocation as MyLocationIcon, EditLocation as EditLocationIcon, GpsFixed, Replay as ReplayIcon, Close as CloseIcon, LocationOff } from "@mui/icons-material" // Added more icons
 import { useAuth } from "../../contexts/AuthContext"
 import { db } from "../../firebaseConfig"
