@@ -18,6 +18,63 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+
+# Build output
+build/
+out/
+
+# React specific
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS generated files
+Thumbs.db
+
+# Dependency directories
+jspm_packages/
+
+# Test coverage
+coverage/
+
+# Misc
+*.tgz
+*.bak
+*.tmp
+
+# Local env files
+.env.*
+
+# VSCode settings
+.vscode/*
+!.vscode/extensions.json
+
+# Firebase emulators
+firebase-debug.log
+.firebaserc
+.firebase/
+
+# Storybook
+.storybook/
+*.story.js
+*.stories.js
+*.stories.jsx
+*.stories.ts
+*.stories.tsx
+
+# ESLint cache
+.eslintcache
+
+# Mac system files
+.AppleDouble
+.LSOverride
+
+# npm package lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 *.suo
 *.ntvs*
 *.njsproj
